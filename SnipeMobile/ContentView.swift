@@ -321,6 +321,7 @@ struct ContentView: View {
         .refreshable {
             isRefreshing = true
             await apiClient.fetchPrimaryThenBackground()
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s delay voor UI sync
             isRefreshing = false
         }
     }

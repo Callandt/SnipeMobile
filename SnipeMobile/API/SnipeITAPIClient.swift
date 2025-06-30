@@ -22,6 +22,8 @@ class SnipeITAPIClient: ObservableObject {
         UserDefaults.standard.string(forKey: "apiToken") ?? ""
     }
 
+    private var fetchAssetsTask: Task<Void, Never>? = nil
+
     init() {
         self.isConfigured = UserDefaults.standard.bool(forKey: "isConfigured")
     }
@@ -58,32 +60,44 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func fetchAssets() async {
-        guard !baseURL.isEmpty, !apiToken.isEmpty else {
-            await MainActor.run { errorMessage = "Configure the API settings first." }
-            return
-        }
+        // Annuleer een bestaande fetch
+        fetchAssetsTask?.cancel()
 
-        guard let url = URL(string: "\(baseURL)/api/v1/hardware?limit=500") else {
-            await MainActor.run { errorMessage = "Invalid URL" }
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let response = try JSONDecoder().decode(AssetResponse.self, from: data)
-            await MainActor.run {
-                self.assets = response.rows
+        fetchAssetsTask = Task {
+            guard !baseURL.isEmpty, !apiToken.isEmpty else {
+                await MainActor.run { errorMessage = "Configure the API settings first." }
+                return
             }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = "Error fetching assets: \(error.localizedDescription)"
-                print("Error details: \(error)")
+
+            guard let url = URL(string: "\(baseURL)/api/v1/hardware?limit=500") else {
+                await MainActor.run { errorMessage = "Invalid URL" }
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+            do {
+                print("START fetchAssets")
+                let (data, _) = try await URLSession.shared.data(for: request)
+                print("SUCCESS fetchAssets")
+                let response = try JSONDecoder().decode(AssetResponse.self, from: data)
+                await MainActor.run {
+                    self.assets = response.rows
+                }
+            } catch {
+                if (error as? URLError)?.code == .cancelled {
+                    print("Fetch cancelled, no error shown to user.")
+                } else {
+                    await MainActor.run {
+                        self.errorMessage = "Error fetching assets: \(error.localizedDescription)"
+                        print("Error details: \(error)")
+                    }
+                }
             }
         }
+        await fetchAssetsTask?.value
     }
 
     func fetchUsers() async {
@@ -218,22 +232,30 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchActivityReport() async -> [Activity] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
-        guard let url = URL(string: "\(baseURL)/api/v1/reports/activity") else {
-            print("Invalid URL for activity report")
-            return []
+        var allActivities: [Activity] = []
+        var offset = 0
+        let limit = 1000
+        while true {
+            guard let url = URL(string: "\(baseURL)/api/v1/reports/activity?limit=\(limit)&offset=\(offset)") else {
+                print("Invalid URL for activity report")
+                break
+            }
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
+                allActivities.append(contentsOf: response.rows)
+                if response.rows.count < limit {
+                    break // laatste batch
+                }
+                offset += limit
+            } catch {
+                print("Error fetching activity report: \(error.localizedDescription)")
+                break
+            }
         }
-
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
-            return response.rows
-        } catch {
-            print("Error fetching activity report: \(error.localizedDescription)")
-            return []
-        }
+        return allActivities
     }
 } 

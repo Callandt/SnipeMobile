@@ -16,7 +16,7 @@ struct LocationCardView: View {
             Spacer()
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color(.systemGray6))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
         .padding(.horizontal)

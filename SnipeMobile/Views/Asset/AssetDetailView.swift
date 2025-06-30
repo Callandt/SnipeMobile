@@ -16,13 +16,13 @@ struct AssetDetailView: View {
     }
 
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             Picker("Details", selection: $selectedTab) {
                 Text("Details").tag(0)
                 Text("History").tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
-            .padding(.horizontal)
+            .padding()
 
             if selectedTab == 0 {
                 detailsView
@@ -32,6 +32,7 @@ struct AssetDetailView: View {
         }
         .navigationTitle(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
         .navigationBarTitleDisplayMode(.inline)
+        .padding(.top, 8)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/hardware/\(asset.id)") {

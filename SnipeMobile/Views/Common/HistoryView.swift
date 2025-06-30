@@ -53,15 +53,15 @@ struct HistoryView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
             } else if let item = activity.item?.name, let target = activity.target?.name {
-                Text("\(item) → \(target)")
+                Text("\(HTMLDecoder.decode(item)) → \(HTMLDecoder.decode(target))")
                     .font(.body)
                     .foregroundColor(.secondary)
             } else if let item = activity.item?.name {
-                Text(item)
+                Text(HTMLDecoder.decode(item))
                     .font(.body)
                     .foregroundColor(.secondary)
             } else if let target = activity.target?.name {
-                Text(target)
+                Text(HTMLDecoder.decode(target))
                     .font(.body)
                     .foregroundColor(.secondary)
             } else {
@@ -73,16 +73,13 @@ struct HistoryView: View {
             if let meta = activity.log_meta {
                 ForEach(Array(meta.keys).sorted(), id: \.self) { key in
                     let change = meta[key]
-                    if let old = change?.old, let new = change?.new {
-                        Text("\(key): \(old) → \(new)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else if let new = change?.new {
-                        Text("\(key): → \(new)")
+                    if let new = change?.new {
+                        let oldValue = (change?.old?.isEmpty ?? true) ? "NULL" : (change?.old ?? "NULL")
+                        Text("\(key): \(oldValue) → \(new)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     } else if let old = change?.old {
-                        Text("\(key): \(old) →")
+                        Text("\(key): \(old) → NULL")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

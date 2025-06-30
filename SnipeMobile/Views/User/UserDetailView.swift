@@ -5,6 +5,7 @@ struct UserDetailView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
+    @State private var selectedTab = 0
 
     private var assignedAssets: [Asset] {
         apiClient.assets.filter { $0.assignedTo?.id == user.id }
@@ -16,70 +17,83 @@ struct UserDetailView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 20) {
-                // --- Fixed Header ---
-                VStack(spacing: 15) {
-                    Text("User Info")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .center)
-
-                    VStack(alignment: .leading, spacing: 15) {
-                        if let empNumber = user.employeeNumber, !empNumber.isEmpty {
-                            copyableDetailRow(label: "Employee Number", value: empNumber)
-                        }
-                        
-                        if let email = user.email, !email.isEmpty {
-                            copyableDetailRow(label: "Email", value: email)
-                        }
-                        
-                        if let locationName = user.location?.name, !locationName.isEmpty {
-                            copyableDetailRow(label: "Locatie", value: locationName)
-                        }
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
+            VStack(spacing: 0) {
+                Picker("Details", selection: $selectedTab) {
+                    Text("Details").tag(0)
+                    Text("History").tag(1)
                 }
-                .padding(.horizontal)
+                .pickerStyle(SegmentedPickerStyle())
+                .padding()
 
-                if !assignedAssets.isEmpty {
-                    Text("Assigned Assets")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
+                if selectedTab == 0 {
+                    VStack(spacing: 20) {
+                        // --- Fixed Header ---
+                        VStack(spacing: 15) {
+                            Text("User Info")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
 
-                // --- Scrollable Lists ---
-                ScrollView(.vertical) {
-                    VStack(spacing: 30) {
-                        // Assigned Assets Section
+                            VStack(alignment: .leading, spacing: 15) {
+                                if let empNumber = user.employeeNumber, !empNumber.isEmpty {
+                                    copyableDetailRow(label: "Employee Number", value: empNumber)
+                                }
+                                
+                                if let email = user.email, !email.isEmpty {
+                                    copyableDetailRow(label: "Email", value: email)
+                                }
+                                
+                                if let locationName = user.location?.name, !locationName.isEmpty {
+                                    copyableDetailRow(label: "Locatie", value: locationName)
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                        }
+                        .padding(.horizontal)
+
                         if !assignedAssets.isEmpty {
-                            VStack(spacing: 10) {
-                                ForEach(assignedAssets) { asset in
-                                    NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
-                                        AssetCardView(asset: asset)
+                            Text("Assigned Assets")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
+
+                        // --- Scrollable Lists ---
+                        ScrollView(.vertical) {
+                            VStack(spacing: 30) {
+                                // Assigned Assets Section
+                                if !assignedAssets.isEmpty {
+                                    VStack(spacing: 10) {
+                                        ForEach(assignedAssets) { asset in
+                                            NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
+                                                AssetCardView(asset: asset)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Assigned Accessories Section
+                                if !assignedAccessories.isEmpty {
+                                    VStack(spacing: 10) {
+                                        Text("Assigned Accessories")
+                                            .font(.headline)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+
+                                        ForEach(assignedAccessories) { accessory in
+                                            AccessoryCardView(accessory: accessory)
+                                        }
                                     }
                                 }
                             }
-                        }
-
-                        // Assigned Accessories Section
-                        if !assignedAccessories.isEmpty {
-                            VStack(spacing: 10) {
-                                Text("Assigned Accessories")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-
-                                ForEach(assignedAccessories) { accessory in
-                                    AccessoryCardView(accessory: accessory)
-                                }
-                            }
+                            .padding(.vertical)
                         }
                     }
-                    .padding(.vertical)
+                    .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
+                    .padding(.top)
+                } else {
+                    HistoryView(itemType: "user", itemId: user.id, apiClient: apiClient)
                 }
             }
-            .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
-            .padding(.top)
 
             // Copy notification overlay
             if showCopyNotification, let text = copyNotification {
@@ -104,8 +118,9 @@ struct UserDetailView: View {
                 }
             }
         }
-        .navigationTitle(user.decodedName)
+        .navigationTitle(HTMLDecoder.decode(user.decodedName))
         .navigationBarTitleDisplayMode(.inline)
+        .padding(.top, 8)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/users/\(user.id)") {
@@ -124,7 +139,7 @@ struct UserDetailView: View {
                 Text(label + ":")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                Text(value)
+                Text(HTMLDecoder.decode(value))
                     .font(.body)
                     .foregroundColor(.primary)
             }

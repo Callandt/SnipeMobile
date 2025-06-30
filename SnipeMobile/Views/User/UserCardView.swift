@@ -10,13 +10,13 @@ struct UserCardView: View {
                     .foregroundColor(.gray)
                     .frame(width: 30, height: 30)
                 VStack(alignment: .leading) {
-                    Text(user.decodedName)
+                    Text(HTMLDecoder.decode(user.decodedName))
                         .font(.headline)
                         .foregroundColor(.primary)
-                    Text(user.decodedEmail)
+                    Text(HTMLDecoder.decode(user.decodedEmail))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text(user.decodedLocationName)
+                    Text(HTMLDecoder.decode(user.decodedLocationName))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -24,7 +24,7 @@ struct UserCardView: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color(.systemGray6))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
         .padding(.horizontal)
