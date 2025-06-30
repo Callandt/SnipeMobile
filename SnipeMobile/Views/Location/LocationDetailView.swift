@@ -27,34 +27,34 @@ struct LocationDetailView: View {
             .pickerStyle(SegmentedPickerStyle())
             .padding()
 
-            ScrollView {
+        ScrollView {
                 if selectedTab == 0 {
-                    if !usersAtLocation.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(usersAtLocation) { user in
-                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
-                                    UserCardView(user: user)
-                                }
+                if !usersAtLocation.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(usersAtLocation) { user in
+                            NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
+                                UserCardView(user: user)
                             }
                         }
+                    }
                     } else {
                         Text("No users at this location.")
                             .foregroundColor(.secondary)
                             .padding()
-                    }
+                }
                 } else {
-                    if !assetsAtLocation.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(assetsAtLocation) { asset in
-                                NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
-                                    AssetCardView(asset: asset)
-                                }
+                if !assetsAtLocation.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(assetsAtLocation) { asset in
+                            NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
+                                AssetCardView(asset: asset)
                             }
                         }
+                    }
                     } else {
                         Text("No assets at this location.")
-                            .foregroundColor(.secondary)
-                            .padding()
+                        .foregroundColor(.secondary)
+                        .padding()
                     }
                 }
             }

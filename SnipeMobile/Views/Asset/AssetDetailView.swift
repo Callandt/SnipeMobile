@@ -8,6 +8,7 @@ struct AssetDetailView: View {
     @State private var hasLoggedAppearance = false
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
+    @State private var selectedTab = 0
 
     private var assignedUser: User? {
         guard let assignedToId = asset.assignedTo?.id else { return nil }
@@ -15,6 +16,48 @@ struct AssetDetailView: View {
     }
 
     var body: some View {
+        VStack {
+            Picker("Details", selection: $selectedTab) {
+                Text("Details").tag(0)
+                Text("History").tag(1)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding(.horizontal)
+
+            if selectedTab == 0 {
+                detailsView
+            } else {
+                HistoryView(itemType: "asset", itemId: asset.id, apiClient: apiClient)
+            }
+        }
+        .navigationTitle(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let url = URL(string: "\(apiClient.baseURL)/hardware/\(asset.id)") {
+                    Link(destination: url) {
+                        Image(systemName: "safari")
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if !hasLoggedAppearance {
+                print("AssetDetailView loaded, statusType: \(asset.statusLabel.statusType)")
+                hasLoggedAppearance = true
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                .onEnded { value in
+                    if value.translation.width > 100 {
+                        dismiss()
+                    }
+                }
+        )
+    }
+
+    private var detailsView: some View {
         ZStack {
             Color(.systemBackground)
                 .ignoresSafeArea()
@@ -46,112 +89,22 @@ struct AssetDetailView: View {
                             .padding(.top, 5)
                         VStack(spacing: 10) {
                             if !asset.decodedAssetTag.isEmpty {
-                                HStack {
-                                    Text("Asset Tag").bold()
-                                    Spacer()
-                                    Text(asset.decodedAssetTag)
-                                    Button(action: {
-                                        UIPasteboard.general.string = asset.decodedAssetTag
-                                        withAnimation {
-                                            copyNotification = "Asset Tag"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Asset Tag", value: asset.decodedAssetTag)
                             }
                             if !asset.decodedSerial.isEmpty {
-                                HStack {
-                                    Text("Serial Number").bold()
-                                    Spacer()
-                                    Text(asset.decodedSerial)
-                                    Button(action: {
-                                        UIPasteboard.general.string = asset.decodedSerial
-                                        withAnimation {
-                                            copyNotification = "Serial Number"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Serial Number", value: asset.decodedSerial)
                             }
                             if !asset.decodedModelName.isEmpty {
-                                HStack {
-                                    Text("Model").bold()
-                                    Spacer()
-                                    Text(asset.decodedModelName)
-                                    Button(action: {
-                                        UIPasteboard.general.string = asset.decodedModelName
-                                        withAnimation {
-                                            copyNotification = "Model"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Model", value: asset.decodedModelName)
                             }
                             if !asset.decodedManufacturerName.isEmpty {
-                                HStack {
-                                    Text("Manufacturer").bold()
-                                    Spacer()
-                                    Text(asset.decodedManufacturerName)
-                                    Button(action: {
-                                        UIPasteboard.general.string = asset.decodedManufacturerName
-                                        withAnimation {
-                                            copyNotification = "Manufacturer"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Manufacturer", value: asset.decodedManufacturerName)
                             }
                             if !asset.statusLabel.statusMeta.isEmpty {
-                                HStack {
-                                    Text("Status").bold()
-                                    Spacer()
-                                    Text(asset.statusLabel.statusMeta)
-                                    Button(action: {
-                                        UIPasteboard.general.string = asset.statusLabel.statusMeta
-                                        withAnimation {
-                                            copyNotification = "Status"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Status", value: asset.statusLabel.statusMeta)
                             }
                             if !asset.decodedCategoryName.isEmpty {
-                                HStack {
-                                    Text("Category").bold()
-                                    Spacer()
-                                    Text(asset.decodedCategoryName)
-                                    Button(action: {
-                                        UIPasteboard.general.string = asset.decodedCategoryName
-                                        withAnimation {
-                                            copyNotification = "Category"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Category", value: asset.decodedCategoryName)
                             }
                         }
                         .padding()
@@ -199,212 +152,13 @@ struct AssetDetailView: View {
                             .padding(.top, 5)
                         VStack(spacing: 10) {
                             if let purchaseCost = asset.purchaseCost, !purchaseCost.isEmpty {
-                                HStack {
-                                    Text("Purchase Cost").bold()
-                                    Spacer()
-                                    Text(purchaseCost)
-                                    Button(action: {
-                                        UIPasteboard.general.string = purchaseCost
-                                        withAnimation {
-                                            copyNotification = "Purchase Cost"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Purchase Cost", value: purchaseCost)
                             }
                             if let bookValue = asset.bookValue, !bookValue.isEmpty {
-                                HStack {
-                                    Text("Book Value").bold()
-                                    Spacer()
-                                    Text(bookValue)
-                                    Button(action: {
-                                        UIPasteboard.general.string = bookValue
-                                        withAnimation {
-                                            copyNotification = "Book Value"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Book Value", value: bookValue)
                             }
                             if let orderNumber = asset.orderNumber, !orderNumber.isEmpty {
-                                HStack {
-                                    Text("Order Number").bold()
-                                    Spacer()
-                                    Text(orderNumber)
-                                    Button(action: {
-                                        UIPasteboard.general.string = orderNumber
-                                        withAnimation {
-                                            copyNotification = "Order Number"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-
-                        Text("Dates")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                            .padding(.top, 5)
-                        VStack(spacing: 10) {
-                            if let purchaseDate = asset.purchaseDate?.formatted, !purchaseDate.isEmpty {
-                                HStack {
-                                    Text("Purchase Date").bold()
-                                    Spacer()
-                                    Text(purchaseDate)
-                                    Button(action: {
-                                        UIPasteboard.general.string = purchaseDate
-                                        withAnimation {
-                                            copyNotification = "Purchase Date"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                            if let warrantyExpires = asset.warrantyExpires?.formatted, !warrantyExpires.isEmpty {
-                                HStack {
-                                    Text("Warranty Expires").bold()
-                                    Spacer()
-                                    Text(warrantyExpires)
-                                    Button(action: {
-                                        UIPasteboard.general.string = warrantyExpires
-                                        withAnimation {
-                                            copyNotification = "Warranty Expires"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                            if let eolDate = asset.assetEolDate?.formatted, !eolDate.isEmpty {
-                                HStack {
-                                    Text("EOL Date").bold()
-                                    Spacer()
-                                    Text(eolDate)
-                                    Button(action: {
-                                        UIPasteboard.general.string = eolDate
-                                        withAnimation {
-                                            copyNotification = "EOL Date"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                            if let nextAuditDate = asset.nextAuditDate?.formatted, !nextAuditDate.isEmpty {
-                                HStack {
-                                    Text("Next Audit").bold()
-                                    Spacer()
-                                    Text(nextAuditDate)
-                                    Button(action: {
-                                        UIPasteboard.general.string = nextAuditDate
-                                        withAnimation {
-                                            copyNotification = "Next Audit"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                            if let lastAuditDate = asset.lastAuditDate?.formatted, !lastAuditDate.isEmpty {
-                                HStack {
-                                    Text("Last Audit").bold()
-                                    Spacer()
-                                    Text(lastAuditDate)
-                                    Button(action: {
-                                        UIPasteboard.general.string = lastAuditDate
-                                        withAnimation {
-                                            copyNotification = "Last Audit"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                            if let lastCheckout = asset.lastCheckout?.formatted, !lastCheckout.isEmpty {
-                                HStack {
-                                    Text("Last Checkout").bold()
-                                    Spacer()
-                                    Text(lastCheckout)
-                                    Button(action: {
-                                        UIPasteboard.general.string = lastCheckout
-                                        withAnimation {
-                                            copyNotification = "Last Checkout"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                            if let lastCheckin = asset.lastCheckin?.formatted, !lastCheckin.isEmpty {
-                                HStack {
-                                    Text("Last Checkin").bold()
-                                    Spacer()
-                                    Text(lastCheckin)
-                                    Button(action: {
-                                        UIPasteboard.general.string = lastCheckin
-                                        withAnimation {
-                                            copyNotification = "Last Checkin"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
-                            }
-                            if let expectedCheckin = asset.expectedCheckin?.formatted, !expectedCheckin.isEmpty {
-                                HStack {
-                                    Text("Expected Checkin").bold()
-                                    Spacer()
-                                    Text(expectedCheckin)
-                                    Button(action: {
-                                        UIPasteboard.general.string = expectedCheckin
-                                        withAnimation {
-                                            copyNotification = "Expected Checkin"
-                                            showCopyNotification = true
-                                        }
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .foregroundColor(.blue)
-                                            .imageScale(.small)
-                                    }
-                                }
+                                copyableDetailRow(label: "Order Number", value: orderNumber)
                             }
                         }
                         .padding()
@@ -419,22 +173,7 @@ struct AssetDetailView: View {
                             VStack(spacing: 10) {
                                 ForEach(customFields.keys.sorted(), id: \.self) { key in
                                     if let value = customFields[key]?.value, !value.isEmpty {
-                                        HStack {
-                                            Text(key).bold()
-                                            Spacer()
-                                            Text(value)
-                                            Button(action: {
-                                                UIPasteboard.general.string = value
-                                                withAnimation {
-                                                    copyNotification = key
-                                                    showCopyNotification = true
-                                                }
-                                            }) {
-                                                Image(systemName: "doc.on.doc")
-                                                    .foregroundColor(.blue)
-                                                    .imageScale(.small)
-                                            }
-                                        }
+                                        copyableDetailRow(label: key, value: value)
                                     }
                                 }
                             }
@@ -472,30 +211,25 @@ struct AssetDetailView: View {
             }
             .padding(.top)
         }
-        .navigationTitle(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/hardware/\(asset.id)") {
-                    Link(destination: url) {
-                        Image(systemName: "safari")
-                    }
+    }
+    
+    @ViewBuilder
+    private func copyableDetailRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label).bold()
+            Spacer()
+            Text(value)
+            Button(action: {
+                UIPasteboard.general.string = value
+                withAnimation {
+                    copyNotification = label
+                    showCopyNotification = true
                 }
+            }) {
+                Image(systemName: "doc.on.doc")
+                    .foregroundColor(.blue)
+                    .imageScale(.small)
             }
         }
-        .onAppear {
-            if !hasLoggedAppearance {
-                print("AssetDetailView loaded, statusType: \(asset.statusLabel.statusType)")
-                hasLoggedAppearance = true
-            }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 30, coordinateSpace: .local)
-                .onEnded { value in
-                    if value.translation.width > 100 {
-                        dismiss()
-                    }
-                }
-        )
     }
 } 

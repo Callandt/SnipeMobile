@@ -215,4 +215,25 @@ class SnipeITAPIClient: ObservableObject {
             return false
         }
     }
+
+    func fetchActivityReport() async -> [Activity] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/reports/activity") else {
+            print("Invalid URL for activity report")
+            return []
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
+            return response.rows
+        } catch {
+            print("Error fetching activity report: \(error.localizedDescription)")
+            return []
+        }
+    }
 } 

@@ -18,8 +18,8 @@ struct AccessoryCardView: View {
                         .foregroundColor(.secondary)
                     if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
                         Text("manufacturer: \(manufacturerName)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                     }
                 }
                 Spacer()

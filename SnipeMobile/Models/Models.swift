@@ -440,4 +440,53 @@ struct Payload: Codable {
 struct LocationsResponse: Codable {
     let total: Int
     let rows: [Location]
+}
+
+struct ActivityResponse: Codable {
+    let rows: [Activity]
+}
+
+struct Activity: Codable, Identifiable {
+    let id: Int
+    let createdAt: DateInfo?
+    let item: ActivityItem?
+    let target: ActivityItem?
+    let actionType: String
+    let note: String?
+    let log_meta: [String: LogMetaChange]?
+    let admin: ActivityUser?
+    let created_by: ActivityUser?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt = "created_at"
+        case item, target
+        case actionType = "action_type"
+        case note
+        case log_meta
+        case admin
+        case created_by
+    }
+
+    var decodedNote: String {
+        return HTMLDecoder.decode(note ?? "")
+    }
+}
+
+struct ActivityItem: Codable {
+    let id: Int
+    let name: String
+    let type: String
+}
+
+struct ActivityUser: Codable {
+    let id: Int
+    let name: String
+    let first_name: String?
+    let last_name: String?
+}
+
+struct LogMetaChange: Codable {
+    let old: String?
+    let new: String?
 } 
