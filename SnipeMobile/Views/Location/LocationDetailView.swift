@@ -16,50 +16,48 @@ struct LocationDetailView: View {
         apiClient.users.filter { $0.location?.id == location.id }
     }
 
+    @State private var selectedTab = 0
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-
-                // --- USERS Section ---
-                if !usersAtLocation.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Users at this Location")
-                            .font(.headline)
-                            .padding(.horizontal)
-
-                        ForEach(usersAtLocation) { user in
-                            NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
-                                UserCardView(user: user)
-                            }
-                        }
-                    }
-                }
-
-                // --- ASSETS Section ---
-                if !assetsAtLocation.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Assets at this Location")
-                            .font(.headline)
-                            .padding(.horizontal)
-                        
-                        ForEach(assetsAtLocation) { asset in
-                            NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
-                                AssetCardView(asset: asset)
-                            }
-                        }
-                    }
-                }
-                
-                if usersAtLocation.isEmpty && assetsAtLocation.isEmpty {
-                    Text("No users or assets at this location.")
-                        .foregroundColor(.secondary)
-                        .padding()
-                }
-
-                Spacer()
+        VStack {
+            Picker("Select a tab", selection: $selectedTab) {
+                Text("Users (\(usersAtLocation.count))").tag(0)
+                Text("Assets (\(assetsAtLocation.count))").tag(1)
             }
-            .padding(.vertical)
-            .padding(.top)
+            .pickerStyle(SegmentedPickerStyle())
+            .padding()
+
+            ScrollView {
+                if selectedTab == 0 {
+                    if !usersAtLocation.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(usersAtLocation) { user in
+                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
+                                    UserCardView(user: user)
+                                }
+                            }
+                        }
+                    } else {
+                        Text("No users at this location.")
+                            .foregroundColor(.secondary)
+                            .padding()
+                    }
+                } else {
+                    if !assetsAtLocation.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(assetsAtLocation) { asset in
+                                NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
+                                    AssetCardView(asset: asset)
+                                }
+                            }
+                        }
+                    } else {
+                        Text("No assets at this location.")
+                            .foregroundColor(.secondary)
+                            .padding()
+                    }
+                }
+            }
         }
         .navigationTitle(location.name)
         .navigationBarTitleDisplayMode(.inline)
