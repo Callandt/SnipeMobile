@@ -15,7 +15,7 @@ class SnipeITAPIClient: ObservableObject {
     }
     @Published var isLoading: Bool = false
 
-    private var baseURL: String {
+    var baseURL: String {
         UserDefaults.standard.string(forKey: "baseURL") ?? ""
     }
     private var apiToken: String {

@@ -38,12 +38,6 @@ struct AssetDetailView: View {
                         }
                 }
                 
-                Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                    .padding(.top)
-                
                 ScrollView {
                     VStack(spacing: 15) {
                         Text("Device Info")
@@ -449,8 +443,9 @@ struct AssetDetailView: View {
                             .cornerRadius(12)
                         }
                     }
+                    .padding(.horizontal)
                 }
-
+                
                 Spacer()
                 HStack(spacing: 10) {
                     Button(action: {}) {
@@ -474,23 +469,16 @@ struct AssetDetailView: View {
                     }
                 }
                 .padding(.horizontal)
-                .padding(.bottom, 10)
             }
-            .padding()
+            .padding(.top)
         }
-        .navigationBarTitle("")
-        .navigationBarBackButtonHidden(true)
+        .navigationTitle(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: {
-                    dismiss()
-                }) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "chevron.left")
-                            .foregroundColor(.blue)
-                        Text("Back")
-                            .foregroundColor(.blue)
-                            .font(.system(size: 17))
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let url = URL(string: "\(apiClient.baseURL)/hardware/\(asset.id)") {
+                    Link(destination: url) {
+                        Image(systemName: "safari")
                     }
                 }
             }

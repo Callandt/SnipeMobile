@@ -9,24 +9,15 @@ struct AccessoryDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // --- Accessory Info ---
-                VStack(alignment: .center, spacing: 10) {
-                    Text(accessory.decodedName)
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    
-                    if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
-                        Text("by \(manufacturerName)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical)
-
+                Text("Accessory Info")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 VStack(alignment: .leading, spacing: 15) {
                     if let categoryName = accessory.category?.name, !categoryName.isEmpty {
                         detailRow(label: "Category", value: categoryName)
+                    }
+                    if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
+                        detailRow(label: "Manufacturer", value: manufacturerName)
                     }
                     if let statusName = accessory.statusLabel?.name, !statusName.isEmpty {
                         detailRow(label: "Status", value: statusName)
@@ -63,9 +54,19 @@ struct AccessoryDetailView: View {
                 }
                 Spacer()
             }
+            .padding(.top)
         }
-        .navigationTitle("Accessory Details")
+        .navigationTitle(accessory.decodedName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let url = URL(string: "\(apiClient.baseURL)/accessories/\(accessory.id)") {
+                    Link(destination: url) {
+                        Image(systemName: "safari")
+                    }
+                }
+            }
+        }
         .onAppear {
             Task {
                 assignedUsers = await apiClient.fetchUsersForAccessory(accessoryId: accessory.id)

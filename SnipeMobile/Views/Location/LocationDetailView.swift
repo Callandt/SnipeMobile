@@ -19,11 +19,6 @@ struct LocationDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                Text(location.name)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 5)
 
                 // --- USERS Section ---
                 if !usersAtLocation.isEmpty {
@@ -64,8 +59,18 @@ struct LocationDetailView: View {
                 Spacer()
             }
             .padding(.vertical)
+            .padding(.top)
         }
         .navigationTitle(location.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let url = URL(string: "\(apiClient.baseURL)/locations/\(location.id)") {
+                    Link(destination: url) {
+                        Image(systemName: "safari")
+                    }
+                }
+            }
+        }
     }
 } 

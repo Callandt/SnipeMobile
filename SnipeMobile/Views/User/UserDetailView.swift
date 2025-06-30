@@ -18,11 +18,6 @@ struct UserDetailView: View {
         ZStack {
             VStack(spacing: 20) {
                 // --- Fixed Header ---
-                Text(user.decodedName)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .padding(.top)
-                
                 VStack(spacing: 15) {
                     Text("User Info")
                         .font(.headline)
@@ -47,16 +42,18 @@ struct UserDetailView: View {
                 }
                 .padding(.horizontal)
 
+                if !assignedAssets.isEmpty {
+                    Text("Assigned Assets")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+
                 // --- Scrollable Lists ---
                 ScrollView(.vertical) {
                     VStack(spacing: 30) {
                         // Assigned Assets Section
                         if !assignedAssets.isEmpty {
                             VStack(spacing: 10) {
-                                Text("Assigned Assets")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                
                                 ForEach(assignedAssets) { asset in
                                     NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
                                         AssetCardView(asset: asset)
@@ -82,6 +79,7 @@ struct UserDetailView: View {
                 }
             }
             .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
+            .padding(.top)
 
             // Copy notification overlay
             if showCopyNotification, let text = copyNotification {
@@ -106,8 +104,17 @@ struct UserDetailView: View {
                 }
             }
         }
-        .navigationTitle("User Details")
+        .navigationTitle(user.decodedName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let url = URL(string: "\(apiClient.baseURL)/users/\(user.id)") {
+                    Link(destination: url) {
+                        Image(systemName: "safari")
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder

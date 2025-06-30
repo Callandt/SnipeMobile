@@ -10,15 +10,17 @@ struct AccessoryCardView: View {
                     .foregroundColor(.gray)
                     .frame(width: 30, height: 30)
                 VStack(alignment: .leading) {
-                    Text(accessory.manufacturer?.name != nil ? "\(accessory.decodedManufacturerName) - \(accessory.decodedName)" : accessory.decodedName)
+                    Text(accessory.decodedName)
                         .font(.headline)
                         .foregroundColor(.primary)
-                    Text("Tag: \(accessory.decodedAssetTag)")
+                    Text("tag: \(accessory.decodedAssetTag)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text("Category: \(accessory.decodedCategoryName)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
+                        Text("manufacturer: \(manufacturerName)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 Spacer()
             }
