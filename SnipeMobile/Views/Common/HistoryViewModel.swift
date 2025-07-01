@@ -14,14 +14,11 @@ class HistoryViewModel: ObservableObject {
         isLoading = true
         error = nil
         Task { [weak self] in
-            let allActivity = await apiClient.fetchActivityReport()
-            let filtered = allActivity.filter { activity in
-                if let item = activity.item, item.type == itemType, item.id == itemId { return true }
-                if let target = activity.target, target.type == itemType, target.id == itemId { return true }
-                return false
+            let activities = await apiClient.fetchActivityForItem(itemType: itemType, itemId: itemId)
+            await MainActor.run {
+                self?.history = activities
+                self?.isLoading = false
             }
-            self?.history = filtered
-            self?.isLoading = false
         }
     }
 } 

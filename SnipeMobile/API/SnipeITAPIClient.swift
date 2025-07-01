@@ -258,4 +258,24 @@ class SnipeITAPIClient: ObservableObject {
         }
         return allActivities
     }
+
+    /// Fetch activity for a specific item type (e.g., "asset", "accessory", "user") and item id using the filtered API endpoint
+    func fetchActivityForItem(itemType: String, itemId: Int, limit: Int = 50, offset: Int = 0, order: String = "desc") async -> [Activity] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/reports/activity?limit=\(limit)&offset=\(offset)&item_type=\(itemType)&item_id=\(itemId)&order=\(order)") else {
+            print("Invalid URL for filtered activity report")
+            return []
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
+            return response.rows
+        } catch {
+            print("Error fetching filtered activity report: \(error.localizedDescription)")
+            return []
+        }
+    }
 } 
