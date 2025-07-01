@@ -160,33 +160,6 @@ struct HistoryView: View {
                 }
                 .padding(.top, 4)
             }
-            // EULA PDF-knop voor gebruikers
-            if itemType == "user" {
-                Button(action: {
-                    guard let userId = itemId as Int? else { return }
-                    print("[DEBUG] Fetching EULAs for userId: \(userId)")
-                    Task {
-                        let eulas = await apiClient.fetchUserEULAs(userId: userId)
-                        if let eula = eulas.first, let pdfUrl = eula.url, pdfUrl.lowercased().hasSuffix(".pdf") {
-                            print("[DEBUG] Download EULA PDF: \(pdfUrl)")
-                            if let localUrl = await apiClient.downloadFile(from: pdfUrl) {
-                                print("[DEBUG] Local EULA PDF path: \(localUrl.path)")
-                                self.localPdfUrl = localUrl
-                                self.isShowingPdf = true
-                            } else {
-                                print("[DEBUG] EULA PDF download failed")
-                            }
-                        } else {
-                            print("[DEBUG] No EULA PDF found for user")
-                        }
-                    }
-                }) {
-                    Label("Bekijk EULA PDF", systemImage: "doc.richtext")
-                        .font(.caption)
-                        .foregroundColor(.accentColor)
-                }
-                .padding(.top, 4)
-            }
         }
         .padding()
         .background(

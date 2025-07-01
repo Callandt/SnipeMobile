@@ -82,6 +82,29 @@ struct UserDetailView: View {
                 .pickerStyle(SegmentedPickerStyle())
                 .padding()
 
+                // Copy notification overlay direct onder tabs
+                if showCopyNotification, let text = copyNotification {
+                    VStack {
+                        Text("Copied: \(text)")
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .padding(.vertical, 5)
+                            .padding(.horizontal, 10)
+                            .background(Color.blue.opacity(0.8))
+                            .cornerRadius(8)
+                            .transition(.opacity)
+                            .onAppear {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    withAnimation {
+                                        showCopyNotification = false
+                                    }
+                                }
+                            }
+                        Spacer()
+                    }
+                    .padding(.top, 4)
+                }
+
                 if selectedTab == 0 {
                     VStack(spacing: 20) {
                         // --- Fixed Header ---
@@ -140,19 +163,19 @@ struct UserDetailView: View {
                         .foregroundColor(.white)
                         .padding(.vertical, 5)
                         .padding(.horizontal, 10)
-                        .background(Color.black.opacity(0.7))
+                        .background(Color.blue.opacity(0.8))
                         .cornerRadius(8)
-                        .transition(.opacity.animation(.easeInOut))
+                        .transition(.opacity)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation {
+                                    showCopyNotification = false
+                                }
+                            }
+                        }
                     Spacer()
                 }
                 .padding(.top)
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation {
-                            showCopyNotification = false
-                        }
-                    }
-                }
             }
         }
         .navigationTitle(HTMLDecoder.decode(user.decodedName))

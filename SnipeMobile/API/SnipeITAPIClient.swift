@@ -14,6 +14,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
     @Published var isLoading: Bool = false
+    @Published var statusLabels: [StatusLabel] = []
 
     var baseURL: String {
         UserDefaults.standard.string(forKey: "baseURL") ?? ""
@@ -333,4 +334,187 @@ class SnipeITAPIClient: ObservableObject {
         }
         return []
     }
+
+    // MARK: - Asset Update
+    struct AssetUpdateRequest: Codable {
+        let name: String?
+        let asset_tag: String?
+        let serial: String?
+        let model_id: Int?
+        let status_id: Int?
+        let category_id: Int?
+        let manufacturer_id: Int?
+        let supplier_id: Int?
+        let notes: String?
+        let order_number: String?
+        let location_id: Int?
+        let purchase_cost: String?
+        let book_value: String?
+        let custom_fields: [String: String]?
+    }
+
+    func updateAsset(assetId: Int, update: AssetUpdateRequest) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            let body = try JSONEncoder().encode(update)
+            request.httpBody = body
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                // Parse updated asset and update in self.assets
+                if let updatedAsset = try? JSONDecoder().decode(Asset.self, from: data) {
+                    await MainActor.run {
+                        if let idx = self.assets.firstIndex(where: { $0.id == updatedAsset.id }) {
+                            self.assets[idx] = updatedAsset
+                        }
+                    }
+                }
+                return true
+            }
+            return false
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Error updating asset: \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
+
+    // MARK: - Field Definitions
+    struct FieldDefinition: Codable, Identifiable {
+        let id: Int
+        let name: String
+        let element: String?
+        let options: [String]?
+        
+        enum CodingKeys: String, CodingKey {
+            case id
+            case name
+            case element
+            case options
+            case choices
+            case values
+        }
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(Int.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            element = try? container.decodeIfPresent(String.self, forKey: .element)
+            // Try all possible keys for options
+            if let opts = try? container.decodeIfPresent([String].self, forKey: .options) {
+                options = opts
+            } else if let opts = try? container.decodeIfPresent([String].self, forKey: .choices) {
+                options = opts
+            } else if let opts = try? container.decodeIfPresent([String].self, forKey: .values) {
+                options = opts
+            } else {
+                options = nil
+            }
+        }
+        func encode(to encoder: Encoder) throws {}
+    }
+
+    @MainActor
+    @Published var fieldDefinitions: [FieldDefinition] = []
+
+    func fetchFieldDefinitions() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/fields") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let rows = json["rows"] as? [[String: Any]] {
+                let decoder = JSONDecoder()
+                let fieldData = try JSONSerialization.data(withJSONObject: rows)
+                let fields = try decoder.decode([FieldDefinition].self, from: fieldData)
+                await MainActor.run {
+                    self.fieldDefinitions = fields
+                }
+            }
+        } catch {
+            print("Error fetching field definitions: \(error)")
+        }
+    }
+
+    @MainActor
+    @Published var modelFieldDefinitions: [FieldDefinition]? = nil
+
+    func fetchModelFieldDefinitions(modelId: Int) async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/models/\(modelId)/fields") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let rows = json["rows"] as? [[String: Any]] {
+                let decoder = JSONDecoder()
+                let fieldData = try JSONSerialization.data(withJSONObject: rows)
+                let fields = try decoder.decode([FieldDefinition].self, from: fieldData)
+                await MainActor.run {
+                    self.modelFieldDefinitions = fields
+                }
+            }
+        } catch {
+            print("Error fetching model field definitions: \(error)")
+        }
+    }
+
+    struct StatusLabelResponse: Codable {
+        let rows: [StatusLabel]
+    }
+
+    func fetchStatusLabels() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/statuslabels") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(StatusLabelResponse.self, from: data)
+            await MainActor.run {
+                self.statusLabels = response.rows
+            }
+        } catch {
+            print("Error fetching status labels: \(error)")
+        }
+    }
+
+    // MARK: - Fieldsets
+    struct Fieldset: Codable, Identifiable {
+        let id: Int
+        let name: String
+        let fields: FieldsetFields
+        let models: FieldsetModels?
+        struct FieldsetFields: Codable {
+            let rows: [FieldsetField]
+        }
+        struct FieldsetModels: Codable {
+            let rows: [Model]
+            struct Model: Codable {
+                let id: Int
+                let name: String
+            }
+        }
+    }
+
+    struct FieldsetField: Codable, Identifiable {
+        let id: Int
+        let name: String
+        let type: String
+        let field_values_array: [String]?
+        // Voeg hier andere properties toe indien nodig
+    }
+
+    @MainActor
+    @Published var fieldsets: [Fieldset]? = nil
 } 
