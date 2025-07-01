@@ -6,13 +6,47 @@ struct UserDetailView: View {
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
     @State private var selectedTab = 0
+    @StateObject private var accessoryHistoryViewModel = HistoryViewModel()
+    @State private var accessoryHistory: [Activity] = []
+    @State private var userActivity: [Activity] = []
 
-    private var assignedAssets: [Asset] {
-        apiClient.assets.filter { $0.assignedTo?.id == user.id }
+    private var assignedItems: [AssignedItem] {
+        let assetItems = apiClient.assets.filter { $0.assignedTo?.id == user.id }.map { AssignedItem.asset($0) }
+        let accessoryItems = apiClient.accessories.filter { $0.assignedTo?.id == user.id }.map { AssignedItem.accessory($0) }
+        return assetItems + accessoryItems
     }
 
-    private var assignedAccessories: [Accessory] {
-        apiClient.accessories.filter { $0.assignedTo?.id == user.id }
+    // Accessoires waarvan de laatste actie voor deze user een checkout is, op basis van user-activity endpoint
+    private var actuallyAssignedAccessories: [Accessory] {
+        let isCheckout: (String) -> Bool = { action in
+            let lower = action.lowercased()
+            return lower.contains("check") && lower.contains("uit")
+        }
+        // Verzamel alle activiteiten voor accessoires
+        let accessoryActivities = userActivity.filter { $0.item?.type == "accessory" && $0.item?.id != nil }
+        // Groepeer per accessoire-id
+        let grouped = Dictionary(grouping: accessoryActivities, by: { $0.item!.id })
+        // Voor elke accessoire: pak de laatste actie
+        let assignedAccessoryIds = grouped.compactMap { (accessoryId, activities) -> Int? in
+            let last = activities.max(by: { ($0.createdAt?.datetime ?? "") < ($1.createdAt?.datetime ?? "") })
+            if let last = last, isCheckout(last.actionType) {
+                return accessoryId
+            }
+            return nil
+        }
+        // Haal de Accessory objecten op uit apiClient.accessories
+        return apiClient.accessories.filter { assignedAccessoryIds.contains($0.id) }
+    }
+
+    enum AssignedItem: Identifiable {
+        case asset(Asset)
+        case accessory(Accessory)
+        var id: Int {
+            switch self {
+            case .asset(let asset): return asset.id
+            case .accessory(let accessory): return accessory.id + 1_000_000 // voorkom id-conflict
+            }
+        }
     }
 
     var body: some View {
@@ -52,7 +86,7 @@ struct UserDetailView: View {
                         }
                         .padding(.horizontal)
 
-                        if !assignedAssets.isEmpty {
+                        if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
                             Text("Assigned Assets")
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .center)
@@ -61,26 +95,26 @@ struct UserDetailView: View {
                         // --- Scrollable Lists ---
                         ScrollView(.vertical) {
                             VStack(spacing: 30) {
-                                // Assigned Assets Section
-                                if !assignedAssets.isEmpty {
+                                // Assigned Assets & Accessories Section
+                                if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
                                     VStack(spacing: 10) {
-                                        ForEach(assignedAssets) { asset in
-                                            NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
-                                                AssetCardView(asset: asset)
+                                        ForEach(assignedItems) { item in
+                                            switch item {
+                                            case .asset(let asset):
+                                                NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
+                                                    AssetCardView(asset: asset)
+                                                }
+                                            case .accessory(let accessory):
+                                                NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient)) {
+                                                    AccessoryCardView(accessory: accessory)
+                                                }
                                             }
                                         }
-                                    }
-                                }
-
-                                // Assigned Accessories Section
-                                if !assignedAccessories.isEmpty {
-                                    VStack(spacing: 10) {
-                                        Text("Assigned Accessories")
-                                            .font(.headline)
-                                            .frame(maxWidth: .infinity, alignment: .center)
-
-                                        ForEach(assignedAccessories) { accessory in
-                                            AccessoryCardView(accessory: accessory)
+                                        // Accessoires die alleen via history assigned zijn
+                                        ForEach(actuallyAssignedAccessories) { accessory in
+                                            NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient)) {
+                                                AccessoryCardView(accessory: accessory)
+                                            }
                                         }
                                     }
                                 }
@@ -128,6 +162,16 @@ struct UserDetailView: View {
                         Image(systemName: "safari")
                     }
                 }
+            }
+        }
+        .onAppear {
+            accessoryHistoryViewModel.fetchHistory(itemType: "accessory", itemId: 0, apiClient: apiClient)
+            Task {
+                self.accessoryHistory = await apiClient.fetchActivityReport()
+            }
+            Task {
+                // Haal user-activity op
+                self.userActivity = await apiClient.fetchActivityForItem(itemType: "user", itemId: user.id)
             }
         }
     }

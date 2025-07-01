@@ -56,6 +56,31 @@ struct AssetDetailView: View {
                     }
                 }
         )
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 10) {
+                Button(action: {}) {
+                    Text("Edit")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.orange)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                Button(action: {}) {
+                    Text(asset.statusLabel.statusMeta == "deployed" ? "Check In" : "Check Out")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(asset.statusLabel.statusMeta == "deployed" ? Color.green : Color.blue)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .background(.ultraThinMaterial)
+        }
     }
 
     private var detailsView: some View {
@@ -147,24 +172,28 @@ struct AssetDetailView: View {
                             .padding(.top, 5)
                         }
 
-                        Text("Value Info")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                            .padding(.top, 5)
-                        VStack(spacing: 10) {
-                            if let purchaseCost = asset.purchaseCost, !purchaseCost.isEmpty {
-                                copyableDetailRow(label: "Purchase Cost", value: purchaseCost)
+                        // Value Info alleen tonen als er minstens één waarde is
+                        let hasValueInfo = (asset.purchaseCost?.isEmpty == false) || (asset.bookValue?.isEmpty == false) || (asset.orderNumber?.isEmpty == false)
+                        if hasValueInfo {
+                            Text("Value Info")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                                .padding(.top, 5)
+                            VStack(spacing: 10) {
+                                if let purchaseCost = asset.purchaseCost, !purchaseCost.isEmpty {
+                                    copyableDetailRow(label: "Purchase Cost", value: purchaseCost)
+                                }
+                                if let bookValue = asset.bookValue, !bookValue.isEmpty {
+                                    copyableDetailRow(label: "Book Value", value: bookValue)
+                                }
+                                if let orderNumber = asset.orderNumber, !orderNumber.isEmpty {
+                                    copyableDetailRow(label: "Order Number", value: orderNumber)
+                                }
                             }
-                            if let bookValue = asset.bookValue, !bookValue.isEmpty {
-                                copyableDetailRow(label: "Book Value", value: bookValue)
-                            }
-                            if let orderNumber = asset.orderNumber, !orderNumber.isEmpty {
-                                copyableDetailRow(label: "Order Number", value: orderNumber)
-                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
                         }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
 
                         if let customFields = asset.customFields, !customFields.isEmpty {
                             Text("Custom Fields")
@@ -185,32 +214,7 @@ struct AssetDetailView: View {
                     }
                     .padding(.horizontal)
                 }
-                
-                Spacer()
-                HStack(spacing: 10) {
-                    Button(action: {}) {
-                        Text("Edit")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-
-                    Button(action: {}) {
-                        Text(asset.statusLabel.statusMeta == "deployed" ? "Check In" : "Check Out")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(asset.statusLabel.statusMeta == "deployed" ? Color.green : Color.blue)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-                .padding(.horizontal)
             }
-            .padding(.top)
         }
     }
     

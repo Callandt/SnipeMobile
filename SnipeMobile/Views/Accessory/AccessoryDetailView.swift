@@ -6,6 +6,7 @@ struct AccessoryDetailView: View {
     @State private var assignedUsers: [User] = []
     @State private var isLoading = true
     @State private var selectedTab = 0
+    @StateObject private var historyViewModel = HistoryViewModel()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,16 +47,15 @@ struct AccessoryDetailView: View {
                             Text("Assigned To")
                                 .font(.headline)
                                 .padding(.horizontal)
-                            
-                            if isLoading {
+                            if historyViewModel.isLoading {
                                 ProgressView()
                                     .frame(maxWidth: .infinity)
-                            } else if assignedUsers.isEmpty {
+                            } else if currentlyAssignedUsers.isEmpty {
                                 Text("Not assigned to any user.")
                                     .foregroundColor(.secondary)
                                     .padding(.horizontal)
                             } else {
-                                ForEach(assignedUsers) { user in
+                                ForEach(currentlyAssignedUsers) { user in
                                     NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
                                         UserCardView(user: user)
                                     }
@@ -83,10 +83,32 @@ struct AccessoryDetailView: View {
             }
         }
         .onAppear {
-            Task {
-                assignedUsers = await apiClient.fetchUsersForAccessory(accessoryId: accessory.id)
-                isLoading = false
+            historyViewModel.fetchHistory(itemType: "accessory", itemId: accessory.id, apiClient: apiClient)
+        }
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 10) {
+                Button(action: {}) {
+                    Text("Edit")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.orange)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                Button(action: {}) {
+                    Text(accessory.statusLabel?.name.lowercased() == "deployed" ? "Check In" : "Check Out")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background((accessory.statusLabel?.name.lowercased() == "deployed") ? Color.green : Color.blue)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
             }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .background(.ultraThinMaterial)
         }
     }
 
@@ -97,5 +119,47 @@ struct AccessoryDetailView: View {
             Spacer()
             Text(value).foregroundColor(.secondary)
         }
+    }
+
+    var currentlyAssignedUsers: [User] {
+        // Helper closure om actie te herkennen
+        let isCheckout: (String) -> Bool = { action in
+            let lower = action.lowercased()
+            return lower.contains("check") && lower.contains("uit")
+        }
+        // Zoek per user de laatste actie (checkout of checkin)
+        var userLastAction: [Int: Activity] = [:]
+        for activity in historyViewModel.history {
+            if let userId = activity.target?.id, activity.target?.type == "user" {
+                print("DEBUG: Activity for userId=\(userId), action=\(activity.actionType), date=\(activity.createdAt?.datetime ?? "")")
+                if let prev = userLastAction[userId] {
+                    if let prevDate = prev.createdAt?.datetime, let newDate = activity.createdAt?.datetime, newDate > prevDate {
+                        userLastAction[userId] = activity
+                    }
+                } else {
+                    userLastAction[userId] = activity
+                }
+            }
+        }
+        // Gebruikers waarvan de laatste actie een checkout is
+        let assignedUserIds = userLastAction.filter { isCheckout($0.value.actionType) }.map { $0.key }
+        print("DEBUG: assignedUserIds=\(assignedUserIds)")
+        // Filter alle checkout-acties
+        let checkouts = historyViewModel.history.filter { activity in
+            activity.target?.type == "user" && isCheckout(activity.actionType)
+        }
+        // Haal de User objecten op uit de checkout-acties via apiClient.users
+        let users = checkouts.compactMap { activity in
+            if let userId = activity.target?.id {
+                let user = apiClient.users.first(where: { $0.id == userId })
+                if user != nil { print("DEBUG: Found user for userId=\(userId): \(user!.name)") }
+                return user
+            }
+            return nil
+        }
+        // Filter op id's die nog assigned zijn
+        let result = users.filter { assignedUserIds.contains($0.id) }
+        print("DEBUG: Final assigned users: \(result.map { $0.name })")
+        return result
     }
 } 
