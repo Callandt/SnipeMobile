@@ -1,10 +1,20 @@
 import SwiftUI
+import SafariServices
+import QuickLook
+
+struct PdfUrl: Identifiable {
+    let id = UUID()
+    let url: String
+}
 
 struct HistoryView: View {
     let itemType: String
     let itemId: Int
     @ObservedObject var apiClient: SnipeITAPIClient
     @StateObject private var viewModel = HistoryViewModel()
+    @State private var openPdfUrl: PdfUrl? = nil
+    @State private var localPdfUrl: URL? = nil
+    @State private var isShowingPdf = false
 
     var body: some View {
         Group {
@@ -33,6 +43,16 @@ struct HistoryView: View {
         .onAppear {
             if viewModel.history.isEmpty && !viewModel.isLoading {
                 viewModel.fetchHistory(itemType: itemType, itemId: itemId, apiClient: apiClient)
+            }
+        }
+        .sheet(item: $openPdfUrl) { pdf in
+            if let url = URL(string: pdf.url) {
+                SafariView(url: url)
+            }
+        }
+        .sheet(isPresented: $isShowingPdf) {
+            if let url = localPdfUrl {
+                PDFPreview(url: url)
             }
         }
     }
@@ -130,6 +150,42 @@ struct HistoryView: View {
                 }
                 .padding(.top, 2)
             }
+            // PDF-link tonen indien aanwezig
+            if let pdfUrl = activity.file?.url, pdfUrl.lowercased().hasSuffix(".pdf") {
+                Button(action: { openPdfUrl = PdfUrl(url: pdfUrl) }) {
+                    Label("Bekijk PDF", systemImage: "doc.richtext")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                }
+                .padding(.top, 4)
+            }
+            // EULA PDF-knop voor gebruikers
+            if itemType == "user" {
+                Button(action: {
+                    guard let userId = itemId as Int? else { return }
+                    print("[DEBUG] Fetching EULAs for userId: \(userId)")
+                    Task {
+                        let eulas = await apiClient.fetchUserEULAs(userId: userId)
+                        if let eula = eulas.first, let pdfUrl = eula.url, pdfUrl.lowercased().hasSuffix(".pdf") {
+                            print("[DEBUG] Download EULA PDF: \(pdfUrl)")
+                            if let localUrl = await apiClient.downloadFile(from: pdfUrl) {
+                                print("[DEBUG] Local EULA PDF path: \(localUrl.path)")
+                                self.localPdfUrl = localUrl
+                                self.isShowingPdf = true
+                            } else {
+                                print("[DEBUG] EULA PDF download failed")
+                            }
+                        } else {
+                            print("[DEBUG] No EULA PDF found for user")
+                        }
+                    }
+                }) {
+                    Label("Bekijk EULA PDF", systemImage: "doc.richtext")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                }
+                .padding(.top, 4)
+            }
         }
         .padding()
         .background(
@@ -176,5 +232,34 @@ struct HistoryView: View {
         }
         // underscores vervangen door spaties, hoofdletter aan begin
         return cleaned.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    // SafariView wrapper voor PDF
+    struct SafariView: UIViewControllerRepresentable {
+        let url: URL
+        func makeUIViewController(context: Context) -> some UIViewController {
+            let vc = SFSafariViewController(url: url)
+            return vc
+        }
+        func updateUIViewController(_ uiViewController: UIViewControllerType, context: Context) {}
+    }
+
+    struct PDFPreview: UIViewControllerRepresentable {
+        let url: URL
+        func makeUIViewController(context: Context) -> QLPreviewController {
+            let controller = QLPreviewController()
+            controller.dataSource = context.coordinator
+            return controller
+        }
+        func updateUIViewController(_ controller: QLPreviewController, context: Context) {}
+        func makeCoordinator() -> Coordinator {
+            Coordinator(url: url)
+        }
+        class Coordinator: NSObject, QLPreviewControllerDataSource {
+            let url: URL
+            init(url: URL) { self.url = url }
+            func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+            func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { url as QLPreviewItem }
+        }
     }
 }

@@ -278,4 +278,59 @@ class SnipeITAPIClient: ObservableObject {
             return []
         }
     }
+
+    /// Download een bestand via een geauthenticeerde request en sla het tijdelijk op
+    func downloadFile(from url: String) async -> URL? {
+        guard let fileUrl = URL(string: url), !apiToken.isEmpty else { return nil }
+        var request = URLRequest(url: fileUrl)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                print("Download failed: status code \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                return nil
+            }
+            let tempDir = FileManager.default.temporaryDirectory
+            let fileName = fileUrl.lastPathComponent
+            let localUrl = tempDir.appendingPathComponent(UUID().uuidString + "_" + fileName)
+            try data.write(to: localUrl)
+            return localUrl
+        } catch {
+            print("Error downloading file: \(error)")
+            return nil
+        }
+    }
+
+    /// Haal de geaccepteerde EULAs van een gebruiker op via de API
+    func fetchUserEULAs(userId: Int) async -> [ActivityFile] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/users/\(userId)/eulas") else {
+            print("Invalid URL for user EULAs")
+            return []
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let rows = json["rows"] as? [[String: Any]] {
+                return rows.compactMap { row in
+                    if let file = row["file"] as? [String: Any] {
+                        let url = file["url"] as? String
+                        let filename = file["filename"] as? String
+                        return ActivityFile(url: url, filename: filename)
+                    }
+                    return nil
+                }
+            }
+            // Fallback: probeer te decoderen als array van ActivityFile
+            if let files = try? JSONDecoder().decode([ActivityFile].self, from: data) {
+                return files
+            }
+        } catch {
+            print("Error fetching user EULAs: \(error)")
+        }
+        return []
+    }
 } 

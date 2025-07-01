@@ -456,6 +456,7 @@ struct Activity: Codable, Identifiable {
     let log_meta: [String: LogMetaChange]?
     let admin: ActivityUser?
     let created_by: ActivityUser?
+    let file: ActivityFile?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -466,6 +467,7 @@ struct Activity: Codable, Identifiable {
         case log_meta
         case admin
         case created_by
+        case file
     }
 
     var decodedNote: String {
@@ -489,4 +491,9 @@ struct ActivityUser: Codable {
 struct LogMetaChange: Codable {
     let old: String?
     let new: String?
+}
+
+struct ActivityFile: Codable {
+    let url: String?
+    let filename: String?
 } 
