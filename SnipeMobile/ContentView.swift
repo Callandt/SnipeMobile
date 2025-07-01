@@ -12,6 +12,11 @@ struct ContentView: View {
     @State private var navigationPath = NavigationPath()
     @State private var isRefreshing: Bool = false
     @State private var hasLoadedInitialAssets: Bool = false
+    @State private var assetDetailTab: Int = 0
+    @State private var userDetailTab: Int = 0
+    @State private var locationDetailTab: Int = 0
+    @State private var accessoryDetailTab: Int = 0
+    @EnvironmentObject var appSettings: AppSettings
 
     let categories = ["Hardware", "Accessories", "Users", "Locations"]
 
@@ -79,36 +84,36 @@ struct ContentView: View {
                         assetListView
                         scanQRButton
                     }
-                    .toolbar {
-                        ToolbarItem(placement: .principal) {
-                            Text("SnipeMobile")
-                                .font(.title2)
-                                .fontWeight(.bold)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        Text("SnipeMobile")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .padding(.top, 20)
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: {
+                            showingSettings = true
+                        }) {
+                            Image(systemName: "gearshape")
                                 .foregroundColor(.primary)
                                 .padding(.top, 20)
                         }
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button(action: {
-                                showingSettings = true
-                            }) {
-                                Image(systemName: "gearshape")
-                                    .foregroundColor(.primary)
-                                    .padding(.top, 20)
-                            }
-                        }
                     }
-                    .navigationDestination(for: Asset.self) { asset in
-                        AssetDetailView(asset: asset, apiClient: apiClient)
-                    }
-                    .navigationDestination(for: User.self) { user in
-                        UserDetailView(user: user, apiClient: apiClient)
-                    }
-                    .navigationDestination(for: Location.self) { location in
-                        LocationDetailView(location: location, apiClient: apiClient)
-                    }
-                    .navigationDestination(for: Accessory.self) { accessory in
-                        AccessoryDetailView(accessory: accessory, apiClient: apiClient)
-                    }
+                }
+                .navigationDestination(for: Asset.self) { asset in
+                    AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)
+                }
+                .navigationDestination(for: User.self) { user in
+                    UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab)
+                }
+                .navigationDestination(for: Location.self) { location in
+                    LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab)
+                }
+                .navigationDestination(for: Accessory.self) { accessory in
+                    AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $accessoryDetailTab)
                 }
                 .onChange(of: selectedCategory) {
                     searchText = ""
@@ -145,6 +150,10 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView(apiClient: apiClient)
+                    .preferredColorScheme(
+                        appSettings.appTheme == "light" ? .light :
+                        appSettings.appTheme == "dark" ? .dark : nil
+                    )
             }
             .onAppear {
                 AVCaptureDevice.requestAccess(for: .video) { granted in
@@ -162,7 +171,7 @@ struct ContentView: View {
                 }
             }
         } else {
-            ConfigView(apiClient: apiClient)
+            Text("No data yet. Please configure your API in Settings to see your assets.")
         }
     }
 
@@ -269,7 +278,12 @@ struct ContentView: View {
     private var assetListView: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                if apiClient.isLoading && !isRefreshing {
+                if !apiClient.isConfigured {
+                    Text("No data yet. Please configure your API in Settings to see your assets.")
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                } else if apiClient.isLoading && !isRefreshing {
                     if selectedCategory == "Hardware" {
                         ProgressView("Loading assets...")
                             .progressViewStyle(CircularProgressViewStyle())
@@ -319,10 +333,12 @@ struct ContentView: View {
             }
         }
         .refreshable {
-            isRefreshing = true
-            await apiClient.fetchPrimaryThenBackground()
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s delay voor UI sync
-            isRefreshing = false
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchPrimaryThenBackground()
+                try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s delay voor UI sync
+                isRefreshing = false
+            }
         }
     }
 

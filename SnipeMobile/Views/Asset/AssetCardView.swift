@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AssetCardView: View {
     let asset: Asset
+    @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -13,30 +14,30 @@ struct AssetCardView: View {
                     Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
                         .font(.headline)
                         .foregroundColor(.primary)
-                    Text("Tag: \(asset.decodedAssetTag)")
+                    Text("Tag: " + asset.decodedAssetTag)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text("Status: \(asset.statusLabel.statusMeta)")
+                    Text("Status: " + asset.statusLabel.statusMeta)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
             }
             if !asset.decodedAssignedToName.isEmpty {
-                Text("Assigned to: \(asset.decodedAssignedToName)")
+                Text("Assigned to: " + asset.decodedAssignedToName)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
             if !asset.decodedLocationName.isEmpty {
-                Text("Location: \(asset.decodedLocationName)")
+                Text("Location: " + asset.decodedLocationName)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
         .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-        .padding(.horizontal)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.07), radius: 4, x: 0, y: 2)
     }
 } 

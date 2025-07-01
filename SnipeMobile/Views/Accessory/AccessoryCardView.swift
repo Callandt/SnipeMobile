@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccessoryCardView: View {
     let accessory: Accessory
+    @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -13,11 +14,11 @@ struct AccessoryCardView: View {
                     Text(accessory.decodedName)
                         .font(.headline)
                         .foregroundColor(.primary)
-                    Text("tag: \(accessory.decodedAssetTag)")
+                    Text("Tag: " + accessory.decodedAssetTag)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
-                        Text("manufacturer: \(manufacturerName)")
+                        Text("Manufacturer: " + manufacturerName)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     }
@@ -25,20 +26,20 @@ struct AccessoryCardView: View {
                 Spacer()
             }
             if !accessory.decodedAssignedToName.isEmpty {
-                Text("Assigned to: \(accessory.decodedAssignedToName)")
+                Text("Assigned to: " + accessory.decodedAssignedToName)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
             if !accessory.decodedLocationName.isEmpty {
-                Text("Location: \(accessory.decodedLocationName)")
+                Text("Location: " + accessory.decodedLocationName)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
         .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-        .padding(.horizontal)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.07), radius: 4, x: 0, y: 2)
     }
 } 

@@ -15,6 +15,7 @@ struct HistoryView: View {
     @State private var openPdfUrl: PdfUrl? = nil
     @State private var localPdfUrl: URL? = nil
     @State private var isShowingPdf = false
+    @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
         Group {
@@ -139,12 +140,12 @@ struct HistoryView: View {
                 .padding(.top, 2)
             }
             // Toon ontvanger bij checkout
-            let isCheckout = activity.actionType.lowercased().contains("check") && activity.actionType.lowercased().contains("uit")
+            let isCheckout = activity.actionType.lowercased().contains("check") && activity.actionType.lowercased().contains("out")
             if isCheckout, let target = activity.target, target.type == "user" {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.right.circle")
                         .foregroundColor(.accentColor)
-                    Text("To: \(HTMLDecoder.decode(target.name))")
+                    Text("To: ") + Text(HTMLDecoder.decode(target.name))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -153,7 +154,7 @@ struct HistoryView: View {
             // PDF-link tonen indien aanwezig
             if let pdfUrl = activity.file?.url, pdfUrl.lowercased().hasSuffix(".pdf") {
                 Button(action: { openPdfUrl = PdfUrl(url: pdfUrl) }) {
-                    Label("Bekijk PDF", systemImage: "doc.richtext")
+                    Label("View PDF", systemImage: "doc.richtext")
                         .font(.caption)
                         .foregroundColor(.accentColor)
                 }
@@ -232,6 +233,17 @@ struct HistoryView: View {
         }
         // underscores vervangen door spaties, hoofdletter aan begin
         return cleaned.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    // Helper voor NL actietypes
+    private func prettifyActionTypeNL(_ type: String) -> String {
+        let lower = type.lowercased()
+        if lower.contains("check") && lower.contains("uit") { return "Uitgecheckt" }
+        if lower.contains("check") && lower.contains("in") { return "Ingecheckt" }
+        if lower.contains("update") { return "Bijgewerkt" }
+        if lower.contains("create") { return "Aangemaakt" }
+        if lower.contains("delete") { return "Verwijderd" }
+        return type.capitalized
     }
 
     // SafariView wrapper voor PDF

@@ -3,12 +3,13 @@ import SwiftUI
 struct UserDetailView: View {
     let user: User
     @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var selectedTab: Int
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
-    @State private var selectedTab = 0
     @StateObject private var accessoryHistoryViewModel = HistoryViewModel()
     @State private var accessoryHistory: [Activity] = []
     @State private var userActivity: [Activity] = []
+    @State private var assetDetailTab: Int = 0
 
     private var assignedItems: [AssignedItem] {
         let assetItems = apiClient.assets.filter { $0.assignedTo?.id == user.id }.map { AssignedItem.asset($0) }
@@ -45,6 +46,28 @@ struct UserDetailView: View {
             switch self {
             case .asset(let asset): return asset.id
             case .accessory(let accessory): return accessory.id + 1_000_000 // voorkom id-conflict
+            }
+        }
+    }
+
+    var assignedAssetsSection: some View {
+        VStack(spacing: 10) {
+            ForEach(assignedItems) { item in
+                switch item {
+                case .asset(let asset):
+                    NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
+                        AssetCardView(asset: asset)
+                    }
+                case .accessory(let accessory):
+                    NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: .constant(0))) {
+                        AccessoryCardView(accessory: accessory)
+                    }
+                }
+            }
+            ForEach(actuallyAssignedAccessories) { accessory in
+                NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: .constant(0))) {
+                    AccessoryCardView(accessory: accessory)
+                }
             }
         }
     }
@@ -95,28 +118,8 @@ struct UserDetailView: View {
                         // --- Scrollable Lists ---
                         ScrollView(.vertical) {
                             VStack(spacing: 30) {
-                                // Assigned Assets & Accessories Section
                                 if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
-                                    VStack(spacing: 10) {
-                                        ForEach(assignedItems) { item in
-                                            switch item {
-                                            case .asset(let asset):
-                                                NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
-                                                    AssetCardView(asset: asset)
-                                                }
-                                            case .accessory(let accessory):
-                                                NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient)) {
-                                                    AccessoryCardView(accessory: accessory)
-                                                }
-                                            }
-                                        }
-                                        // Accessoires die alleen via history assigned zijn
-                                        ForEach(actuallyAssignedAccessories) { accessory in
-                                            NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient)) {
-                                                AccessoryCardView(accessory: accessory)
-                                            }
-                                        }
-                                    }
+                                    assignedAssetsSection
                                 }
                             }
                             .padding(.vertical)

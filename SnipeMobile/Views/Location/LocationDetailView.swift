@@ -3,6 +3,9 @@ import SwiftUI
 struct LocationDetailView: View {
     let location: Location
     @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var selectedTab: Int
+    @State private var assetDetailTab: Int = 0
+    @State private var userDetailTab: Int = 0
 
     // Assets whose default or ready-to-deploy location is this one.
     private var assetsAtLocation: [Asset] {
@@ -15,8 +18,6 @@ struct LocationDetailView: View {
     private var usersAtLocation: [User] {
         apiClient.users.filter { $0.location?.id == location.id }
     }
-
-    @State private var selectedTab = 0
 
     var body: some View {
         VStack {
@@ -32,7 +33,7 @@ struct LocationDetailView: View {
                     if !usersAtLocation.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(usersAtLocation) { user in
-                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
+                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab)) {
                                     UserCardView(user: user)
                                 }
                             }
@@ -48,7 +49,7 @@ struct LocationDetailView: View {
                     if !assetsAtLocation.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(assetsAtLocation) { asset in
-                                NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient)) {
+                                NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
                                     AssetCardView(asset: asset)
                                 }
                             }

@@ -3,9 +3,9 @@ import SwiftUI
 struct AccessoryDetailView: View {
     let accessory: Accessory
     @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var selectedTab: Int
     @State private var assignedUsers: [User] = []
     @State private var isLoading = true
-    @State private var selectedTab = 0
     @StateObject private var historyViewModel = HistoryViewModel()
 
     var body: some View {
@@ -43,25 +43,7 @@ struct AccessoryDetailView: View {
                         .padding(.horizontal)
 
                         // --- Assigned Users List ---
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Assigned To")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            if historyViewModel.isLoading {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity)
-                            } else if currentlyAssignedUsers.isEmpty {
-                                Text("Not assigned to any user.")
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal)
-                            } else {
-                                ForEach(currentlyAssignedUsers) { user in
-                                    NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
-                                        UserCardView(user: user)
-                                    }
-                                }
-                            }
-                        }
+                        assignedUsersSection
                         Spacer()
                     }
                     .padding(.top)
@@ -84,6 +66,18 @@ struct AccessoryDetailView: View {
         }
         .onAppear {
             historyViewModel.fetchHistory(itemType: "accessory", itemId: accessory.id, apiClient: apiClient)
+            if apiClient.users.isEmpty {
+                Task {
+                    await apiClient.fetchUsers()
+                }
+            }
+        }
+        .onChange(of: accessory.id) {
+            if apiClient.users.isEmpty {
+                Task {
+                    await apiClient.fetchUsers()
+                }
+            }
         }
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 10) {
@@ -108,7 +102,6 @@ struct AccessoryDetailView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
-            .background(.ultraThinMaterial)
         }
     }
 
@@ -161,5 +154,27 @@ struct AccessoryDetailView: View {
         let result = users.filter { assignedUserIds.contains($0.id) }
         print("DEBUG: Final assigned users: \(result.map { $0.name })")
         return result
+    }
+
+    var assignedUsersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Assigned To")
+                .font(.headline)
+                .padding(.horizontal)
+            if historyViewModel.isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+            } else if currentlyAssignedUsers.isEmpty {
+                Text("Not assigned to any user.")
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+            } else {
+                ForEach(currentlyAssignedUsers) { user in
+                    NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: .constant(0))) {
+                        UserCardView(user: user)
+                    }
+                }
+            }
+        }
     }
 } 

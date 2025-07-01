@@ -3,12 +3,13 @@ import SwiftUI
 struct AssetDetailView: View {
     let asset: Asset
     @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var selectedTab: Int
     @State private var userId: String = ""
     @Environment(\.dismiss) var dismiss
     @State private var hasLoggedAppearance = false
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
-    @State private var selectedTab = 0
+    @State private var userDetailTab: Int = 0
 
     private var assignedUser: User? {
         guard let assignedToId = asset.assignedTo?.id else { return nil }
@@ -79,7 +80,6 @@ struct AssetDetailView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
-            .background(.ultraThinMaterial)
         }
     }
 
@@ -144,7 +144,7 @@ struct AssetDetailView: View {
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
 
-                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient)) {
+                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab)) {
                                     HStack {
                                         Image(systemName: "person.circle")
                                             .foregroundColor(.gray)
