@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Bucket
+   uuid = "057A98C0-1E74-4E7E-9F44-E72731D9D3F7"
+   type = "1"
+   version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "SnipeMobile/Views/Asset/AssetEditSheet.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "44"
+            endingLineNumber = "44"
+            landmarkName = "AssetEditSheet"
+            landmarkType = "14">
+            <Locations>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - 9e09376e7a716d65"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.showEolDate.getter : Swift.Bool"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode%20Apps/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - e3571b7e55db571"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.showEolDate.setter : Swift.Bool"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode%20Apps/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - f48695cc6108b62"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.showEolDate.modify : Swift.Bool"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode%20Apps/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - f4879133bac392a9"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.$showEolDate.getter : SwiftUI.Binding&lt;Swift.Bool&gt;"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode%20Apps/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "0"
+                  endingLineNumber = "0">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
+</Bucket>

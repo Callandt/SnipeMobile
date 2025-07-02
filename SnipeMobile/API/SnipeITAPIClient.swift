@@ -387,35 +387,15 @@ class SnipeITAPIClient: ObservableObject {
     struct FieldDefinition: Codable, Identifiable {
         let id: Int
         let name: String
-        let element: String?
-        let options: [String]?
+        let type: String?
+        let field_values_array: [String]?
         
         enum CodingKeys: String, CodingKey {
             case id
             case name
-            case element
-            case options
-            case choices
-            case values
+            case type
+            case field_values_array
         }
-        
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            id = try container.decode(Int.self, forKey: .id)
-            name = try container.decode(String.self, forKey: .name)
-            element = try? container.decodeIfPresent(String.self, forKey: .element)
-            // Try all possible keys for options
-            if let opts = try? container.decodeIfPresent([String].self, forKey: .options) {
-                options = opts
-            } else if let opts = try? container.decodeIfPresent([String].self, forKey: .choices) {
-                options = opts
-            } else if let opts = try? container.decodeIfPresent([String].self, forKey: .values) {
-                options = opts
-            } else {
-                options = nil
-            }
-        }
-        func encode(to encoder: Encoder) throws {}
     }
 
     @MainActor
@@ -436,6 +416,10 @@ class SnipeITAPIClient: ObservableObject {
                 let fields = try decoder.decode([FieldDefinition].self, from: fieldData)
                 await MainActor.run {
                     self.fieldDefinitions = fields
+                    print("DEBUG: fetchFieldDefinitions count=\(fields.count)")
+                    for f in fields {
+                        print("DEBUG: FieldDef name=\(f.name), type=\(f.type ?? "") field_values_array=\(f.field_values_array?.joined(separator: ", ") ?? "")")
+                    }
                 }
             }
         } catch {

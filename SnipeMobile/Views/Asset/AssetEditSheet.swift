@@ -126,47 +126,19 @@ struct AssetEditSheet: View {
                     }
                 }
             }
+            // Status Picker: huidige status eerst, dan de rest
             Picker("Status", selection: $selectedStatusId) {
                 ForEach(apiClient.statusLabels, id: \.id) { label in
                     Text(label.name).tag(label.id)
                 }
             }
-            if !apiClient.assets.isEmpty {
-                let categoryPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { asset in
-                    guard let cat = asset.category else { return nil }
-                    return IdNamePair(id: cat.id, name: cat.name)
-                })).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                if !categoryPairs.isEmpty {
-                    Picker("Category", selection: $selectedCategoryId) {
-                        ForEach(categoryPairs) { pair in
-                            Text(pair.name).tag(pair.id)
-                        }
-                    }
-                }
+        }
+        .onAppear {
+            print("DEBUG: aantal statusLabels: \(apiClient.statusLabels.count)")
+            for label in apiClient.statusLabels {
+                print("DEBUG: statusLabel: id=\(label.id), name=\(label.name)")
             }
-            if !apiClient.assets.isEmpty {
-                let manufacturerPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { asset in
-                    guard let man = asset.manufacturer else { return nil }
-                    return IdNamePair(id: man.id, name: man.name)
-                })).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                if !manufacturerPairs.isEmpty {
-                    Picker("Manufacturer", selection: $selectedManufacturerId) {
-                        ForEach(manufacturerPairs) { pair in
-                            Text(pair.name).tag(pair.id)
-                        }
-                    }
-                }
-            }
-            if !apiClient.locations.isEmpty {
-                let locationPairs: [IdNamePair] = apiClient.locations.map { IdNamePair(id: $0.id, name: $0.name) }
-                if !locationPairs.isEmpty {
-                    Picker("Location", selection: $selectedLocationId) {
-                        ForEach(locationPairs) { pair in
-                            Text(pair.name).tag(pair.id)
-                        }
-                    }
-                }
-            }
+            print("DEBUG: selectedStatusId: \(selectedStatusId)")
         }
     }
 
@@ -200,48 +172,57 @@ struct AssetEditSheet: View {
         }
     }
 
+    private func debugCustomFields(customFieldDefs: [SnipeITAPIClient.FieldDefinition], editCustomFields: [String: String]) {
+        let defsString = customFieldDefs.map { "\($0.name):\($0.type ?? "")" }.joined(separator: ", ")
+        let fieldsString = editCustomFields.map { "\($0.key):\($0.value)" }.joined(separator: ", ")
+        print("DEBUG: customFieldDefs: \(defsString)")
+        print("DEBUG: editCustomFields: \(fieldsString)")
+        for key in editCustomFields.keys.sorted() {
+            if let def = customFieldDefs.first(where: { $0.name == key }) {
+                let type = def.type ?? "(geen type)"
+                let options = def.field_values_array?.joined(separator: ", ") ?? "(geen opties)"
+                print("DEBUG: veld \(key): type=\(type), opties=\(options)")
+            } else {
+                print("DEBUG: veld \(key): GEEN definitie gevonden")
+            }
+        }
+    }
+
     private var customFieldsSection: some View {
         Section(header: Text("Custom Fields")) {
-            let currentFieldset = apiClient.fieldsets?.first(where: { fs in
-                (fs.models?.rows.contains { $0.id == selectedModelId }) ?? false
-            })
-            let customFieldDefs = currentFieldset?.fields.rows ?? []
-            if customFieldDefs.isEmpty {
+            let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
+            if editCustomFields.isEmpty {
                 Text("No custom fields")
                     .foregroundColor(.secondary)
             } else {
-                ForEach(customFieldDefs, id: \.id) { fieldDef in
-                    Group {
-                        if fieldDef.type == "listbox", let options = fieldDef.field_values_array, !options.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(fieldDef.name)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Picker(fieldDef.name, selection: Binding(
-                                    get: { editCustomFields[fieldDef.name] ?? options.first ?? "" },
-                                    set: { editCustomFields[fieldDef.name] = $0 }
-                                )) {
-                                    ForEach(options, id: \.self) { option in
-                                        Text(option).tag(option)
-                                    }
-                                }
+                ForEach(Array(editCustomFields.keys.sorted()), id: \.self) { key in
+                    let fieldDef = customFieldDefs.first(where: { $0.name == key })
+                    if let fieldDef = fieldDef, fieldDef.type == "listbox", let options = fieldDef.field_values_array {
+                        Picker(key, selection: Binding(
+                            get: { editCustomFields[key] ?? "" },
+                            set: { editCustomFields[key] = $0 }
+                        )) {
+                            ForEach(options, id: \.self) { option in
+                                Text(option).tag(option)
                             }
-                        } else if fieldDef.type == "text" {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(fieldDef.name)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField(fieldDef.name, text: Binding(
-                                    get: { editCustomFields[fieldDef.name] ?? "" },
-                                    set: { editCustomFields[fieldDef.name] = $0 }
-                                ))
-                            }
-                        } else {
-                            EmptyView()
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(key)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(key, text: Binding(
+                                get: { editCustomFields[key] ?? "" },
+                                set: { editCustomFields[key] = $0 }
+                            ))
                         }
                     }
                 }
             }
+        }
+        .onAppear {
+            let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
+            debugCustomFields(customFieldDefs: customFieldDefs, editCustomFields: editCustomFields)
         }
     }
 

@@ -202,11 +202,10 @@ struct Model: Codable {
 struct StatusLabel: Codable {
     let id: Int
     let name: String
-    let statusType: String
-    let statusMeta: String
+    let type: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, statusType = "status_type", statusMeta = "status_meta"
+        case id, name, type
     }
 }
 
@@ -374,7 +373,7 @@ struct Accessory: Identifiable, Codable, Hashable {
         self.id = id
         self.name = name
         self.assetTag = assetTag
-        self.statusLabel = statusLabel ?? StatusLabel(id: 0, name: "Unknown", statusType: "unknown", statusMeta: "unknown")
+        self.statusLabel = statusLabel ?? StatusLabel(id: 0, name: "Unknown", type: nil)
         self.assignedTo = assignedTo
         self.location = location
         self.manufacturer = manufacturer

@@ -120,8 +120,12 @@ struct AssetDetailView: View {
         }
         .onAppear {
             if !hasLoggedAppearance {
-                print("AssetDetailView loaded, statusType: \(asset.statusLabel.statusType)")
+                print("AssetDetailView loaded, statusType: \(asset.statusLabel.name)")
                 hasLoggedAppearance = true
+            }
+            Task {
+                await apiClient.fetchFieldDefinitions()
+                await apiClient.fetchStatusLabels()
             }
             selectedModelId = asset.model?.id ?? 0
             // Init date fields
@@ -238,12 +242,13 @@ struct AssetDetailView: View {
                         .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                .disabled(apiClient.statusLabels.isEmpty)
                 Button(action: {}) {
-                    Text(asset.statusLabel.statusMeta == "deployed" ? "Check In" : "Check Out")
+                    Text(asset.statusLabel.name == "deployed" ? "Check In" : "Check Out")
                         .font(.headline)
                         .padding()
                         .frame(maxWidth: .infinity)
-                        .background(asset.statusLabel.statusMeta == "deployed" ? Color.green : Color.blue)
+                        .background(asset.statusLabel.name == "deployed" ? Color.green : Color.blue)
                         .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
@@ -320,8 +325,8 @@ struct AssetDetailView: View {
                             if !asset.decodedManufacturerName.isEmpty {
                                 copyableDetailRow(label: "Manufacturer", value: asset.decodedManufacturerName)
                             }
-                            if !asset.statusLabel.statusMeta.isEmpty {
-                                copyableDetailRow(label: "Status", value: asset.statusLabel.statusMeta)
+                            if !asset.statusLabel.name.isEmpty {
+                                copyableDetailRow(label: "Status", value: asset.statusLabel.name)
                             }
                             if !asset.decodedCategoryName.isEmpty {
                                 copyableDetailRow(label: "Category", value: asset.decodedCategoryName)
@@ -332,7 +337,7 @@ struct AssetDetailView: View {
                         .cornerRadius(12)
 
                         // Assigned To Section
-                        if asset.statusLabel.statusMeta.lowercased() == "deployed", let user = assignedUser {
+                        if asset.statusLabel.name.lowercased() == "deployed", let user = assignedUser {
                             VStack(spacing: 15) {
                                 Text("Assigned To")
                                     .font(.headline)
@@ -708,7 +713,7 @@ struct AssetDetailView: View {
                     .foregroundColor(.secondary)
             } else {
                 ForEach(Array(editCustomFields.keys.sorted()), id: \.self) { key in
-                    if let fieldDef = customFieldDefs.first(where: { $0.name == key }), fieldDef.element == "piclist", let options = fieldDef.options {
+                    if let fieldDef = customFieldDefs.first(where: { $0.name == key }), fieldDef.type == "listbox", let options = fieldDef.field_values_array {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(key)
                                 .font(.caption)
