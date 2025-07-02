@@ -351,6 +351,10 @@ class SnipeITAPIClient: ObservableObject {
         let purchase_cost: String?
         let book_value: String?
         let custom_fields: [String: String]?
+        let purchase_date: String?
+        let next_audit_date: String?
+        let expected_checkin: String?
+        let eol_date: String?
     }
 
     func updateAsset(assetId: Int, update: AssetUpdateRequest) async -> Bool {

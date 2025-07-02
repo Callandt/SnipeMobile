@@ -42,6 +42,7 @@ struct AssetEditSheet: View {
     @Binding var showWarrantyExpires: Bool
     @Binding var showExpectedCheckin: Bool
     @Binding var showEolDate: Bool
+    @State private var showArchiveError = false
 
     var body: some View {
         NavigationView {
@@ -61,11 +62,44 @@ struct AssetEditSheet: View {
                         ProgressView()
                     } else {
                         Button("Save") {
+                            // Check for archive status while assigned
+                            let archiveStatus = apiClient.statusLabels.first { $0.name.lowercased() == "archived" }?.id
+                            let isArchiving = selectedStatusId == archiveStatus
+                            let isAssigned = (asset.assignedTo != nil) || (asset.location != nil)
+                            if isArchiving && isAssigned {
+                                showArchiveError = true
+                                return
+                            }
                             isSaving = true
                             Task {
-                                // Hier komt je save-logica (API-call, etc.)
-                                // Simuleer een korte delay voor demo:
-                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                let formatter = DateFormatter()
+                                formatter.dateFormat = "yyyy-MM-dd"
+                                formatter.timeZone = TimeZone(secondsFromGMT: 0)
+                                let purchaseDateString = hasPurchaseDate ? formatter.string(from: editPurchaseDate) : nil
+                                let nextAuditDateString = hasNextAuditDate ? formatter.string(from: editNextAuditDate) : nil
+                                let expectedCheckinString = hasExpectedCheckin ? formatter.string(from: editExpectedCheckin) : nil
+                                let eolDateString = hasEolDate ? formatter.string(from: editEolDate) : nil
+                                let update = SnipeITAPIClient.AssetUpdateRequest(
+                                    name: editName,
+                                    asset_tag: editAssetTag,
+                                    serial: editSerial,
+                                    model_id: selectedModelId,
+                                    status_id: selectedStatusId,
+                                    category_id: selectedCategoryId,
+                                    manufacturer_id: selectedManufacturerId,
+                                    supplier_id: selectedSupplierId,
+                                    notes: editNotes,
+                                    order_number: editOrderNumber,
+                                    location_id: selectedLocationId,
+                                    purchase_cost: editPurchaseCost,
+                                    book_value: editBookValue,
+                                    custom_fields: editCustomFields,
+                                    purchase_date: purchaseDateString,
+                                    next_audit_date: nextAuditDateString,
+                                    expected_checkin: expectedCheckinString,
+                                    eol_date: eolDateString
+                                )
+                                _ = await apiClient.updateAsset(assetId: asset.id, update: update)
                                 isSaving = false
                                 isPresented = false
                                 showSaveSuccess = true
@@ -76,6 +110,9 @@ struct AssetEditSheet: View {
                         }
                     }
                 }
+            }
+            .alert(isPresented: $showArchiveError) {
+                Alert(title: Text("Kan niet archiveren"), message: Text("Deze asset is nog toegewezen aan een gebruiker of locatie. Check de asset eerst in voordat je deze op 'archived' zet."), dismissButton: .default(Text("OK")))
             }
         }
     }
@@ -104,9 +141,8 @@ struct AssetEditSheet: View {
                         Text(pair.name).tag(pair.id)
                     }
                 }
-                .onChange(of: selectedModelId) {
-                    updateCustomFieldsForModel(selectedModelId)
-                }
+                .disabled(true)
+                .opacity(0.6)
             }
             if !apiClient.assets.isEmpty {
                 Picker("Supplier", selection: $selectedSupplierId) {
@@ -161,6 +197,33 @@ struct AssetEditSheet: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 TextField("Warranty Months", text: $editWarrantyMonths)
+            }
+            // Purchase Date
+            HStack {
+                Toggle("Set Purchase Date", isOn: $hasPurchaseDate)
+                    .font(.caption)
+                if hasPurchaseDate {
+                    DatePicker("", selection: $editPurchaseDate, displayedComponents: .date)
+                        .labelsHidden()
+                }
+            }
+            // EOL Date (moved after Purchase Date)
+            HStack {
+                Toggle("Set EOL Date", isOn: $hasEolDate)
+                    .font(.caption)
+                if hasEolDate {
+                    DatePicker("", selection: $editEolDate, displayedComponents: .date)
+                        .labelsHidden()
+                }
+            }
+            // Next Audit Date
+            HStack {
+                Toggle("Set Next Audit Date", isOn: $hasNextAuditDate)
+                    .font(.caption)
+                if hasNextAuditDate {
+                    DatePicker("", selection: $editNextAuditDate, displayedComponents: .date)
+                        .labelsHidden()
+                }
             }
         }
     }

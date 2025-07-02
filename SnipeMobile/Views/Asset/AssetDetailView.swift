@@ -130,7 +130,10 @@ struct AssetDetailView: View {
             }
             selectedModelId = asset.model?.id ?? 0
             // Init date fields
-            if let purchaseDateStr = asset.purchaseDate?.date, let d = ISO8601DateFormatter().date(from: purchaseDateStr) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            if let purchaseDateStr = asset.purchaseDate?.date, let d = formatter.date(from: purchaseDateStr) {
                 editPurchaseDate = d
                 hasPurchaseDate = true
                 showPurchaseDate = true
@@ -138,7 +141,7 @@ struct AssetDetailView: View {
                 hasPurchaseDate = false
                 showPurchaseDate = false
             }
-            if let nextAuditDateStr = asset.nextAuditDate?.date, let d = ISO8601DateFormatter().date(from: nextAuditDateStr) {
+            if let nextAuditDateStr = asset.nextAuditDate?.date, let d = formatter.date(from: nextAuditDateStr) {
                 editNextAuditDate = d
                 hasNextAuditDate = true
                 showNextAuditDate = true
@@ -146,15 +149,7 @@ struct AssetDetailView: View {
                 hasNextAuditDate = false
                 showNextAuditDate = false
             }
-            if let warrantyExpiresStr = asset.warrantyExpires?.date, let d = ISO8601DateFormatter().date(from: warrantyExpiresStr) {
-                editWarrantyExpires = d
-                hasWarrantyExpires = true
-                showWarrantyExpires = true
-            } else {
-                hasWarrantyExpires = false
-                showWarrantyExpires = false
-            }
-            if let expectedCheckinStr = asset.expectedCheckin?.date, let d = ISO8601DateFormatter().date(from: expectedCheckinStr) {
+            if let expectedCheckinStr = asset.expectedCheckin?.date, let d = formatter.date(from: expectedCheckinStr) {
                 editExpectedCheckin = d
                 hasExpectedCheckin = true
                 showExpectedCheckin = true
@@ -162,7 +157,7 @@ struct AssetDetailView: View {
                 hasExpectedCheckin = false
                 showExpectedCheckin = false
             }
-            if let eolDateStr = asset.assetEolDate?.date, let d = ISO8601DateFormatter().date(from: eolDateStr) {
+            if let eolDateStr = asset.assetEolDate?.date, let d = formatter.date(from: eolDateStr) {
                 editEolDate = d
                 hasEolDate = true
                 showEolDate = true
@@ -233,6 +228,11 @@ struct AssetDetailView: View {
                     } else if let firstLocation = apiClient.locations.first?.id {
                         selectedLocationId = firstLocation
                     }
+                    // Set hasXDate variables for pre-filled dates
+                    hasPurchaseDate = asset.purchaseDate?.date != nil
+                    hasNextAuditDate = asset.nextAuditDate?.date != nil
+                    hasEolDate = asset.assetEolDate?.date != nil
+                    hasExpectedCheckin = asset.expectedCheckin?.date != nil
                     showEditSheet = true
                 }) {
                     Text("Edit")
@@ -243,7 +243,6 @@ struct AssetDetailView: View {
                         .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .disabled(apiClient.statusLabels.isEmpty)
                 Button(action: {}) {
                     Text(asset.statusLabel.name == "deployed" ? "Check In" : "Check Out")
                         .font(.headline)
@@ -375,7 +374,6 @@ struct AssetDetailView: View {
                         let hasAnyDate =
                             (asset.purchaseDate?.formatted?.isEmpty == false) ||
                             (asset.nextAuditDate?.formatted?.isEmpty == false) ||
-                            (asset.warrantyExpires?.formatted?.isEmpty == false) ||
                             (asset.expectedCheckin?.formatted?.isEmpty == false) ||
                             (asset.assetEolDate?.formatted?.isEmpty == false) ||
                             (asset.lastAuditDate?.formatted?.isEmpty == false) ||
@@ -392,9 +390,6 @@ struct AssetDetailView: View {
                                 }
                                 if let v = asset.nextAuditDate?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: "Next Audit Date", value: v)
-                                }
-                                if let v = asset.warrantyExpires?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "Warranty Expires", value: v)
                                 }
                                 if let v = asset.expectedCheckin?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: "Expected Checkin", value: v)
@@ -669,22 +664,6 @@ struct AssetDetailView: View {
                         .font(.caption)
                     if showNextAuditDate {
                         DatePicker("", selection: $editNextAuditDate, displayedComponents: .date)
-                            .labelsHidden()
-                    }
-                }
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Warranty Expires")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                if hasWarrantyExpires {
-                    DatePicker("", selection: $editWarrantyExpires, displayedComponents: .date)
-                        .labelsHidden()
-                } else {
-                    Toggle("Set Warranty Expires", isOn: $showWarrantyExpires)
-                        .font(.caption)
-                    if showWarrantyExpires {
-                        DatePicker("", selection: $editWarrantyExpires, displayedComponents: .date)
                             .labelsHidden()
                     }
                 }
