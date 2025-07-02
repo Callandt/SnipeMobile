@@ -55,8 +55,12 @@ struct UserDetailView: View {
             ForEach(assignedItems) { item in
                 switch item {
                 case .asset(let asset):
-                    NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
-                        AssetCardView(asset: asset)
+                    Button(action: {
+                        assetDetailTab = 0
+                    }) {
+                        NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
+                            AssetCardView(asset: asset)
+                        }
                     }
                 case .accessory(let accessory):
                     NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: .constant(0))) {
@@ -191,6 +195,7 @@ struct UserDetailView: View {
             }
         }
         .onAppear {
+            selectedTab = 0
             accessoryHistoryViewModel.fetchHistory(itemType: "accessory", itemId: 0, apiClient: apiClient)
             Task {
                 self.accessoryHistory = await apiClient.fetchActivityReport()

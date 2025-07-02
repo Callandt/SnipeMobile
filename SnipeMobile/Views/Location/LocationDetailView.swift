@@ -49,8 +49,12 @@ struct LocationDetailView: View {
                     if !assetsAtLocation.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(assetsAtLocation) { asset in
-                                NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
-                                    AssetCardView(asset: asset)
+                                Button(action: {
+                                    assetDetailTab = 0
+                                }) {
+                                    NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
+                                        AssetCardView(asset: asset)
+                                    }
                                 }
                             }
                         }
@@ -72,6 +76,9 @@ struct LocationDetailView: View {
                     }
                 }
             }
+        }
+        .onAppear {
+            selectedTab = 0
         }
     }
 } 

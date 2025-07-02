@@ -119,6 +119,7 @@ struct AssetDetailView: View {
             }
         }
         .onAppear {
+            selectedTab = 0
             if !hasLoggedAppearance {
                 print("AssetDetailView loaded, statusType: \(asset.statusLabel.name)")
                 hasLoggedAppearance = true
