@@ -8,6 +8,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var accessories: [Accessory] = []
     @Published var locations: [Location] = []
     @Published var errorMessage: String?
+    @Published var lastApiMessage: String?
     @Published var isConfigured: Bool {
         didSet {
             UserDefaults.standard.set(isConfigured, forKey: "isConfigured")
@@ -231,6 +232,32 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    func checkoutAssetCustom(assetId: Int, body: [String: Any]) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkout") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Check-out gelukt!" : "Check-out mislukt.")
+                await MainActor.run { self.lastApiMessage = msg }
+                return httpResponse.statusCode == 200
+            }
+            return false
+        } catch {
+            await MainActor.run {
+                self.lastApiMessage = "Error checking out: \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
+
     func fetchActivityReport() async -> [Activity] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         var allActivities: [Activity] = []
@@ -367,21 +394,28 @@ class SnipeITAPIClient: ObservableObject {
             let body = try JSONEncoder().encode(update)
             request.httpBody = body
             let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                // Parse updated asset and update in self.assets
-                if let updatedAsset = try? JSONDecoder().decode(Asset.self, from: data) {
-                    await MainActor.run {
-                        if let idx = self.assets.firstIndex(where: { $0.id == updatedAsset.id }) {
-                            self.assets[idx] = updatedAsset
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Wijzigingen opgeslagen!" : "Opslaan mislukt.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200 {
+                    if let updatedAsset = try? JSONDecoder().decode(Asset.self, from: data) {
+                        await MainActor.run {
+                            if let idx = self.assets.firstIndex(where: { $0.id == updatedAsset.id }) {
+                                self.assets[idx] = updatedAsset
+                            }
                         }
                     }
+                    return true
                 }
-                return true
+                return false
             }
             return false
         } catch {
             await MainActor.run {
-                self.errorMessage = "Error updating asset: \(error.localizedDescription)"
+                self.lastApiMessage = "Error updating asset: \(error.localizedDescription)"
             }
             return false
         }
@@ -505,4 +539,24 @@ class SnipeITAPIClient: ObservableObject {
 
     @MainActor
     @Published var fieldsets: [Fieldset]? = nil
+
+    func checkinAsset(assetId: Int) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkin") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                return true
+            }
+            return false
+        } catch {
+            await MainActor.run {
+                errorMessage = "Error checking in: \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
 } 

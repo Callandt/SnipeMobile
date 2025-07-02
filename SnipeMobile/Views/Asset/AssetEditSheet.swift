@@ -43,6 +43,8 @@ struct AssetEditSheet: View {
     @Binding var showExpectedCheckin: Bool
     @Binding var showEolDate: Bool
     @State private var showArchiveError = false
+    @State private var showResult = false
+    @State private var resultMessage = ""
 
     var body: some View {
         NavigationView {
@@ -99,12 +101,12 @@ struct AssetEditSheet: View {
                                     expected_checkin: expectedCheckinString,
                                     eol_date: eolDateString
                                 )
-                                _ = await apiClient.updateAsset(assetId: asset.id, update: update)
+                                let success = await apiClient.updateAsset(assetId: asset.id, update: update)
                                 isSaving = false
-                                isPresented = false
-                                showSaveSuccess = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                    showSaveSuccess = false
+                                resultMessage = apiClient.lastApiMessage ?? (success ? "Wijzigingen opgeslagen!" : "Opslaan mislukt.")
+                                showResult = true
+                                if success {
+                                    isPresented = false
                                 }
                             }
                         }
@@ -113,6 +115,9 @@ struct AssetEditSheet: View {
             }
             .alert(isPresented: $showArchiveError) {
                 Alert(title: Text("Kan niet archiveren"), message: Text("Deze asset is nog toegewezen aan een gebruiker of locatie. Check de asset eerst in voordat je deze op 'archived' zet."), dismissButton: .default(Text("OK")))
+            }
+            .alert(isPresented: $showResult) {
+                Alert(title: Text("Resultaat"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
             }
         }
     }

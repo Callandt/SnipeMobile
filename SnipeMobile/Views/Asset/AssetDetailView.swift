@@ -44,6 +44,12 @@ struct AssetDetailView: View {
     @State private var showWarrantyExpires: Bool = false
     @State private var showExpectedCheckin: Bool = false
     @State private var showEolDate: Bool = false
+    @State private var showUserPicker = false
+    @State private var selectedCheckoutUserId: Int? = nil
+    @State private var showCheckInOutResult = false
+    @State private var checkInOutSuccess = false
+    @State private var checkInOutMessage = ""
+    @State private var showCheckoutSheet = false
 
     private var assignedUser: User? {
         guard let assignedToId = asset.assignedTo?.id else { return nil }
@@ -243,14 +249,35 @@ struct AssetDetailView: View {
                         .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                Button(action: {}) {
-                    Text(asset.statusLabel.name == "deployed" ? "Check In" : "Check Out")
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(asset.statusLabel.name == "deployed" ? Color.green : Color.blue)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                if asset.statusLabel.name.lowercased() == "deployed" {
+                    Button(action: {
+                        Task {
+                            let success = await apiClient.checkinAsset(assetId: asset.id)
+                            checkInOutSuccess = success
+                            checkInOutMessage = success ? "Check-in gelukt!" : (apiClient.errorMessage ?? "Check-in mislukt.")
+                            showCheckInOutResult = true
+                        }
+                    }) {
+                        Text("Check In")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.green)
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                } else {
+                    Button(action: {
+                        showCheckoutSheet = true
+                    }) {
+                        Text("Check Out")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
                 }
             }
             .padding(.horizontal)
@@ -258,6 +285,12 @@ struct AssetDetailView: View {
         }
         .sheet(isPresented: $showEditSheet) {
             editSheet
+        }
+        .sheet(isPresented: $showCheckoutSheet) {
+            AssetCheckoutSheet(apiClient: apiClient, asset: asset, isPresented: $showCheckoutSheet)
+        }
+        .alert(isPresented: $showCheckInOutResult) {
+            Alert(title: Text(checkInOutSuccess ? "Succes" : "Fout"), message: Text(checkInOutMessage), dismissButton: .default(Text("OK")))
         }
         .overlay(
             Group {
