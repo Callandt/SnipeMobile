@@ -57,6 +57,7 @@ class SnipeITAPIClient: ObservableObject {
                 group.addTask { await self.fetchUsers() }
                 group.addTask { await self.fetchAccessories() }
                 group.addTask { await self.fetchLocations() }
+                group.addTask { await self.fetchStatusLabels() }
             }
         }
     }
@@ -557,6 +558,50 @@ class SnipeITAPIClient: ObservableObject {
                 errorMessage = "Error checking in: \(error.localizedDescription)"
             }
             return false
+        }
+    }
+
+    func checkinAssetCustom(assetId: Int, body: [String: Any]) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkin") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Check-in successful!" : "Check-in failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                return httpResponse.statusCode == 200
+            }
+            return false
+        } catch {
+            await MainActor.run {
+                self.lastApiMessage = "Error checking in: \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
+
+    func validateApiCredentials() async -> String? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return "Please enter both API URL and API Key." }
+        guard let url = URL(string: "\(baseURL)/api/v1/users") else { return "Invalid URL format." }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                return nil // OK
+            } else {
+                return "Invalid API credentials or URL."
+            }
+        } catch {
+            return "Could not connect to Snipe-IT. Check your URL and API key."
         }
     }
 } 

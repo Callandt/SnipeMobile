@@ -51,7 +51,7 @@ struct UserDetailView: View {
     }
 
     var assignedAssetsSection: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 16) {
             ForEach(assignedItems) { item in
                 switch item {
                 case .asset(let asset):
@@ -74,6 +74,7 @@ struct UserDetailView: View {
                 }
             }
         }
+        .padding(.horizontal)
     }
 
     var body: some View {
@@ -127,7 +128,7 @@ struct UserDetailView: View {
                                 }
                                 
                                 if let locationName = user.location?.name, !locationName.isEmpty {
-                                    copyableDetailRow(label: "Locatie", value: locationName)
+                                    copyableDetailRow(label: "Location", value: locationName)
                                 }
                             }
                             .padding()

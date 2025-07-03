@@ -28,6 +28,9 @@ struct AssetCheckoutSheet: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 28) {
+                        Text("Check Out Asset")
+                            .font(.title2).bold()
+                            .padding(.top, 24)
                         Picker("Check out to", selection: $selectedTab) {
                             Text("User").tag(0)
                             Text("Location").tag(1)
@@ -38,7 +41,7 @@ struct AssetCheckoutSheet: View {
 
                         if selectedTab == 0 {
                             VStack(alignment: .leading, spacing: 16) {
-                                Text("Selecteer gebruiker")
+                                Text("Select user")
                                     .font(.headline)
                                     .foregroundColor(Color.primary)
                                     .padding(.horizontal, 18)
@@ -46,7 +49,7 @@ struct AssetCheckoutSheet: View {
                                 HStack {
                                     Image(systemName: "magnifyingglass")
                                         .foregroundColor(.gray)
-                                    TextField("Zoek gebruiker...", text: $userSearchText)
+                                    TextField("Search user...", text: $userSearchText)
                                         .textFieldStyle(PlainTextFieldStyle())
                                         .foregroundColor(Color.primary)
                                 }
@@ -83,7 +86,7 @@ struct AssetCheckoutSheet: View {
                             .padding(.horizontal, 10)
                         } else {
                             VStack(alignment: .leading, spacing: 16) {
-                                Text("Selecteer locatie")
+                                Text("Select location")
                                     .font(.headline)
                                     .foregroundColor(Color.primary)
                                     .padding(.horizontal, 18)
@@ -91,7 +94,7 @@ struct AssetCheckoutSheet: View {
                                 HStack {
                                     Image(systemName: "magnifyingglass")
                                         .foregroundColor(.gray)
-                                    TextField("Zoek locatie...", text: $locationSearchText)
+                                    TextField("Search location...", text: $locationSearchText)
                                         .textFieldStyle(PlainTextFieldStyle())
                                         .foregroundColor(Color.primary)
                                 }
@@ -144,7 +147,7 @@ struct AssetCheckoutSheet: View {
                                             .padding(.horizontal, 0)
                                         Picker("Status", selection: $selectedStatusId) {
                                             ForEach(deployableStatusLabels, id: \.id) { status in
-                                                Text(status.name).tag(Optional(status.id))
+                                                Text(status.statusMeta ?? "").tag(Optional(status.id))
                                             }
                                         }
                                         .pickerStyle(MenuPickerStyle())
@@ -155,7 +158,7 @@ struct AssetCheckoutSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.horizontal, 0)
                                 }
-                                TextField("Naam (custom asset naam)", text: $checkoutName)
+                                TextField("Name (custom asset name)", text: $checkoutName)
                                     .padding(12)
                                     .background(Color(.secondarySystemBackground))
                                     .cornerRadius(12)
@@ -177,9 +180,12 @@ struct AssetCheckoutSheet: View {
                             Toggle("Expected Checkin", isOn: $hasExpectedCheckin)
                                 .padding(.horizontal, 18)
                             if hasExpectedCheckin {
-                                DatePicker("Datum", selection: $expectedCheckin, displayedComponents: .date)
+                                DatePicker("Date", selection: $expectedCheckin, displayedComponents: .date)
                                     .datePickerStyle(.compact)
                                     .padding(.horizontal, 18)
+                                    .padding(.bottom, 12)
+                            } else {
+                                Spacer().frame(height: 12)
                             }
                         }
                         .background(Color(.systemBackground))
@@ -208,14 +214,13 @@ struct AssetCheckoutSheet: View {
                     .padding(.top, 10)
                 }
             }
-            .navigationTitle("Check Out")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuleer") { isPresented = false }
+                    Button("Cancel") { isPresented = false }
                 }
             }
             .alert(isPresented: $showResult) {
-                Alert(title: Text("Resultaat"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
+                Alert(title: Text("Result"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
             }
         }
     }
@@ -242,7 +247,7 @@ struct AssetCheckoutSheet: View {
     }
 
     var deployableStatusLabels: [StatusLabel] {
-        apiClient.statusLabels.filter { $0.type?.lowercased() == "deployable" }
+        apiClient.statusLabels.filter { $0.statusMeta?.lowercased() == "deployable" }
     }
 
     func handleCheckout() {
@@ -284,7 +289,7 @@ struct AssetCheckoutSheet: View {
         self.asset = asset
         self._isPresented = isPresented
         // Default selection for status picker to avoid nil tag warning
-        if let firstDeployable = apiClient.statusLabels.first(where: { $0.type?.lowercased() == "deployable" }) {
+        if let firstDeployable = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
             _selectedStatusId = State(initialValue: firstDeployable.id)
         } else {
             _selectedStatusId = State(initialValue: nil)

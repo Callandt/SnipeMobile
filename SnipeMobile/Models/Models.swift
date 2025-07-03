@@ -203,9 +203,10 @@ struct StatusLabel: Codable {
     let id: Int
     let name: String
     let type: String?
+    let statusMeta: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, type
+        case id, name, type, statusMeta = "status_meta"
     }
 }
 
@@ -361,6 +362,11 @@ struct Accessory: Identifiable, Codable, Hashable {
     let manufacturer: Manufacturer?
     let category: Category?
 
+    let qty: Int?
+    let minAmt: Int?
+    let remaining: Int?
+    let checkoutsCount: Int?
+
     let decodedName: String
     let decodedAssetTag: String
     let decodedStatusLabelName: String
@@ -369,15 +375,19 @@ struct Accessory: Identifiable, Codable, Hashable {
     let decodedManufacturerName: String
     let decodedCategoryName: String
 
-    init(id: Int, name: String, assetTag: String, statusLabel: StatusLabel? = nil, assignedTo: AssignedTo? = nil, location: Location? = nil, manufacturer: Manufacturer? = nil, category: Category? = nil) {
+    init(id: Int, name: String, assetTag: String, statusLabel: StatusLabel? = nil, assignedTo: AssignedTo? = nil, location: Location? = nil, manufacturer: Manufacturer? = nil, category: Category? = nil, qty: Int? = nil, minAmt: Int? = nil, remaining: Int? = nil, checkoutsCount: Int? = nil) {
         self.id = id
         self.name = name
         self.assetTag = assetTag
-        self.statusLabel = statusLabel ?? StatusLabel(id: 0, name: "Unknown", type: nil)
+        self.statusLabel = statusLabel ?? StatusLabel(id: 0, name: "Unknown", type: nil, statusMeta: nil)
         self.assignedTo = assignedTo
         self.location = location
         self.manufacturer = manufacturer
         self.category = category
+        self.qty = qty
+        self.minAmt = minAmt
+        self.remaining = remaining
+        self.checkoutsCount = checkoutsCount
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedAssetTag = HTMLDecoder.decode(assetTag)
         self.decodedStatusLabelName = HTMLDecoder.decode(statusLabel?.name ?? "Unknown")
@@ -394,6 +404,10 @@ struct Accessory: Identifiable, Codable, Hashable {
         case location
         case manufacturer
         case category
+        case qty
+        case minAmt = "min_amt"
+        case remaining
+        case checkoutsCount = "checkouts_count"
     }
 
     static func == (lhs: Accessory, rhs: Accessory) -> Bool {
@@ -416,8 +430,12 @@ extension Accessory {
         let location = try? container.decodeIfPresent(Location.self, forKey: .location)
         let manufacturer = try? container.decodeIfPresent(Manufacturer.self, forKey: .manufacturer)
         let category = try? container.decodeIfPresent(Category.self, forKey: .category)
+        let qty = try? container.decodeIfPresent(Int.self, forKey: .qty)
+        let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
+        let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
+        let checkoutsCount = try? container.decodeIfPresent(Int.self, forKey: .checkoutsCount)
 
-        self.init(id: id, name: name, assetTag: assetTag, statusLabel: statusLabel, assignedTo: assignedTo, location: location, manufacturer: manufacturer, category: category)
+        self.init(id: id, name: name, assetTag: assetTag, statusLabel: statusLabel, assignedTo: assignedTo, location: location, manufacturer: manufacturer, category: category, qty: qty, minAmt: minAmt, remaining: remaining, checkoutsCount: checkoutsCount)
     }
 }
 

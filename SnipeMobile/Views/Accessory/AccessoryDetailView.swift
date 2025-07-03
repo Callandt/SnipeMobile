@@ -24,23 +24,38 @@ struct AccessoryDetailView: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .center)
                         VStack(alignment: .leading, spacing: 15) {
-                            if let categoryName = accessory.category?.name, !categoryName.isEmpty {
-                                detailRow(label: "Category", value: categoryName)
-                            }
-                            if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
-                                detailRow(label: "Manufacturer", value: manufacturerName)
-                            }
-                            if let statusName = accessory.statusLabel?.name, !statusName.isEmpty {
-                                detailRow(label: "Status", value: statusName)
-                            }
-                            if let locationName = accessory.location?.name, !locationName.isEmpty {
-                                detailRow(label: "Location", value: locationName)
+                            ForEach(Array(accessoryInfoRows().enumerated()), id: \ .offset) { _, row in
+                                row
                             }
                         }
                         .padding()
                         .background(Color(.systemGray6))
                         .cornerRadius(12)
                         .padding(.horizontal)
+
+                        if accessory.qty != nil || accessory.minAmt != nil || accessory.remaining != nil || accessory.checkoutsCount != nil {
+                            Text("Stock & Usage")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            VStack(alignment: .leading, spacing: 10) {
+                                if let qty = accessory.qty {
+                                    HStack { Text("Total Quantity").foregroundColor(.secondary); Spacer(); Text("\(qty)").bold() }
+                                }
+                                if let minAmt = accessory.minAmt {
+                                    HStack { Text("Minimum Amount").foregroundColor(.secondary); Spacer(); Text("\(minAmt)").bold() }
+                                }
+                                if let remaining = accessory.remaining {
+                                    HStack { Text("Remaining").foregroundColor(.secondary); Spacer(); Text("\(remaining)").bold() }
+                                }
+                                if let checkouts = accessory.checkoutsCount {
+                                    HStack { Text("Checkouts Count").foregroundColor(.secondary); Spacer(); Text("\(checkouts)").bold() }
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
 
                         // --- Assigned Users List ---
                         assignedUsersSection
@@ -51,6 +66,30 @@ struct AccessoryDetailView: View {
             } else {
                 HistoryView(itemType: "accessory", itemId: accessory.id, apiClient: apiClient)
             }
+            Spacer(minLength: 0)
+            HStack(spacing: 10) {
+                Button(action: {}) {
+                    Text("Edit")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.orange)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                Button(action: {}) {
+                    Text((accessory.statusLabel?.statusMeta?.lowercased() == "deployed") ? "Check In" : "Check Out")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background((accessory.statusLabel?.statusMeta?.lowercased() == "deployed") ? Color.green : Color.blue)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .background(Color.white.ignoresSafeArea(edges: .bottom))
         }
         .navigationTitle(accessory.decodedName)
         .navigationBarTitleDisplayMode(.inline)
@@ -65,6 +104,7 @@ struct AccessoryDetailView: View {
             }
         }
         .onAppear {
+            print("DEBUG assignedTo accessory:", String(describing: accessory.assignedTo))
             historyViewModel.fetchHistory(itemType: "accessory", itemId: accessory.id, apiClient: apiClient)
             if apiClient.users.isEmpty {
                 Task {
@@ -79,30 +119,6 @@ struct AccessoryDetailView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 10) {
-                Button(action: {}) {
-                    Text("Edit")
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                Button(action: {}) {
-                    Text(accessory.statusLabel?.name.lowercased() == "deployed" ? "Check In" : "Check Out")
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background((accessory.statusLabel?.name.lowercased() == "deployed") ? Color.green : Color.blue)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-        }
     }
 
     @ViewBuilder
@@ -114,67 +130,154 @@ struct AccessoryDetailView: View {
         }
     }
 
+    private func accessoryInfoRows() -> [AnyView] {
+        var rows: [AnyView] = []
+        if !accessory.decodedName.isEmpty {
+            rows.append(AnyView(detailRow(label: "Name", value: accessory.decodedName)))
+        }
+        if !accessory.decodedAssetTag.isEmpty {
+            rows.append(AnyView(detailRow(label: "Asset Tag", value: accessory.decodedAssetTag)))
+        }
+        if let status = accessory.statusLabel?.statusMeta, !status.isEmpty {
+            rows.append(AnyView(detailRow(label: "Status", value: status)))
+        }
+        if !accessory.decodedAssignedToName.isEmpty {
+            rows.append(AnyView(detailRow(label: "Assigned To", value: accessory.decodedAssignedToName)))
+        }
+        if !accessory.decodedLocationName.isEmpty {
+            rows.append(AnyView(detailRow(label: "Location", value: accessory.decodedLocationName)))
+        }
+        if !accessory.decodedManufacturerName.isEmpty {
+            rows.append(AnyView(detailRow(label: "Manufacturer", value: accessory.decodedManufacturerName)))
+        }
+        if !accessory.decodedCategoryName.isEmpty {
+            rows.append(AnyView(detailRow(label: "Category", value: accessory.decodedCategoryName)))
+        }
+        return rows
+    }
+
     var currentlyAssignedUsers: [User] {
-        // Helper closure om actie te herkennen
         let isCheckout: (String) -> Bool = { action in
             let lower = action.lowercased()
-            return lower.contains("check") && lower.contains("uit")
+            return (lower.contains("check") && (lower.contains("out") || lower.contains("uit")))
         }
-        // Zoek per user de laatste actie (checkout of checkin)
-        var userLastAction: [Int: Activity] = [:]
+        print("DEBUG: --- HISTORY ---")
+        for activity in historyViewModel.history {
+            print("DEBUG: activity actionType=\(activity.actionType), targetType=\(activity.target?.type ?? "nil"), targetId=\(activity.target?.id ?? -1), targetName=\(activity.target?.name ?? "nil")")
+        }
+        var userLastAction: [Int: (Activity, String?)] = [:] // (activity, datetime)
         for activity in historyViewModel.history {
             if let userId = activity.target?.id, activity.target?.type == "user" {
-                print("DEBUG: Activity for userId=\(userId), action=\(activity.actionType), date=\(activity.createdAt?.datetime ?? "")")
-                if let prev = userLastAction[userId] {
-                    if let prevDate = prev.createdAt?.datetime, let newDate = activity.createdAt?.datetime, newDate > prevDate {
-                        userLastAction[userId] = activity
+                let newDate = activity.createdAt?.datetime
+                if let (_, prevDate) = userLastAction[userId] {
+                    if let prevDate = prevDate, let newDate = newDate, newDate > prevDate {
+                        userLastAction[userId] = (activity, newDate)
                     }
                 } else {
-                    userLastAction[userId] = activity
+                    userLastAction[userId] = (activity, newDate)
                 }
             }
         }
-        // Gebruikers waarvan de laatste actie een checkout is
-        let assignedUserIds = userLastAction.filter { isCheckout($0.value.actionType) }.map { $0.key }
-        print("DEBUG: assignedUserIds=\(assignedUserIds)")
-        // Filter alle checkout-acties
-        let checkouts = historyViewModel.history.filter { activity in
-            activity.target?.type == "user" && isCheckout(activity.actionType)
+        let assignedUserIdsWithDate = userLastAction.compactMap { (userId, tuple) -> (Int, String?)? in
+            isCheckout(tuple.0.actionType) ? (userId, tuple.1) : nil
         }
-        // Haal de User objecten op uit de checkout-acties via apiClient.users
-        let users = checkouts.compactMap { activity in
-            if let userId = activity.target?.id {
-                let user = apiClient.users.first(where: { $0.id == userId })
-                if user != nil { print("DEBUG: Found user for userId=\(userId): \(user!.name)") }
-                return user
+        let sortedUserIds = assignedUserIdsWithDate.sorted { ($0.1 ?? "") > ($1.1 ?? "") }.map { $0.0 }
+        print("DEBUG: sorted assignedUserIds=", sortedUserIds)
+        let users = sortedUserIds.compactMap { userId in
+            apiClient.users.first(where: { $0.id == userId })
+        }
+        print("DEBUG: assigned users=", users.map { $0.name })
+        return users
+    }
+
+    var currentlyAssignedLocations: [Location] {
+        let isCheckout: (String) -> Bool = { action in
+            let lower = action.lowercased()
+            return (lower.contains("check") && (lower.contains("out") || lower.contains("uit")))
+        }
+        var locationLastAction: [Int: Activity] = [:]
+        for activity in historyViewModel.history {
+            if let locationId = activity.target?.id, activity.target?.type == "location" {
+                if let prev = locationLastAction[locationId] {
+                    if let prevDate = prev.createdAt?.datetime, let newDate = activity.createdAt?.datetime, newDate > prevDate {
+                        locationLastAction[locationId] = activity
+                    }
+                } else {
+                    locationLastAction[locationId] = activity
+                }
             }
-            return nil
         }
-        // Filter op id's die nog assigned zijn
-        let result = users.filter { assignedUserIds.contains($0.id) }
-        print("DEBUG: Final assigned users: \(result.map { $0.name })")
-        return result
+        let assignedLocationIds = locationLastAction.compactMap { (locationId, activity) in
+            isCheckout(activity.actionType) ? locationId : nil
+        }
+        print("DEBUG: assignedLocationIds=", assignedLocationIds)
+        let locations = assignedLocationIds.compactMap { locationId in
+            apiClient.locations.first(where: { $0.id == locationId })
+        }
+        print("DEBUG: assigned locations=", locations.map { $0.name })
+        return locations
     }
 
     var assignedUsersSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Assigned To")
-                .font(.headline)
-                .padding(.horizontal)
-            if historyViewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-            } else if currentlyAssignedUsers.isEmpty {
-                Text("Not assigned to any user.")
-                    .foregroundColor(.secondary)
+            if !currentlyAssignedUsers.isEmpty {
+                Text("Assigned To")
+                    .font(.headline)
                     .padding(.horizontal)
-            } else {
                 ForEach(currentlyAssignedUsers) { user in
                     NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: .constant(0))) {
                         UserCardView(user: user)
                     }
                 }
             }
+            if !currentlyAssignedLocations.isEmpty {
+                Text("Assigned Location")
+                    .font(.headline)
+                    .padding(.horizontal)
+                ForEach(currentlyAssignedLocations) { location in
+                    HStack {
+                        Image(systemName: "mappin.and.ellipse")
+                            .foregroundColor(.gray)
+                            .frame(width: 30, height: 30)
+                        VStack(alignment: .leading) {
+                            Text(location.name)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            if currentlyAssignedUsers.isEmpty && currentlyAssignedLocations.isEmpty {
+                if let fallback = accessory.assignedTo, (fallback.name != "" || fallback.email != nil) {
+                    Text("Assigned To")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    HStack {
+                        Image(systemName: "person.circle")
+                            .foregroundColor(.gray)
+                            .frame(width: 30, height: 30)
+                        VStack(alignment: .leading) {
+                            Text(fallback.name)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            if let email = fallback.email, !email.isEmpty {
+                                Text(email)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                } else {
+                    Text("Not assigned to any user or location.")
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                }
+            }
         }
     }
 } 
+

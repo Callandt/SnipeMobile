@@ -31,13 +31,14 @@ struct LocationDetailView: View {
             if selectedTab == 0 {
                 ScrollView {
                     if !usersAtLocation.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 16) {
                             ForEach(usersAtLocation) { user in
                                 NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab)) {
                                     UserCardView(user: user)
                                 }
                             }
                         }
+                        .padding(.horizontal)
                     } else {
                         Text("No users at this location.")
                             .foregroundColor(.secondary)
@@ -47,7 +48,7 @@ struct LocationDetailView: View {
             } else if selectedTab == 1 {
                 ScrollView {
                     if !assetsAtLocation.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 16) {
                             ForEach(assetsAtLocation) { asset in
                                 Button(action: {
                                     assetDetailTab = 0
@@ -58,6 +59,7 @@ struct LocationDetailView: View {
                                 }
                             }
                         }
+                        .padding(.horizontal)
                     } else {
                         Text("No assets at this location.")
                             .foregroundColor(.secondary)

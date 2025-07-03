@@ -114,10 +114,10 @@ struct AssetEditSheet: View {
                 }
             }
             .alert(isPresented: $showArchiveError) {
-                Alert(title: Text("Kan niet archiveren"), message: Text("Deze asset is nog toegewezen aan een gebruiker of locatie. Check de asset eerst in voordat je deze op 'archived' zet."), dismissButton: .default(Text("OK")))
+                Alert(title: Text("Cannot archive"), message: Text("This asset is still assigned to a user or location. Please check in the asset before setting it to 'archived'."), dismissButton: .default(Text("OK")))
             }
             .alert(isPresented: $showResult) {
-                Alert(title: Text("Resultaat"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
+                Alert(title: Text("Result"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
             }
         }
     }
@@ -170,7 +170,7 @@ struct AssetEditSheet: View {
             // Status Picker: huidige status eerst, dan de rest
             Picker("Status", selection: $selectedStatusId) {
                 ForEach(apiClient.statusLabels, id: \.id) { label in
-                    Text(label.name).tag(label.id)
+                    Text(label.statusMeta ?? "").tag(label.id)
                 }
             }
         }

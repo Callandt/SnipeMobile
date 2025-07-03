@@ -139,11 +139,11 @@ struct HistoryView: View {
                 }
                 .padding(.top, 2)
             }
-            // Toon ontvanger bij checkout
-            let isCheckout = activity.actionType.lowercased().contains("check") && activity.actionType.lowercased().contains("out")
-            if isCheckout, let target = activity.target, target.type == "user" {
+            // Toon ontvanger bij elke checkout-achtige actie
+            let isCheckout = activity.actionType.lowercased().contains("check") && (activity.actionType.lowercased().contains("out") || activity.actionType.lowercased().contains("uit"))
+            if isCheckout, let target = activity.target {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.right.circle")
+                    Image(systemName: target.type == "user" ? "person.crop.circle.badge.checkmark" : "mappin.and.ellipse")
                         .foregroundColor(.accentColor)
                     Text("To: ") + Text(HTMLDecoder.decode(target.name))
                         .font(.caption)

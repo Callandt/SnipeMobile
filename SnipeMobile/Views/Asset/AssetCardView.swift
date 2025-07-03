@@ -17,7 +17,7 @@ struct AssetCardView: View {
                     Text("Tag: " + asset.decodedAssetTag)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text("Status: " + asset.statusLabel.name)
+                    Text("Status: " + (asset.statusLabel.statusMeta ?? ""))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

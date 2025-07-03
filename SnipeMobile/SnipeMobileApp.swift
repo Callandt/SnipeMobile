@@ -48,7 +48,8 @@ class AppSettings: ObservableObject {
                             onSkip: {
                                 hasCompletedOnboarding = true
                                 showAPISettings = false
-                            }
+                            },
+                            apiClient: apiClient
                         )
                     } else {
                         WelcomeView(onGetStarted: {
@@ -405,6 +406,12 @@ struct MainSplitView: View {
                         Image(systemName: "gearshape")
                     }
                 }
+            }
+            .onChange(of: selectedTab) {
+                selectedAsset = nil
+                selectedAccessory = nil
+                selectedUser = nil
+                selectedLocation = nil
             }
         } detail: {
             switch selectedTab {

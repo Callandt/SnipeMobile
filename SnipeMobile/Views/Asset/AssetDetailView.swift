@@ -111,6 +111,107 @@ struct AssetDetailView: View {
             } else {
                 HistoryView(itemType: "asset", itemId: asset.id, apiClient: apiClient)
             }
+            Spacer(minLength: 0)
+            HStack(spacing: 10) {
+                Button(action: {
+                    editName = asset.name
+                    editAssetTag = asset.assetTag
+                    editSerial = asset.serial ?? ""
+                    editNotes = asset.notes ?? ""
+                    editOrderNumber = asset.orderNumber ?? ""
+                    editPurchaseCost = asset.purchaseCost ?? ""
+                    editBookValue = asset.bookValue ?? ""
+                    editCustomFields = [:]
+                    if let customFields = asset.customFields {
+                        for (key, field) in customFields {
+                            editCustomFields[key] = field.value ?? ""
+                        }
+                    }
+                    // Initialiseer selectievariabelen voor alle pickers
+                    if let modelId = asset.model?.id {
+                        selectedModelId = modelId
+                    } else if let firstModel = apiClient.assets.compactMap({ $0.model?.id }).first {
+                        selectedModelId = firstModel
+                    }
+                    if let statusId = asset.statusLabel.id as Int? {
+                        selectedStatusId = statusId
+                    } else if let firstStatus = apiClient.statusLabels.first?.id {
+                        selectedStatusId = firstStatus
+                    }
+                    if let categoryId = asset.category?.id {
+                        selectedCategoryId = categoryId
+                    } else if let firstCategory = apiClient.assets.compactMap({ $0.category?.id }).first {
+                        selectedCategoryId = firstCategory
+                    }
+                    if let manufacturerId = asset.manufacturer?.id {
+                        selectedManufacturerId = manufacturerId
+                    } else if let firstManufacturer = apiClient.assets.compactMap({ $0.manufacturer?.id }).first {
+                        selectedManufacturerId = firstManufacturer
+                    }
+                    if let supplierId = asset.supplier?.id {
+                        selectedSupplierId = supplierId
+                    } else if let firstSupplier = apiClient.assets.compactMap({ $0.supplier?.id }).first {
+                        selectedSupplierId = firstSupplier
+                    }
+                    if let companyId = asset.company?.id {
+                        selectedCompanyId = companyId
+                    } else if let firstCompany = apiClient.assets.compactMap({ $0.company?.id }).first {
+                        selectedCompanyId = firstCompany
+                    }
+                    if let locationId = asset.location?.id {
+                        selectedLocationId = locationId
+                    } else if let firstLocation = apiClient.locations.first?.id {
+                        selectedLocationId = firstLocation
+                    }
+                    // Set hasXDate variables for pre-filled dates
+                    hasPurchaseDate = asset.purchaseDate?.date != nil
+                    hasNextAuditDate = asset.nextAuditDate?.date != nil
+                    hasEolDate = asset.assetEolDate?.date != nil
+                    hasExpectedCheckin = asset.expectedCheckin?.date != nil
+                    showEditSheet = true
+                }) {
+                    Text("Edit")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.orange)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                if asset.statusLabel.statusMeta?.lowercased() == "deployed" {
+                    Button(action: {
+                        Task {
+                            let success = await apiClient.checkinAsset(assetId: asset.id)
+                            checkInOutSuccess = success
+                            checkInOutMessage = success ? "Check-in gelukt!" : (apiClient.errorMessage ?? "Check-in mislukt.")
+                            showCheckInOutResult = true
+                        }
+                    }) {
+                        Text("Check In")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.green)
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                } else {
+                    Button(action: {
+                        showCheckoutSheet = true
+                    }) {
+                        Text("Check Out")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .background(Color.white.ignoresSafeArea(edges: .bottom))
         }
         .navigationTitle(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
         .navigationBarTitleDisplayMode(.inline)
@@ -182,107 +283,6 @@ struct AssetDetailView: View {
                     }
                 }
         )
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 10) {
-                Button(action: {
-                    editName = asset.name
-                    editAssetTag = asset.assetTag
-                    editSerial = asset.serial ?? ""
-                    editNotes = asset.notes ?? ""
-                    editOrderNumber = asset.orderNumber ?? ""
-                    editPurchaseCost = asset.purchaseCost ?? ""
-                    editBookValue = asset.bookValue ?? ""
-                    editCustomFields = [:]
-                    if let customFields = asset.customFields {
-                        for (key, field) in customFields {
-                            editCustomFields[key] = field.value ?? ""
-                        }
-                    }
-                    // Initialiseer selectievariabelen voor alle pickers
-                    if let modelId = asset.model?.id {
-                        selectedModelId = modelId
-                    } else if let firstModel = apiClient.assets.compactMap({ $0.model?.id }).first {
-                        selectedModelId = firstModel
-                    }
-                    if let statusId = asset.statusLabel.id as Int? {
-                        selectedStatusId = statusId
-                    } else if let firstStatus = apiClient.statusLabels.first?.id {
-                        selectedStatusId = firstStatus
-                    }
-                    if let categoryId = asset.category?.id {
-                        selectedCategoryId = categoryId
-                    } else if let firstCategory = apiClient.assets.compactMap({ $0.category?.id }).first {
-                        selectedCategoryId = firstCategory
-                    }
-                    if let manufacturerId = asset.manufacturer?.id {
-                        selectedManufacturerId = manufacturerId
-                    } else if let firstManufacturer = apiClient.assets.compactMap({ $0.manufacturer?.id }).first {
-                        selectedManufacturerId = firstManufacturer
-                    }
-                    if let supplierId = asset.supplier?.id {
-                        selectedSupplierId = supplierId
-                    } else if let firstSupplier = apiClient.assets.compactMap({ $0.supplier?.id }).first {
-                        selectedSupplierId = firstSupplier
-                    }
-                    if let companyId = asset.company?.id {
-                        selectedCompanyId = companyId
-                    } else if let firstCompany = apiClient.assets.compactMap({ $0.company?.id }).first {
-                        selectedCompanyId = firstCompany
-                    }
-                    if let locationId = asset.location?.id {
-                        selectedLocationId = locationId
-                    } else if let firstLocation = apiClient.locations.first?.id {
-                        selectedLocationId = firstLocation
-                    }
-                    // Set hasXDate variables for pre-filled dates
-                    hasPurchaseDate = asset.purchaseDate?.date != nil
-                    hasNextAuditDate = asset.nextAuditDate?.date != nil
-                    hasEolDate = asset.assetEolDate?.date != nil
-                    hasExpectedCheckin = asset.expectedCheckin?.date != nil
-                    showEditSheet = true
-                }) {
-                    Text("Edit")
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                if asset.statusLabel.name.lowercased() == "deployed" {
-                    Button(action: {
-                        Task {
-                            let success = await apiClient.checkinAsset(assetId: asset.id)
-                            checkInOutSuccess = success
-                            checkInOutMessage = success ? "Check-in gelukt!" : (apiClient.errorMessage ?? "Check-in mislukt.")
-                            showCheckInOutResult = true
-                        }
-                    }) {
-                        Text("Check In")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.green)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                } else {
-                    Button(action: {
-                        showCheckoutSheet = true
-                    }) {
-                        Text("Check Out")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-        }
         .sheet(isPresented: $showEditSheet) {
             editSheet
         }
@@ -358,8 +358,8 @@ struct AssetDetailView: View {
                             if !asset.decodedManufacturerName.isEmpty {
                                 copyableDetailRow(label: "Manufacturer", value: asset.decodedManufacturerName)
                             }
-                            if !asset.statusLabel.name.isEmpty {
-                                copyableDetailRow(label: "Status", value: asset.statusLabel.name)
+                            if let statusMeta = asset.statusLabel.statusMeta, !statusMeta.isEmpty {
+                                copyableDetailRow(label: "Status", value: statusMeta)
                             }
                             if !asset.decodedCategoryName.isEmpty {
                                 copyableDetailRow(label: "Category", value: asset.decodedCategoryName)
@@ -370,7 +370,7 @@ struct AssetDetailView: View {
                         .cornerRadius(12)
 
                         // Assigned To Section
-                        if asset.statusLabel.name.lowercased() == "deployed", let user = assignedUser {
+                        if asset.statusLabel.statusMeta?.lowercased() == "deployed", let user = assignedUser {
                             VStack(spacing: 15) {
                                 Text("Assigned To")
                                     .font(.headline)

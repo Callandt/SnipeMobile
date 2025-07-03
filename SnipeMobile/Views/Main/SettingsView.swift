@@ -93,7 +93,14 @@ struct SettingsView: View {
                 apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
             }
             .onDisappear {
-                apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
+                Task {
+                    if let error = await apiClient.validateApiCredentials() {
+                        alertMessage = error
+                        showAlert = true
+                    } else {
+                        apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
+                    }
+                }
             }
             .alert(isPresented: $showAlert) {
                 Alert(title: Text(alertMessage))

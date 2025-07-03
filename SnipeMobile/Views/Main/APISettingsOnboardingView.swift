@@ -3,8 +3,11 @@ import SwiftUI
 struct APISettingsOnboardingView: View {
     @State private var apiUrl: String = ""
     @State private var apiKey: String = ""
+    @State private var showAlert: Bool = false
+    @State private var alertMessage: String = ""
     var onContinue: (_ apiUrl: String, _ apiKey: String) -> Void
     var onSkip: () -> Void
+    @ObservedObject var apiClient: SnipeITAPIClient
     
     var body: some View {
         ZStack {
@@ -68,7 +71,15 @@ struct APISettingsOnboardingView: View {
                             if urlEmpty || keyEmpty {
                                 onSkip()
                             } else {
-                                onContinue(apiUrl, apiKey)
+                                Task {
+                                    apiClient.saveConfiguration(baseURL: apiUrl, apiToken: apiKey)
+                                    if let error = await apiClient.validateApiCredentials() {
+                                        alertMessage = error
+                                        showAlert = true
+                                    } else {
+                                        onContinue(apiUrl, apiKey)
+                                    }
+                                }
                             }
                         }) {
                             Text("Continue")
@@ -97,12 +108,15 @@ struct APISettingsOnboardingView: View {
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
             }
         }
+        .alert(isPresented: $showAlert) {
+            Alert(title: Text(alertMessage))
+        }
     }
 }
 
 // Preview
 struct APISettingsOnboardingView_Previews: PreviewProvider {
     static var previews: some View {
-        APISettingsOnboardingView(onContinue: { _, _ in }, onSkip: {})
+        APISettingsOnboardingView(onContinue: { _, _ in }, onSkip: {}, apiClient: SnipeITAPIClient())
     }
 } 
