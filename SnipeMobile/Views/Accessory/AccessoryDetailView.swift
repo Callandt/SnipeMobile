@@ -223,7 +223,7 @@ struct AccessoryDetailView: View {
             if !currentlyAssignedUsers.isEmpty {
                 Text("Assigned To")
                     .font(.headline)
-                    .padding(.horizontal)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 ForEach(currentlyAssignedUsers) { user in
                     NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: .constant(0))) {
                         UserCardView(user: user)
