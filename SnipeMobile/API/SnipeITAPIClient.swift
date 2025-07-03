@@ -604,4 +604,86 @@ class SnipeITAPIClient: ObservableObject {
             return "Could not connect to Snipe-IT. Check your URL and API key."
         }
     }
+
+    struct AccessoryCheckedOutRow: Codable, Identifiable, Hashable {
+        let id: Int?
+        let assignedTo: AssignedToCheckedOut?
+        let note: String?
+        let createdBy: CreatedByCheckedOut?
+        let createdAt: DateInfoCheckedOut?
+        let availableActions: AvailableActionsCheckedOut?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case assignedTo = "assigned_to"
+            case note
+            case createdBy = "created_by"
+            case createdAt = "created_at"
+            case availableActions = "available_actions"
+        }
+    }
+
+    struct AssignedToCheckedOut: Codable, Hashable {
+        let id: Int?
+        let image: String?
+        let type: String?
+        let name: String?
+        let firstName: String?
+        let lastName: String?
+        let username: String?
+        let createdBy: CreatedByCheckedOut?
+        let createdAt: DateInfoCheckedOut?
+        let deletedAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, image, type, name
+            case firstName = "first_name"
+            case lastName = "last_name"
+            case username
+            case createdBy = "created_by"
+            case createdAt = "created_at"
+            case deletedAt = "deleted_at"
+        }
+    }
+
+    struct CreatedByCheckedOut: Codable, Hashable {
+        let id: Int?
+        let name: String?
+    }
+
+    struct DateInfoCheckedOut: Codable, Hashable {
+        let datetime: String?
+        let formatted: String?
+    }
+
+    struct AvailableActionsCheckedOut: Codable, Hashable {
+        let checkin: Bool?
+    }
+
+    struct AccessoryCheckedOutResponse: Codable {
+        let total: Int?
+        let rows: [AccessoryCheckedOutRow]
+    }
+
+    func fetchAccessoryCheckedOutList(accessoryId: Int) async -> [AccessoryCheckedOutRow] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkedout") else { return [] }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            print("DEBUG checkedout API response: ", String(data: data, encoding: .utf8) ?? "nil")
+            do {
+                let decoded = try JSONDecoder().decode(AccessoryCheckedOutResponse.self, from: data)
+                print("DEBUG decoded checkedout rows: ", decoded.rows)
+                return decoded.rows
+            } catch {
+                print("DECODE ERROR: \(error)")
+            }
+        } catch {
+            print("Error fetching checked out list: \(error)")
+        }
+        return []
+    }
 } 

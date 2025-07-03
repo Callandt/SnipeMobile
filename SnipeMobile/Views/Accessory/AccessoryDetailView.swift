@@ -4,9 +4,11 @@ struct AccessoryDetailView: View {
     let accessory: Accessory
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
-    @State private var assignedUsers: [User] = []
+    @State private var checkedOutRows: [SnipeITAPIClient.AccessoryCheckedOutRow] = []
     @State private var isLoading = true
-    @StateObject private var historyViewModel = HistoryViewModel()
+    @State private var showCheckinSheet: Bool = false
+    @State private var checkinTarget: SnipeITAPIClient.AccessoryCheckedOutRow? = nil
+    @State private var checkinResult: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -57,8 +59,8 @@ struct AccessoryDetailView: View {
                             .padding(.horizontal)
                         }
 
-                        // --- Assigned Users List ---
-                        assignedUsersSection
+                        // --- Assigned Users/Locations via checkedout API ---
+                        checkedOutSection
                         Spacer()
                     }
                     .padding(.top)
@@ -104,20 +106,52 @@ struct AccessoryDetailView: View {
             }
         }
         .onAppear {
-            print("DEBUG assignedTo accessory:", String(describing: accessory.assignedTo))
-            historyViewModel.fetchHistory(itemType: "accessory", itemId: accessory.id, apiClient: apiClient)
-            if apiClient.users.isEmpty {
-                Task {
-                    await apiClient.fetchUsers()
-                }
+            Task {
+                isLoading = true
+                checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+                isLoading = false
             }
         }
         .onChange(of: accessory.id) {
-            if apiClient.users.isEmpty {
-                Task {
-                    await apiClient.fetchUsers()
-                }
+            Task {
+                isLoading = true
+                checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+                isLoading = false
             }
+        }
+        .sheet(isPresented: $showCheckinSheet) {
+            VStack(spacing: 24) {
+                Text("Check In Accessory")
+                    .font(.title2).bold()
+                    .padding(.top, 24)
+                if let target = checkinTarget {
+                    Text("Do you want to check in this accessory from \(target.assignedTo?.name ?? "")?")
+                        .multilineTextAlignment(.center)
+                }
+                HStack(spacing: 20) {
+                    Button("Cancel") { showCheckinSheet = false }
+                        .foregroundColor(.secondary)
+                    Button("Check In") {
+                        Task {
+                            let success = await checkinAccessory(checkedoutId: checkinTarget?.id)
+                            checkinResult = success ? "Accessory checked in!" : "Check-in failed."
+                            showCheckinSheet = false
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.green)
+                    .cornerRadius(8)
+                }
+                if let result = checkinResult {
+                    Text(result)
+                        .foregroundColor(result.contains("failed") ? .red : .green)
+                        .padding(.top, 8)
+                }
+                Spacer()
+            }
+            .padding()
         }
     }
 
@@ -156,127 +190,88 @@ struct AccessoryDetailView: View {
         return rows
     }
 
-    var currentlyAssignedUsers: [User] {
-        let isCheckout: (String) -> Bool = { action in
-            let lower = action.lowercased()
-            return (lower.contains("check") && (lower.contains("out") || lower.contains("uit")))
-        }
-        print("DEBUG: --- HISTORY ---")
-        for activity in historyViewModel.history {
-            print("DEBUG: activity actionType=\(activity.actionType), targetType=\(activity.target?.type ?? "nil"), targetId=\(activity.target?.id ?? -1), targetName=\(activity.target?.name ?? "nil")")
-        }
-        var userLastAction: [Int: (Activity, String?)] = [:] // (activity, datetime)
-        for activity in historyViewModel.history {
-            if let userId = activity.target?.id, activity.target?.type == "user" {
-                let newDate = activity.createdAt?.datetime
-                if let (_, prevDate) = userLastAction[userId] {
-                    if let prevDate = prevDate, let newDate = newDate, newDate > prevDate {
-                        userLastAction[userId] = (activity, newDate)
-                    }
-                } else {
-                    userLastAction[userId] = (activity, newDate)
-                }
-            }
-        }
-        let assignedUserIdsWithDate = userLastAction.compactMap { (userId, tuple) -> (Int, String?)? in
-            isCheckout(tuple.0.actionType) ? (userId, tuple.1) : nil
-        }
-        let sortedUserIds = assignedUserIdsWithDate.sorted { ($0.1 ?? "") > ($1.1 ?? "") }.map { $0.0 }
-        print("DEBUG: sorted assignedUserIds=", sortedUserIds)
-        let users = sortedUserIds.compactMap { userId in
-            apiClient.users.first(where: { $0.id == userId })
-        }
-        print("DEBUG: assigned users=", users.map { $0.name })
-        return users
-    }
-
-    var currentlyAssignedLocations: [Location] {
-        let isCheckout: (String) -> Bool = { action in
-            let lower = action.lowercased()
-            return (lower.contains("check") && (lower.contains("out") || lower.contains("uit")))
-        }
-        var locationLastAction: [Int: Activity] = [:]
-        for activity in historyViewModel.history {
-            if let locationId = activity.target?.id, activity.target?.type == "location" {
-                if let prev = locationLastAction[locationId] {
-                    if let prevDate = prev.createdAt?.datetime, let newDate = activity.createdAt?.datetime, newDate > prevDate {
-                        locationLastAction[locationId] = activity
-                    }
-                } else {
-                    locationLastAction[locationId] = activity
-                }
-            }
-        }
-        let assignedLocationIds = locationLastAction.compactMap { (locationId, activity) in
-            isCheckout(activity.actionType) ? locationId : nil
-        }
-        print("DEBUG: assignedLocationIds=", assignedLocationIds)
-        let locations = assignedLocationIds.compactMap { locationId in
-            apiClient.locations.first(where: { $0.id == locationId })
-        }
-        print("DEBUG: assigned locations=", locations.map { $0.name })
-        return locations
-    }
-
-    var assignedUsersSection: some View {
+    // --- Nieuwe checkedout section ---
+    var checkedOutSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !currentlyAssignedUsers.isEmpty {
-                Text("Assigned To")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                ForEach(currentlyAssignedUsers) { user in
-                    NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: .constant(0))) {
-                        UserCardView(user: user)
-                    }
-                }
-            }
-            if !currentlyAssignedLocations.isEmpty {
-                Text("Assigned Location")
-                    .font(.headline)
-                    .padding(.horizontal)
-                ForEach(currentlyAssignedLocations) { location in
-                    HStack {
-                        Image(systemName: "mappin.and.ellipse")
-                            .foregroundColor(.gray)
-                            .frame(width: 30, height: 30)
-                        VStack(alignment: .leading) {
-                            Text(location.name)
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                }
-            }
-            if currentlyAssignedUsers.isEmpty && currentlyAssignedLocations.isEmpty {
-                if let fallback = accessory.assignedTo, (fallback.name != "" || fallback.email != nil) {
-                    Text("Assigned To")
-                        .font(.headline)
-                        .padding(.horizontal)
-                    HStack {
-                        Image(systemName: "person.circle")
-                            .foregroundColor(.gray)
-                            .frame(width: 30, height: 30)
-                        VStack(alignment: .leading) {
-                            Text(fallback.name)
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            if let email = fallback.email, !email.isEmpty {
-                                Text(email)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                } else {
+            Text("Assigned To")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .center)
+            if isLoading {
+                ProgressView("Loading assigned...")
+                    .frame(maxWidth: .infinity)
+            } else {
+                let activeRows = checkedOutRows.filter { $0.availableActions?.checkin == true }
+                if activeRows.isEmpty {
                     Text("Not assigned to any user or location.")
                         .foregroundColor(.secondary)
                         .padding(.horizontal)
+                } else {
+                    ForEach(activeRows) { row in
+                        Button(action: {
+                            checkinTarget = row
+                            showCheckinSheet = true
+                        }) {
+                            if row.assignedTo?.type == "user",
+                               let assigned = row.assignedTo,
+                               let id = assigned.id,
+                               let name = assigned.name,
+                               let firstName = assigned.firstName {
+                                let user = User(
+                                    id: id,
+                                    name: name,
+                                    first_name: firstName,
+                                    email: assigned.username, // username als email niet beschikbaar
+                                    location: nil,
+                                    employeeNumber: nil,
+                                    jobtitle: nil
+                                )
+                                UserCardView(user: user)
+                            } else if row.assignedTo?.type == "location" {
+                                HStack {
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .foregroundColor(.gray)
+                                        .frame(width: 30, height: 30)
+                                    VStack(alignment: .leading) {
+                                        Text(row.assignedTo?.name ?? "")
+                                            .font(.headline)
+                                            .foregroundColor(.primary)
+                                        if let note = row.note, !note.isEmpty {
+                                            Text(note)
+                                                .font(.subheadline)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    // --- Nieuwe checkin functie ---
+    private func checkinAccessory(checkedoutId: Int?) async -> Bool {
+        guard let checkedoutId = checkedoutId else { return false }
+        guard let url = URL(string: "\(apiClient.baseURL)/api/v1/accessories/\(accessory.id)/checkin") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(UserDefaults.standard.string(forKey: "apiToken") ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["checkedout_id": checkedoutId]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                // Refresh checkedout list na checkin
+                checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+                return true
+            }
+            return false
+        } catch {
+            return false
         }
     }
 } 

@@ -16,7 +16,12 @@ struct ContentView: View {
     @State private var userDetailTab: Int = 0
     @State private var locationDetailTab: Int = 0
     @State private var accessoryDetailTab: Int = 0
+    @State private var selectedAssetId: Int? = nil
+    @State private var selectedUserId: Int? = nil
+    @State private var selectedLocationId: Int? = nil
+    @State private var selectedAccessoryId: Int? = nil
     @EnvironmentObject var appSettings: AppSettings
+    @State private var navStack: [AnyHashable] = []
 
     let categories = ["Hardware", "Accessories", "Users", "Locations"]
 
@@ -117,6 +122,8 @@ struct ContentView: View {
                 }
                 .onChange(of: selectedCategory) {
                     searchText = ""
+                    navigationPath = NavigationPath()
+                    navStack = []
                 }
             }
             .sheet(isPresented: $showingScanner) {
@@ -133,6 +140,7 @@ struct ContentView: View {
                             if let asset = apiClient.assets.first(where: { $0.id == id }) {
                                 print("Navigating to asset with ID: \(asset.id)")
                                 navigationPath.append(asset)
+                                navStack.append(asset)
                                 selectedCategory = "Hardware"
                             } else {
                                 apiClient.errorMessage = "Asset with ID \(id) not found."
@@ -307,25 +315,69 @@ struct ContentView: View {
                         .padding()
                 } else if selectedCategory == "Hardware" {
                     ForEach(filteredAssets) { asset in
-                        NavigationLink(value: asset) {
+                        Button(action: {
+                            if UIDevice.current.userInterfaceIdiom == .pad {
+                                navigationPath = NavigationPath()
+                                navStack = []
+                                navigationPath.append(asset)
+                                navStack.append(asset)
+                            } else {
+                                navigationPath.append(asset)
+                                navStack.append(asset)
+                            }
+                            selectedAssetId = asset.id
+                        }) {
                             AssetCardView(asset: asset)
                         }
                     }
                 } else if selectedCategory == "Users" {
                     ForEach(filteredUsers) { user in
-                        NavigationLink(value: user) {
+                        Button(action: {
+                            if UIDevice.current.userInterfaceIdiom == .pad {
+                                navigationPath = NavigationPath()
+                                navStack = []
+                                navigationPath.append(user)
+                                navStack.append(user)
+                            } else {
+                                navigationPath.append(user)
+                                navStack.append(user)
+                            }
+                            selectedUserId = user.id
+                        }) {
                             UserCardView(user: user)
                         }
                     }
                 } else if selectedCategory == "Accessories" {
                     ForEach(filteredAccessories) { accessory in
-                        NavigationLink(value: accessory) {
+                        Button(action: {
+                            if UIDevice.current.userInterfaceIdiom == .pad {
+                                navigationPath = NavigationPath()
+                                navStack = []
+                                navigationPath.append(accessory)
+                                navStack.append(accessory)
+                            } else {
+                                navigationPath.append(accessory)
+                                navStack.append(accessory)
+                            }
+                            selectedAccessoryId = accessory.id
+                        }) {
                             AccessoryCardView(accessory: accessory)
                         }
                     }
                 } else if selectedCategory == "Locations" {
                     ForEach(filteredLocations) { location in
-                        NavigationLink(value: location) {
+                        Button(action: {
+                            if UIDevice.current.userInterfaceIdiom == .pad {
+                                navigationPath = NavigationPath()
+                                navStack = []
+                                navigationPath.append(location)
+                                navStack.append(location)
+                            } else {
+                                navigationPath.append(location)
+                                navStack.append(location)
+                            }
+                            selectedLocationId = location.id
+                        }) {
                             LocationCardView(location: location)
                         }
                     }
@@ -365,5 +417,26 @@ struct ContentView: View {
             return id
         }
         return nil
+    }
+
+    private func popTo<T: Hashable>(_ value: T) {
+        if let idx = navStack.lastIndex(where: { navItem in
+            switch (navItem, value) {
+            case let (a as Asset, b as Asset): return a.id == b.id
+            case let (a as User, b as User): return a.id == b.id
+            case let (a as Accessory, b as Accessory): return a.id == b.id
+            case let (a as Location, b as Location): return a.id == b.id
+            default: return false
+            }
+        }) {
+            let removeCount = navStack.count - idx - 1
+            for _ in 0..<removeCount {
+                navigationPath.removeLast()
+                navStack.removeLast()
+            }
+        } else {
+            navigationPath.append(value)
+            navStack.append(value)
+        }
     }
 }
