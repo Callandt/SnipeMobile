@@ -53,8 +53,8 @@ struct WelcomeView: View {
                                 .font(.title2)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Free & Premium Options").bold()
-                                Text("Basic features are free forever. Enjoy all features free for 7 days, then upgrade anytime for full access.")
+                                Text("Always Free").bold()
+                                Text("The app is free forever. All features are available at no cost.")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }

@@ -46,6 +46,17 @@ struct AssetEditSheet: View {
     @State private var showResult = false
     @State private var resultMessage = ""
 
+    /// Asset is uitgecheckt (toegewezen aan gebruiker of locatie); status is dan niet bewerkbaar.
+    private var isAssetCheckedOut: Bool {
+        asset.assignedTo != nil || asset.location != nil
+    }
+
+    /// Weergavenaam voor statuslabel: Snipe-IT vult soms alleen `name`, soms `status_meta`.
+    private func displayName(for label: StatusLabel) -> String {
+        let meta = label.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return meta.isEmpty ? label.name : meta
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -103,7 +114,7 @@ struct AssetEditSheet: View {
                                 )
                                 let success = await apiClient.updateAsset(assetId: asset.id, update: update)
                                 isSaving = false
-                                resultMessage = apiClient.lastApiMessage ?? (success ? "Wijzigingen opgeslagen!" : "Opslaan mislukt.")
+                                resultMessage = apiClient.lastApiMessage ?? (success ? "Changes saved!" : "Save failed.")
                                 showResult = true
                                 if success {
                                     isPresented = false
@@ -167,10 +178,12 @@ struct AssetEditSheet: View {
                     }
                 }
             }
-            // Status Picker: huidige status eerst, dan de rest
-            Picker("Status", selection: $selectedStatusId) {
-                ForEach(apiClient.statusLabels, id: \.id) { label in
-                    Text(label.statusMeta ?? "").tag(label.id)
+            // Status alleen tonen als asset niet uitgecheckt is (niet bewerkbaar bij checkout)
+            if !isAssetCheckedOut {
+                Picker("Status", selection: $selectedStatusId) {
+                    ForEach(apiClient.statusLabels, id: \.id) { label in
+                        Text(displayName(for: label)).tag(label.id)
+                    }
                 }
             }
         }

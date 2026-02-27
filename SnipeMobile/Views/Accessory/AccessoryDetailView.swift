@@ -4,6 +4,11 @@ struct AccessoryDetailView: View {
     let accessory: Accessory
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    var returnToTab: MainTab? = nil
+    var onBackToPrevious: (() -> Void)? = nil
+    var onOpenUser: ((User) -> Void)? = nil
+    var onOpenAsset: ((Asset) -> Void)? = nil
+    var onOpenLocation: ((Location) -> Void)? = nil
     @State private var checkedOutRows: [SnipeITAPIClient.AccessoryCheckedOutRow] = []
     @State private var isLoading = true
     @State private var showCheckinSheet: Bool = false
@@ -95,8 +100,18 @@ struct AccessoryDetailView: View {
         }
         .navigationTitle(accessory.decodedName)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(returnToTab != nil)
         .padding(.top, 8)
         .toolbar {
+            if let _ = returnToTab, let onBack = onBackToPrevious {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        onBack()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/accessories/\(accessory.id)") {
                     Link(destination: url) {
@@ -208,24 +223,38 @@ struct AccessoryDetailView: View {
                 } else {
                     ForEach(activeRows) { row in
                         Button(action: {
-                            checkinTarget = row
-                            showCheckinSheet = true
+                            if row.assignedTo?.type == "user", let id = row.assignedTo?.id,
+                               let fullUser = apiClient.users.first(where: { $0.id == id }) {
+                                onOpenUser?(fullUser)
+                            } else if row.assignedTo?.type == "location", let id = row.assignedTo?.id,
+                                      let fullLocation = apiClient.locations.first(where: { $0.id == id }) {
+                                onOpenLocation?(fullLocation)
+                            } else {
+                                checkinTarget = row
+                                showCheckinSheet = true
+                            }
                         }) {
                             if row.assignedTo?.type == "user",
                                let assigned = row.assignedTo,
                                let id = assigned.id,
                                let name = assigned.name,
                                let firstName = assigned.firstName {
-                                let user = User(
-                                    id: id,
-                                    name: name,
-                                    first_name: firstName,
-                                    email: assigned.username, // username als email niet beschikbaar
-                                    location: nil,
-                                    employeeNumber: nil,
-                                    jobtitle: nil
-                                )
-                                UserCardView(user: user)
+                                HStack {
+                                    let user = User(
+                                        id: id,
+                                        name: name,
+                                        first_name: firstName,
+                                        email: assigned.username,
+                                        location: nil,
+                                        employeeNumber: nil,
+                                        jobtitle: nil
+                                    )
+                                    UserCardView(user: user)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
                             } else if row.assignedTo?.type == "location" {
                                 HStack {
                                     Image(systemName: "mappin.and.ellipse")
@@ -242,8 +271,17 @@ struct AccessoryDetailView: View {
                                         }
                                     }
                                     Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
                                 }
                                 .padding(.horizontal)
+                            }
+                        }
+                        .contextMenu {
+                            Button("Check in") {
+                                checkinTarget = row
+                                showCheckinSheet = true
                             }
                         }
                     }

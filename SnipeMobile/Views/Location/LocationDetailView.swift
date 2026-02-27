@@ -4,6 +4,10 @@ struct LocationDetailView: View {
     let location: Location
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    var returnToTab: MainTab? = nil
+    var onBackToPrevious: (() -> Void)? = nil
+    var onOpenUser: ((User) -> Void)? = nil
+    var onOpenAsset: ((Asset) -> Void)? = nil
     @State private var assetDetailTab: Int = 0
     @State private var userDetailTab: Int = 0
 
@@ -20,57 +24,83 @@ struct LocationDetailView: View {
     }
 
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             Picker("Select a tab", selection: $selectedTab) {
                 Text("Users (\(usersAtLocation.count))").tag(0)
                 Text("Assets (\(assetsAtLocation.count))").tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
 
             if selectedTab == 0 {
-                ScrollView {
-                    if !usersAtLocation.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
+                if usersAtLocation.isEmpty {
+                    ContentUnavailableView("No users", systemImage: "person.2", description: Text("No users at this location."))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 4)
+                } else {
+                    List {
+                        Section {
                             ForEach(usersAtLocation) { user in
-                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab)) {
+                                Button {
+                                    onOpenUser?(user)
+                                } label: {
                                     UserCardView(user: user)
                                 }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowBackground(Color.clear)
                             }
                         }
-                        .padding(.horizontal)
-                    } else {
-                        Text("No users at this location.")
-                            .foregroundColor(.secondary)
-                            .padding()
                     }
+                    .listStyle(.insetGrouped)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                    .padding(.top, 4)
                 }
             } else if selectedTab == 1 {
-                ScrollView {
-                    if !assetsAtLocation.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
+                if assetsAtLocation.isEmpty {
+                    ContentUnavailableView("No assets", systemImage: "laptopcomputer", description: Text("No assets at this location."))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 4)
+                } else {
+                    List {
+                        Section {
                             ForEach(assetsAtLocation) { asset in
-                                Button(action: {
-                                    assetDetailTab = 0
-                                }) {
-                                    NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
-                                        AssetCardView(asset: asset)
-                                    }
+                                Button {
+                                    onOpenAsset?(asset)
+                                } label: {
+                                    AssetCardView(asset: asset)
                                 }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowBackground(Color.clear)
                             }
                         }
-                        .padding(.horizontal)
-                    } else {
-                        Text("No assets at this location.")
-                            .foregroundColor(.secondary)
-                            .padding()
                     }
+                    .listStyle(.insetGrouped)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                    .padding(.top, 4)
                 }
             }
         }
         .navigationTitle(location.name)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
+            if let _ = returnToTab, let onBack = onBackToPrevious {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        onBack()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/locations/\(location.id)") {
                     Link(destination: url) {

@@ -7,6 +7,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var users: [User] = []
     @Published var accessories: [Accessory] = []
     @Published var locations: [Location] = []
+    @Published var companies: [Company] = []
     @Published var errorMessage: String?
     @Published var lastApiMessage: String?
     @Published var isConfigured: Bool {
@@ -18,7 +19,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var statusLabels: [StatusLabel] = []
 
     var baseURL: String {
-        UserDefaults.standard.string(forKey: "baseURL") ?? ""
+        normalizeBaseURL(UserDefaults.standard.string(forKey: "baseURL") ?? "")
     }
     private var apiToken: String {
         UserDefaults.standard.string(forKey: "apiToken") ?? ""
@@ -31,13 +32,22 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func saveConfiguration(baseURL: String, apiToken: String) {
-        UserDefaults.standard.set(baseURL, forKey: "baseURL")
+        let normalizedBaseURL = normalizeBaseURL(baseURL)
+        UserDefaults.standard.set(normalizedBaseURL, forKey: "baseURL")
         UserDefaults.standard.set(apiToken, forKey: "apiToken")
         self.isConfigured = true
         
         Task {
             await fetchPrimaryThenBackground()
         }
+    }
+
+    private func normalizeBaseURL(_ value: String) -> String {
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") {
+            trimmed.removeLast()
+        }
+        return trimmed
     }
 
     func fetchPrimaryThenBackground() async {
@@ -57,6 +67,7 @@ class SnipeITAPIClient: ObservableObject {
                 group.addTask { await self.fetchUsers() }
                 group.addTask { await self.fetchAccessories() }
                 group.addTask { await self.fetchLocations() }
+                group.addTask { await self.fetchCompanies() }
                 group.addTask { await self.fetchStatusLabels() }
             }
         }
@@ -187,6 +198,23 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    func fetchCompanies() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/companies?limit=500") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(CompaniesResponse.self, from: data)
+            await MainActor.run {
+                self.companies = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            }
+        } catch {
+            print("Error fetching companies: \(error.localizedDescription)")
+        }
+    }
+
     func fetchUsersForAccessory(accessoryId: Int) async -> [User] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkedout") else {
@@ -246,7 +274,7 @@ class SnipeITAPIClient: ObservableObject {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let msg = (json?["messages"] as? [String: Any])?.values.first as? String
                     ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Check-out gelukt!" : "Check-out mislukt.")
+                    ?? (httpResponse.statusCode == 200 ? "Check-out successful!" : "Check-out failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 return httpResponse.statusCode == 200
             }
@@ -385,6 +413,177 @@ class SnipeITAPIClient: ObservableObject {
         let eol_date: String?
     }
 
+    // MARK: - Models (voor Create Asset)
+    struct ModelRow: Codable, Identifiable {
+        let id: Int
+        let name: String
+    }
+    struct ModelsResponse: Codable {
+        let rows: [ModelRow]
+    }
+    @Published var models: [ModelRow] = []
+
+    func fetchModels() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/models?limit=500") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(ModelsResponse.self, from: data)
+            await MainActor.run { self.models = response.rows }
+        } catch {
+            print("Error fetching models: \(error)")
+        }
+    }
+
+    // MARK: - Fieldsets (model -> custom fields)
+    func fetchFieldsets() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/fieldsets") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let rows = json["rows"] as? [[String: Any]] {
+                let decoder = JSONDecoder()
+                let fieldsetData = try JSONSerialization.data(withJSONObject: rows)
+                let fs = try decoder.decode([Fieldset].self, from: fieldsetData)
+                await MainActor.run { self.fieldsets = fs }
+            }
+        } catch {
+            print("Error fetching fieldsets: \(error)")
+        }
+    }
+
+    // MARK: - Create Asset (POST /hardware)
+    struct AssetCreateRequest: Codable {
+        let name: String
+        let asset_tag: String
+        let model_id: Int
+        let status_id: Int
+        let serial: String?
+        let location_id: Int?
+        let notes: String?
+        let order_number: String?
+        let purchase_cost: String?
+        let book_value: String?
+        let custom_fields: [String: String]?
+        let purchase_date: String?
+        let next_audit_date: String?
+        let expected_checkin: String?
+        let eol_date: String?
+        let category_id: Int?
+        let manufacturer_id: Int?
+        let supplier_id: Int?
+        let company_id: Int?
+        let warranty_months: String?
+        let warranty_expires: String?
+        let byod: Bool?
+    }
+
+    func createAsset(_ body: AssetCreateRequest) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            let data = try JSONEncoder().encode(body)
+            request.httpBody = data
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Asset created!" : "Create failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200 {
+                    if let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+                       let payload = json["payload"],
+                       let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+                       let newAsset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
+                        await MainActor.run { self.assets.insert(newAsset, at: 0) }
+                    }
+                    return true
+                }
+                return false
+            }
+            return false
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    // MARK: - Categories (voor Create Accessory)
+    struct CategoryRow: Codable, Identifiable {
+        let id: Int
+        let name: String
+        let categoryType: String?
+        enum CodingKeys: String, CodingKey { case id, name; case categoryType = "category_type" }
+    }
+    struct CategoriesResponse: Codable {
+        let rows: [CategoryRow]
+    }
+    @Published var categories: [CategoryRow] = []
+
+    func fetchCategories() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/categories?limit=500") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(CategoriesResponse.self, from: data)
+            await MainActor.run { self.categories = response.rows }
+        } catch {
+            print("Error fetching categories: \(error)")
+        }
+    }
+
+    // MARK: - Create Accessory (POST /accessories)
+    func createAccessory(name: String, categoryId: Int, quantity: Int, customFields: [String: String]?) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "name": name,
+            "category_id": categoryId,
+            "qty": quantity
+        ]
+        if let cf = customFields, !cf.isEmpty {
+            body["custom_fields"] = cf
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Accessory created!" : "Create failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200, let payload = json, let row = payload["payload"] as? [String: Any], row["id"] != nil {
+                    // Eenvoudige accessory voor lijst: we herladen accessoires
+                    Task { await self.fetchAccessories() }
+                    return true
+                }
+                return false
+            }
+            return false
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
     func updateAsset(assetId: Int, update: AssetUpdateRequest) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
         var request = URLRequest(url: url)
@@ -399,7 +598,7 @@ class SnipeITAPIClient: ObservableObject {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let msg = (json?["messages"] as? [String: Any])?.values.first as? String
                     ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Wijzigingen opgeslagen!" : "Opslaan mislukt.")
+                    ?? (httpResponse.statusCode == 200 ? "Changes saved!" : "Save failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200 {
                     if let updatedAsset = try? JSONDecoder().decode(Asset.self, from: data) {
@@ -423,7 +622,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     // MARK: - Field Definitions
-    struct FieldDefinition: Codable, Identifiable {
+    struct FieldDefinition: Codable, Identifiable, Equatable {
         let id: Int
         let name: String
         let type: String?
@@ -472,22 +671,40 @@ class SnipeITAPIClient: ObservableObject {
     func fetchModelFieldDefinitions(modelId: Int) async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
         guard let url = URL(string: "\(baseURL)/api/v1/models/\(modelId)/fields") else { return }
+        await MainActor.run { self.modelFieldDefinitions = nil }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let rows = json["rows"] as? [[String: Any]] {
+            let fields: [FieldDefinition]
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let decoder = JSONDecoder()
-                let fieldData = try JSONSerialization.data(withJSONObject: rows)
-                let fields = try decoder.decode([FieldDefinition].self, from: fieldData)
-                await MainActor.run {
-                    self.modelFieldDefinitions = fields
+                if let rows = json["rows"] as? [[String: Any]],
+                   let fieldData = try? JSONSerialization.data(withJSONObject: rows) {
+                    fields = (try? decoder.decode([FieldDefinition].self, from: fieldData)) ?? []
+                } else if let arr = json["fields"] as? [[String: Any]],
+                          let fieldData = try? JSONSerialization.data(withJSONObject: arr) {
+                    fields = (try? decoder.decode([FieldDefinition].self, from: fieldData)) ?? []
+                } else {
+                    fields = (try? decoder.decode([FieldDefinition].self, from: data)) ?? []
                 }
+            } else {
+                fields = (try? JSONDecoder().decode([FieldDefinition].self, from: data)) ?? []
+            }
+            if fields.isEmpty, self.fieldsets == nil {
+                await self.fetchFieldsets()
+            }
+            await MainActor.run {
+                let fallback = self.modelFieldDefinitionsFromFieldsets(modelId: modelId)
+                self.modelFieldDefinitions = fields.isEmpty ? fallback : fields
             }
         } catch {
             print("Error fetching model field definitions: \(error)")
+            if self.fieldsets == nil { await self.fetchFieldsets() }
+            await MainActor.run {
+                self.modelFieldDefinitions = self.modelFieldDefinitionsFromFieldsets(modelId: modelId)
+            }
         }
     }
 
@@ -518,15 +735,40 @@ class SnipeITAPIClient: ObservableObject {
         let name: String
         let fields: FieldsetFields
         let models: FieldsetModels?
+        /// Some Snipe IT versions return "models" as a direct array.
+        let modelsDirect: [FieldsetModelRow]?
         struct FieldsetFields: Codable {
             let rows: [FieldsetField]
         }
         struct FieldsetModels: Codable {
-            let rows: [Model]
-            struct Model: Codable {
-                let id: Int
-                let name: String
-            }
+            let rows: [FieldsetModelRow]
+        }
+        struct FieldsetModelRow: Codable {
+            let id: Int
+            let name: String
+        }
+        enum CodingKeys: String, CodingKey {
+            case id, name, fields, models
+        }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(Int.self, forKey: .id)
+            name = try c.decode(String.self, forKey: .name)
+            fields = try c.decode(FieldsetFields.self, forKey: .fields)
+            models = try? c.decode(FieldsetModels.self, forKey: .models)
+            modelsDirect = try? c.decode([FieldsetModelRow].self, forKey: .models)
+        }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(id, forKey: .id)
+            try c.encode(name, forKey: .name)
+            try c.encode(fields, forKey: .fields)
+            try c.encodeIfPresent(models, forKey: .models)
+        }
+        var modelIds: [Int] {
+            if let rows = models?.rows { return rows.map(\.id) }
+            if let arr = modelsDirect { return arr.map(\.id) }
+            return []
         }
     }
 
@@ -540,6 +782,17 @@ class SnipeITAPIClient: ObservableObject {
 
     @MainActor
     @Published var fieldsets: [Fieldset]? = nil
+
+    /// Returns custom field definitions for the given model from fieldsets (fallback when GET /models/:id/fields is empty or unavailable).
+    func modelFieldDefinitionsFromFieldsets(modelId: Int) -> [FieldDefinition] {
+        guard let fieldsets = fieldsets else { return [] }
+        guard let fieldset = fieldsets.first(where: { fs in
+            fs.modelIds.contains(modelId)
+        }) else { return [] }
+        return fieldset.fields.rows.map { f in
+            FieldDefinition(id: f.id, name: f.name, type: f.type, field_values_array: f.field_values_array)
+        }
+    }
 
     func checkinAsset(assetId: Int) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkin") else { return false }

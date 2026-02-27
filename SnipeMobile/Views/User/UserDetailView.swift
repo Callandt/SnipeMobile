@@ -4,6 +4,11 @@ struct UserDetailView: View {
     let user: User
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    var returnToTab: MainTab? = nil
+    var onBackToPrevious: (() -> Void)? = nil
+    var onOpenAsset: ((Asset) -> Void)? = nil
+    var onOpenAccessory: ((Accessory) -> Void)? = nil
+    var onOpenLocation: ((Location) -> Void)? = nil
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
     @StateObject private var accessoryHistoryViewModel = HistoryViewModel()
@@ -51,30 +56,48 @@ struct UserDetailView: View {
     }
 
     var assignedAssetsSection: some View {
-        VStack(spacing: 16) {
-            ForEach(assignedItems) { item in
-                switch item {
-                case .asset(let asset):
-                    Button(action: {
-                        assetDetailTab = 0
-                    }) {
-                        NavigationLink(destination: AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)) {
+        List {
+            Section {
+                ForEach(assignedItems) { item in
+                    switch item {
+                    case .asset(let asset):
+                        Button {
+                            onOpenAsset?(asset)
+                        } label: {
                             AssetCardView(asset: asset)
                         }
-                    }
-                case .accessory(let accessory):
-                    NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: .constant(0))) {
-                        AccessoryCardView(accessory: accessory)
+                        .buttonStyle(.plain)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowBackground(Color.clear)
+                    case .accessory(let accessory):
+                        Button {
+                            onOpenAccessory?(accessory)
+                        } label: {
+                            AccessoryCardView(accessory: accessory)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowBackground(Color.clear)
                     }
                 }
-            }
-            ForEach(actuallyAssignedAccessories) { accessory in
-                NavigationLink(destination: AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: .constant(0))) {
-                    AccessoryCardView(accessory: accessory)
+                ForEach(actuallyAssignedAccessories) { accessory in
+                    Button {
+                        onOpenAccessory?(accessory)
+                    } label: {
+                        AccessoryCardView(accessory: accessory)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
                 }
             }
         }
-        .padding(.horizontal)
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
     }
 
     var body: some View {
@@ -85,7 +108,9 @@ struct UserDetailView: View {
                     Text("History").tag(1)
                 }
                 .pickerStyle(SegmentedPickerStyle())
-                .padding()
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
 
                 // Copy notification overlay direct onder tabs
                 if showCopyNotification, let text = copyNotification {
@@ -138,23 +163,16 @@ struct UserDetailView: View {
                         .padding(.horizontal)
 
                         if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
-                            Text("Assigned Assets")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-
-                        // --- Scrollable Lists ---
-                        ScrollView(.vertical) {
-                            VStack(spacing: 30) {
-                                if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
-                                    assignedAssetsSection
-                                }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Assigned Assets")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                assignedAssetsSection
                             }
-                            .padding(.vertical)
                         }
                     }
                     .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
-                    .padding(.top)
+                    .padding(.top, 4)
                 } else {
                     HistoryView(itemType: "user", itemId: user.id, apiClient: apiClient)
                 }
@@ -185,8 +203,17 @@ struct UserDetailView: View {
         }
         .navigationTitle(HTMLDecoder.decode(user.decodedName))
         .navigationBarTitleDisplayMode(.inline)
-        .padding(.top, 8)
+        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
+            if let _ = returnToTab, let onBack = onBackToPrevious {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        onBack()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/users/\(user.id)") {
                     Link(destination: url) {

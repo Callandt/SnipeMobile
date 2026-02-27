@@ -2,411 +2,191 @@ import SwiftUI
 import AVFoundation
 import CodeScanner
 
+// MARK: - Tab
+enum MainTab: String, CaseIterable {
+    case hardware = "Hardware"
+    case accessories = "Accessories"
+    case users = "Users"
+    case locations = "Locations"
+
+    var icon: String {
+        switch self {
+        case .hardware: return "laptopcomputer"
+        case .accessories: return "mediastick"
+        case .users: return "person.2"
+        case .locations: return "mappin.and.ellipse"
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var apiClient = SnipeITAPIClient()
+    @State private var selectedTab: MainTab = .hardware
     @State private var showingScanner = false
     @State private var scannedAssetId: Int?
-    @State private var selectedCategory: String = "Hardware"
-    @State private var showingSettings = false
     @State private var searchText: String = ""
-    @State private var navigationPath = NavigationPath()
     @State private var isRefreshing: Bool = false
     @State private var hasLoadedInitialAssets: Bool = false
     @State private var assetDetailTab: Int = 0
     @State private var userDetailTab: Int = 0
     @State private var locationDetailTab: Int = 0
     @State private var accessoryDetailTab: Int = 0
-    @State private var selectedAssetId: Int? = nil
-    @State private var selectedUserId: Int? = nil
-    @State private var selectedLocationId: Int? = nil
-    @State private var selectedAccessoryId: Int? = nil
     @EnvironmentObject var appSettings: AppSettings
-    @State private var navStack: [AnyHashable] = []
-
-    let categories = ["Hardware", "Accessories", "Users", "Locations"]
-
-    var filteredAssets: [Asset] {
-        if searchText.isEmpty {
-            return apiClient.assets
-        } else {
-            return apiClient.assets.filter { asset in
-                asset.decodedName.lowercased().contains(searchText.lowercased()) ||
-                asset.decodedModelName.lowercased().contains(searchText.lowercased()) ||
-                asset.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
-                asset.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
-                asset.decodedAssignedToName.lowercased().contains(searchText.lowercased())
-            }
-        }
-    }
-
-    var filteredUsers: [User] {
-        if searchText.isEmpty {
-            return apiClient.users
-        } else {
-            return apiClient.users.filter { user in
-                user.decodedName.lowercased().contains(searchText.lowercased()) ||
-                user.decodedFirstName.lowercased().contains(searchText.lowercased()) ||
-                user.decodedEmail.lowercased().contains(searchText.lowercased()) ||
-                user.decodedLocationName.lowercased().contains(searchText.lowercased())
-            }
-        }
-    }
-
-    var filteredAccessories: [Accessory] {
-        if searchText.isEmpty {
-            return apiClient.accessories
-        } else {
-            return apiClient.accessories.filter { accessory in
-                accessory.decodedName.lowercased().contains(searchText.lowercased()) ||
-                accessory.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
-                accessory.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
-                accessory.decodedAssignedToName.lowercased().contains(searchText.lowercased()) ||
-                accessory.decodedManufacturerName.lowercased().contains(searchText.lowercased()) ||
-                accessory.decodedCategoryName.lowercased().contains(searchText.lowercased())
-            }
-        }
-    }
-
-    var filteredLocations: [Location] {
-        if searchText.isEmpty {
-            return apiClient.locations
-        } else {
-            return apiClient.locations.filter { $0.name.lowercased().contains(searchText.lowercased()) }
-        }
-    }
+    @State private var showingSettings = false
+    @State private var showingAddAsset = false
+    @State private var showingAddAccessory = false
+    @State private var pendingUserToOpen: User?
+    @State private var pendingAssetToOpen: Asset?
+    @State private var pendingLocationToOpen: Location?
+    @State private var pendingAccessoryToOpen: Accessory?
+    @State private var returnToTab: MainTab?
+    @State private var hardwarePath = NavigationPath()
+    @State private var usersPath = NavigationPath()
+    @State private var locationsPath = NavigationPath()
+    @State private var accessoriesPath = NavigationPath()
 
     var body: some View {
-        if apiClient.isConfigured {
-            NavigationStack(path: $navigationPath) {
-                ZStack {
-                    Color(.systemBackground)
-                        .ignoresSafeArea()
+        TabView(selection: $selectedTab) {
+            HardwareTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                hasLoadedInitialAssets: $hasLoadedInitialAssets,
+                assetDetailTab: $assetDetailTab,
+                scannedAssetId: $scannedAssetId,
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner,
+                showingAddAsset: $showingAddAsset,
+                navigationPath: $hardwarePath,
+                pendingAssetToOpen: $pendingAssetToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; hardwarePath = NavigationPath() } },
+                onOpenUser: { pendingUserToOpen = $0; selectedTab = .users; returnToTab = .hardware },
+                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .hardware }
+            )
+            .tag(MainTab.hardware)
+            .tabItem { Label(MainTab.hardware.rawValue, systemImage: MainTab.hardware.icon) }
 
-                    VStack(spacing: 0) {
-                        categoryNavigationBar
-                        statisticsView
-                        searchBar
-                        assetListView
-                        scanQRButton
-                    }
-                }
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text("SnipeMobile")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                            .padding(.top, 20)
-                    }
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: {
-                            showingSettings = true
-                        }) {
-                            Image(systemName: "gearshape")
-                                .foregroundColor(.primary)
-                                .padding(.top, 20)
-                        }
-                    }
-                }
-                .navigationDestination(for: Asset.self) { asset in
-                    AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab)
-                }
-                .navigationDestination(for: User.self) { user in
-                    UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab)
-                }
-                .navigationDestination(for: Location.self) { location in
-                    LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab)
-                }
-                .navigationDestination(for: Accessory.self) { accessory in
-                    AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $accessoryDetailTab)
-                }
-                .onChange(of: selectedCategory) {
-                    searchText = ""
-                    navigationPath = NavigationPath()
-                    navStack = []
-                }
-            }
-            .sheet(isPresented: $showingScanner) {
-                CodeScannerView(codeTypes: [.qr], completion: { result in
-                    showingScanner = false
-                    switch result {
-                    case .success(let scanResult):
-                        print("QR code scanned: \(scanResult.string)")
-                        if let url = URL(string: scanResult.string),
-                           let id = extractAssetId(from: url) {
-                            scannedAssetId = id
-                            apiClient.errorMessage = nil
-                            print("Extracted asset ID: \(id)")
-                            if let asset = apiClient.assets.first(where: { $0.id == id }) {
-                                print("Navigating to asset with ID: \(asset.id)")
-                                navigationPath.append(asset)
-                                navStack.append(asset)
-                                selectedCategory = "Hardware"
-                            } else {
-                                apiClient.errorMessage = "Asset with ID \(id) not found."
-                                print("Asset not found for ID: \(id)")
-                            }
-                        } else {
-                            apiClient.errorMessage = "Invalid QR code: no valid asset ID"
-                            print("Invalid QR code format")
-                        }
-                    case .failure(let error):
-                        apiClient.errorMessage = "Scan failed: \(error.localizedDescription)"
-                        print("Scan error: \(error.localizedDescription)")
-                    }
-                })
-            }
-            .sheet(isPresented: $showingSettings) {
-                SettingsView(apiClient: apiClient)
-                    .preferredColorScheme(
-                        appSettings.appTheme == "light" ? .light :
-                        appSettings.appTheme == "dark" ? .dark : nil
-                    )
-            }
-            .onAppear {
-                AVCaptureDevice.requestAccess(for: .video) { granted in
-                    Task { @MainActor in
-                        if !granted {
-                            apiClient.errorMessage = "Camera access is required for QR scanning."
-                        }
-                    }
-                }
-                if !hasLoadedInitialAssets {
-                    Task {
-                        await apiClient.fetchPrimaryThenBackground()
-                        hasLoadedInitialAssets = true
-                    }
-                }
-            }
-        } else {
-            Text("No data yet. Please configure your API in Settings to see your assets.")
+            AccessoriesTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                accessoryDetailTab: $accessoryDetailTab,
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner,
+                showingAddAccessory: $showingAddAccessory,
+                navigationPath: $accessoriesPath,
+                pendingAccessoryToOpen: $pendingAccessoryToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; accessoriesPath = NavigationPath() } },
+                onOpenUser: { pendingUserToOpen = $0; selectedTab = .users; returnToTab = .accessories },
+                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .accessories },
+                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .accessories }
+            )
+            .tag(MainTab.accessories)
+            .tabItem { Label(MainTab.accessories.rawValue, systemImage: MainTab.accessories.icon) }
+
+            UsersTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                userDetailTab: $userDetailTab,
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner,
+                showingAddAsset: $showingAddAsset,
+                navigationPath: $usersPath,
+                pendingUserToOpen: $pendingUserToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; usersPath = NavigationPath() } },
+                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .users },
+                onOpenAccessory: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .users },
+                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .users }
+            )
+            .tag(MainTab.users)
+            .tabItem { Label(MainTab.users.rawValue, systemImage: MainTab.users.icon) }
+
+            LocationsTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                locationDetailTab: $locationDetailTab,
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner,
+                showingAddAsset: $showingAddAsset,
+                navigationPath: $locationsPath,
+                pendingLocationToOpen: $pendingLocationToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; locationsPath = NavigationPath() } },
+                onOpenUser: { pendingUserToOpen = $0; selectedTab = .users; returnToTab = .locations },
+                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .locations }
+            )
+            .tag(MainTab.locations)
+            .tabItem { Label(MainTab.locations.rawValue, systemImage: MainTab.locations.icon) }
         }
-    }
-
-    private var categoryNavigationBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(categories, id: \.self) { category in
-                    Button(action: {
-                        selectedCategory = category
-                    }) {
-                        Text(category)
-                            .font(.caption)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 12)
-                            .background(selectedCategory == category ? Color.blue : Color(.systemGray4))
-                            .foregroundColor(selectedCategory == category ? .white : .primary)
-                            .cornerRadius(12)
+        #if os(iOS)
+        .tabViewStyle(.automatic)
+        #endif
+        .onChange(of: selectedTab) { _, _ in
+            searchText = ""
+        }
+        .modifier(TabBarMinimizeBehaviorModifier())
+        .sheet(isPresented: $showingScanner, onDismiss: {
+            selectedTab = .hardware
+        }) {
+            CodeScannerView(codeTypes: [.qr], completion: handleScanResult)
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(apiClient: apiClient)
+                .preferredColorScheme(
+                    appSettings.appTheme == "light" ? .light :
+                    appSettings.appTheme == "dark" ? .dark : nil
+                )
+        }
+        .sheet(isPresented: $showingAddAsset) {
+            AddAssetSheet(apiClient: apiClient, isPresented: $showingAddAsset)
+        }
+        .sheet(isPresented: $showingAddAccessory) {
+            AddAccessorySheet(apiClient: apiClient, isPresented: $showingAddAccessory)
+        }
+        .onAppear {
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    if !granted {
+                        apiClient.errorMessage = "Camera access is required for QR scanning."
                     }
                 }
             }
-            .padding(.horizontal)
-        }
-        .background(Color(.systemBackground))
-    }
-
-    private var statisticsView: some View {
-        Group {
-            if selectedCategory == "Hardware" {
-                HStack {
-                    Text("\(apiClient.assets.count)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    Text("total assets")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("\(apiClient.assets.filter { $0.assignedTo != nil }.count)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    Text("assigned")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            if apiClient.isConfigured && !hasLoadedInitialAssets {
+                Task {
+                    await apiClient.fetchPrimaryThenBackground()
+                    hasLoadedInitialAssets = true
                 }
-                .padding()
-                .background(Color(.systemBackground))
-                .frame(maxWidth: .infinity)
-            } else if selectedCategory == "Users" {
-                HStack {
-                    Text("\(apiClient.users.count)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    Text("total users")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding()
-                .background(Color(.systemBackground))
-                .frame(maxWidth: .infinity)
-            } else if selectedCategory == "Accessories" {
-                HStack {
-                    Text("\(apiClient.accessories.count)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    Text("total accessories")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding()
-                .background(Color(.systemBackground))
-                .frame(maxWidth: .infinity)
-            } else if selectedCategory == "Locations" {
-                HStack {
-                    Text("\(apiClient.locations.count)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    Text("total locations")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding()
-                .background(Color(.systemBackground))
-                .frame(maxWidth: .infinity)
             }
         }
     }
 
-    private var searchBar: some View {
-        TextField("Search", text: $searchText)
-            .textFieldStyle(RoundedBorderTextFieldStyle())
-            .padding(.horizontal)
-            .padding(.vertical, 5)
-            .foregroundColor(.primary)
-            .background(Color(.systemBackground))
-    }
-
-    private var assetListView: some View {
-        ScrollView {
-            LazyVStack(spacing: 10) {
-                if !apiClient.isConfigured {
-                    Text("No data yet. Please configure your API in Settings to see your assets.")
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding()
-                } else if apiClient.isLoading && !isRefreshing {
-                    if selectedCategory == "Hardware" {
-                        ProgressView("Loading assets...")
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if selectedCategory == "Users" {
-                        ProgressView("Loading users...")
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if selectedCategory == "Accessories" {
-                        ProgressView("Loading accessories...")
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if selectedCategory == "Locations" {
-                        ProgressView("Loading locations...")
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                } else if let error = apiClient.errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .padding()
-                } else if selectedCategory == "Hardware" {
-                    ForEach(filteredAssets) { asset in
-                        Button(action: {
-                            if UIDevice.current.userInterfaceIdiom == .pad {
-                                navigationPath = NavigationPath()
-                                navStack = []
-                                navigationPath.append(asset)
-                                navStack.append(asset)
-                            } else {
-                                navigationPath.append(asset)
-                                navStack.append(asset)
-                            }
-                            selectedAssetId = asset.id
-                        }) {
-                            AssetCardView(asset: asset)
-                        }
-                    }
-                } else if selectedCategory == "Users" {
-                    ForEach(filteredUsers) { user in
-                        Button(action: {
-                            if UIDevice.current.userInterfaceIdiom == .pad {
-                                navigationPath = NavigationPath()
-                                navStack = []
-                                navigationPath.append(user)
-                                navStack.append(user)
-                            } else {
-                                navigationPath.append(user)
-                                navStack.append(user)
-                            }
-                            selectedUserId = user.id
-                        }) {
-                            UserCardView(user: user)
-                        }
-                    }
-                } else if selectedCategory == "Accessories" {
-                    ForEach(filteredAccessories) { accessory in
-                        Button(action: {
-                            if UIDevice.current.userInterfaceIdiom == .pad {
-                                navigationPath = NavigationPath()
-                                navStack = []
-                                navigationPath.append(accessory)
-                                navStack.append(accessory)
-                            } else {
-                                navigationPath.append(accessory)
-                                navStack.append(accessory)
-                            }
-                            selectedAccessoryId = accessory.id
-                        }) {
-                            AccessoryCardView(accessory: accessory)
-                        }
-                    }
-                } else if selectedCategory == "Locations" {
-                    ForEach(filteredLocations) { location in
-                        Button(action: {
-                            if UIDevice.current.userInterfaceIdiom == .pad {
-                                navigationPath = NavigationPath()
-                                navStack = []
-                                navigationPath.append(location)
-                                navStack.append(location)
-                            } else {
-                                navigationPath.append(location)
-                                navStack.append(location)
-                            }
-                            selectedLocationId = location.id
-                        }) {
-                            LocationCardView(location: location)
-                        }
-                    }
+    private func handleScanResult(_ result: Result<ScanResult, ScanError>) {
+        showingScanner = false
+        switch result {
+        case .success(let scanResult):
+            if let url = URL(string: scanResult.string), let id = extractAssetId(from: url) {
+                apiClient.errorMessage = nil
+                if let asset = apiClient.assets.first(where: { $0.id == id }) {
+                    scannedAssetId = asset.id
+                    selectedTab = .hardware
+                } else if apiClient.assets.isEmpty {
+                    scannedAssetId = id
+                    selectedTab = .hardware
+                    Task { await apiClient.fetchPrimaryThenBackground() }
+                } else {
+                    scannedAssetId = nil
+                    apiClient.errorMessage = "Asset with ID \(id) not found."
                 }
+            } else {
+                apiClient.errorMessage = "Invalid QR code: no valid asset ID"
             }
-        }
-        .refreshable {
-            if apiClient.isConfigured {
-                isRefreshing = true
-                await apiClient.fetchPrimaryThenBackground()
-                try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s delay voor UI sync
-                isRefreshing = false
-            }
-        }
-    }
-
-    private var scanQRButton: some View {
-        Button(action: { showingScanner = true }) {
-            HStack {
-                Image(systemName: "qrcode.viewfinder")
-                Text("Scan QR Code")
-            }
-            .font(.headline)
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(Color.blue)
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .padding(.horizontal)
+        case .failure(let error):
+            apiClient.errorMessage = "Scan failed: \(error.localizedDescription)"
         }
     }
 
@@ -418,25 +198,514 @@ struct ContentView: View {
         }
         return nil
     }
+}
 
-    private func popTo<T: Hashable>(_ value: T) {
-        if let idx = navStack.lastIndex(where: { navItem in
-            switch (navItem, value) {
-            case let (a as Asset, b as Asset): return a.id == b.id
-            case let (a as User, b as User): return a.id == b.id
-            case let (a as Accessory, b as Accessory): return a.id == b.id
-            case let (a as Location, b as Location): return a.id == b.id
-            default: return false
-            }
-        }) {
-            let removeCount = navStack.count - idx - 1
-            for _ in 0..<removeCount {
-                navigationPath.removeLast()
-                navStack.removeLast()
-            }
-        } else {
-            navigationPath.append(value)
-            navStack.append(value)
+// MARK: - Hardware Tab
+struct HardwareTab: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var hasLoadedInitialAssets: Bool
+    @Binding var assetDetailTab: Int
+    @Binding var scannedAssetId: Int?
+    @Binding var showingSettings: Bool
+    @Binding var showingScanner: Bool
+    @Binding var showingAddAsset: Bool
+    @Binding var navigationPath: NavigationPath
+    @Binding var pendingAssetToOpen: Asset?
+    @Binding var returnToTab: MainTab?
+    var onBackToPreviousTab: () -> Void
+    var onOpenUser: (User) -> Void
+    var onOpenLocation: (Location) -> Void
+
+    var filteredAssets: [Asset] {
+        if searchText.isEmpty { return apiClient.assets }
+        return apiClient.assets.filter {
+            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedModelName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedAssignedToName.lowercased().contains(searchText.lowercased())
         }
     }
+
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            Group {
+                if !apiClient.isConfigured {
+                    ContentUnavailableView(
+                        "No Data Yet",
+                        systemImage: "link.badge.plus",
+                        description: Text("Configure your API in Settings to see your assets.")
+                    )
+                } else if apiClient.isLoading && !isRefreshing {
+                    ProgressView("Loading assets...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = apiClient.errorMessage {
+                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                } else {
+                    List {
+                        Section {
+                            HStack {
+                                Label("\(apiClient.assets.count)", systemImage: "laptopcomputer")
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(apiClient.assets.filter { $0.assignedTo != nil }.count) assigned")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        }
+
+                        Section {
+                            ForEach(filteredAssets) { asset in
+                                Button {
+                                    navigationPath.append(asset)
+                                } label: {
+                                    AssetCardView(asset: asset)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                }
+            }
+            .navigationTitle("Hardware")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingAddAsset = true
+                    } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel("Add asset")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    .accessibilityLabel("Scan QR code")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search assets")
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    await apiClient.fetchPrimaryThenBackground()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
+            }
+            .navigationDestination(for: Asset.self) { asset in
+                AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation)
+            }
+        }
+        .onAppear {
+            if apiClient.isConfigured && apiClient.assets.isEmpty && !hasLoadedInitialAssets {
+                Task {
+                    await apiClient.fetchPrimaryThenBackground()
+                    hasLoadedInitialAssets = true
+                }
+            }
+            tryPushScannedAsset()
+            tryPushPendingAsset()
+        }
+        .onChange(of: scannedAssetId) { _, _ in
+            tryPushScannedAsset()
+        }
+        .onChange(of: pendingAssetToOpen) { _, _ in
+            tryPushPendingAsset()
+        }
+        .onChange(of: apiClient.assets) { _, _ in
+            tryPushScannedAsset()
+            tryPushPendingAsset()
+        }
+    }
+
+    private func tryPushPendingAsset() {
+        guard let asset = pendingAssetToOpen else { return }
+        navigationPath.append(asset)
+        pendingAssetToOpen = nil
+    }
+
+    private func tryPushScannedAsset() {
+        guard let id = scannedAssetId, let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
+        navigationPath.append(asset)
+        scannedAssetId = nil
+    }
+}
+
+// MARK: - Accessories Tab
+struct AccessoriesTab: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var accessoryDetailTab: Int
+    @Binding var showingSettings: Bool
+    @Binding var showingScanner: Bool
+    @Binding var showingAddAccessory: Bool
+    @Binding var navigationPath: NavigationPath
+    @Binding var pendingAccessoryToOpen: Accessory?
+    @Binding var returnToTab: MainTab?
+    var onBackToPreviousTab: () -> Void
+    var onOpenUser: (User) -> Void
+    var onOpenAsset: (Asset) -> Void
+    var onOpenLocation: (Location) -> Void
+
+    var filteredAccessories: [Accessory] {
+        if searchText.isEmpty { return apiClient.accessories }
+        return apiClient.accessories.filter {
+            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedAssignedToName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedManufacturerName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedCategoryName.lowercased().contains(searchText.lowercased())
+        }
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            Group {
+                if !apiClient.isConfigured {
+                    ContentUnavailableView(
+                        "No Data Yet",
+                        systemImage: "link.badge.plus",
+                        description: Text("Configure your API in Settings.")
+                    )
+                } else if apiClient.isLoading && !isRefreshing {
+                    ProgressView("Loading accessories...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = apiClient.errorMessage {
+                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                } else {
+                    List {
+                        Section {
+                            HStack {
+                                Label("\(apiClient.accessories.count)", systemImage: "mediastick")
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        }
+
+                        Section {
+                            ForEach(filteredAccessories) { accessory in
+                                Button {
+                                    navigationPath.append(accessory)
+                                } label: {
+                                    AccessoryCardView(accessory: accessory)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                }
+            }
+            .navigationTitle("Accessories")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingAddAccessory = true
+                    } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel("Add accessory")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    .accessibilityLabel("Scan QR code")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search accessories")
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    await apiClient.fetchPrimaryThenBackground()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
+            }
+            .navigationDestination(for: Accessory.self) { accessory in
+                AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $accessoryDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset, onOpenLocation: onOpenLocation)
+            }
+        }
+        .onChange(of: pendingAccessoryToOpen) { _, new in
+            if let accessory = new {
+                navigationPath.append(accessory)
+                pendingAccessoryToOpen = nil
+            }
+        }
+    }
+}
+
+// MARK: - Users Tab
+struct UsersTab: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var userDetailTab: Int
+    @Binding var showingSettings: Bool
+    @Binding var showingScanner: Bool
+    @Binding var showingAddAsset: Bool
+    @Binding var navigationPath: NavigationPath
+    @Binding var pendingUserToOpen: User?
+    @Binding var returnToTab: MainTab?
+    var onBackToPreviousTab: () -> Void
+    var onOpenAsset: (Asset) -> Void
+    var onOpenAccessory: (Accessory) -> Void
+    var onOpenLocation: (Location) -> Void
+
+    var filteredUsers: [User] {
+        if searchText.isEmpty { return apiClient.users }
+        return apiClient.users.filter {
+            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedFirstName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedEmail.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedLocationName.lowercased().contains(searchText.lowercased())
+        }
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            Group {
+                if !apiClient.isConfigured {
+                    ContentUnavailableView(
+                        "No Data Yet",
+                        systemImage: "link.badge.plus",
+                        description: Text("Configure your API in Settings.")
+                    )
+                } else if apiClient.isLoading && !isRefreshing {
+                    ProgressView("Loading users...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = apiClient.errorMessage {
+                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                } else {
+                    List {
+                        Section {
+                            HStack {
+                                Label("\(apiClient.users.count)", systemImage: "person.2")
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        }
+
+                        Section {
+                            ForEach(filteredUsers) { user in
+                                Button {
+                                    navigationPath.append(user)
+                                } label: {
+                                    UserCardView(user: user)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                }
+            }
+            .navigationTitle("Users")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    .accessibilityLabel("Scan QR code")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search users")
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    await apiClient.fetchPrimaryThenBackground()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
+            }
+            .navigationDestination(for: User.self) { user in
+                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAsset, onOpenAccessory: onOpenAccessory, onOpenLocation: onOpenLocation)
+            }
+        }
+        .onChange(of: pendingUserToOpen) { _, new in
+            if let user = new {
+                navigationPath.append(user)
+                pendingUserToOpen = nil
+            }
+        }
+    }
+}
+
+// MARK: - Locations Tab
+struct LocationsTab: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var locationDetailTab: Int
+    @Binding var showingSettings: Bool
+    @Binding var showingScanner: Bool
+    @Binding var showingAddAsset: Bool
+    @Binding var navigationPath: NavigationPath
+    @Binding var pendingLocationToOpen: Location?
+    @Binding var returnToTab: MainTab?
+    var onBackToPreviousTab: () -> Void
+    var onOpenUser: (User) -> Void
+    var onOpenAsset: (Asset) -> Void
+
+    var filteredLocations: [Location] {
+        if searchText.isEmpty { return apiClient.locations }
+        return apiClient.locations.filter { $0.name.lowercased().contains(searchText.lowercased()) }
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            Group {
+                if !apiClient.isConfigured {
+                    ContentUnavailableView(
+                        "No Data Yet",
+                        systemImage: "link.badge.plus",
+                        description: Text("Configure your API in Settings.")
+                    )
+                } else if apiClient.isLoading && !isRefreshing {
+                    ProgressView("Loading locations...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = apiClient.errorMessage {
+                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                } else {
+                    List {
+                        Section {
+                            HStack {
+                                Label("\(apiClient.locations.count)", systemImage: "mappin.and.ellipse")
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        }
+
+                        Section {
+                            ForEach(filteredLocations) { location in
+                                Button {
+                                    navigationPath.append(location)
+                                } label: {
+                                    LocationCardView(location: location)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                }
+            }
+            .navigationTitle("Locations")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    .accessibilityLabel("Scan QR code")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search locations")
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    await apiClient.fetchPrimaryThenBackground()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
+            }
+            .navigationDestination(for: Location.self) { location in
+                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset)
+            }
+        }
+        .onChange(of: pendingLocationToOpen) { _, new in
+            if let location = new {
+                navigationPath.append(location)
+                pendingLocationToOpen = nil
+            }
+        }
+    }
+}
+
+// MARK: - iOS 26 Liquid Glass: tab bar minimaliseert bij scrollen
+struct TabBarMinimizeBehaviorModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+        .environmentObject(AppSettings())
 }

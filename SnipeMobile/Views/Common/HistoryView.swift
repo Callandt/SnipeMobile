@@ -145,7 +145,7 @@ struct HistoryView: View {
                 HStack(spacing: 6) {
                     Image(systemName: target.type == "user" ? "person.crop.circle.badge.checkmark" : "mappin.and.ellipse")
                         .foregroundColor(.accentColor)
-                    Text("To: ") + Text(HTMLDecoder.decode(target.name))
+                    Text("To: \(HTMLDecoder.decode(target.name))")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

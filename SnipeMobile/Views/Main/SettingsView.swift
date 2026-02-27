@@ -4,6 +4,8 @@ import LocalAuthentication
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var apiClient: SnipeITAPIClient
+    /// When true, view is shown inside the tab bar (no Close button).
+    var isPresentedAsTab: Bool = false
     @AppStorage("useBiometrics") private var useBiometrics: Bool = false
     @AppStorage("appTheme") private var appTheme: String = "system"
     @State private var baseURL: String = ""
@@ -69,12 +71,19 @@ struct SettingsView: View {
                         .textContentType(.password)
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Close") {
-                        dismiss()
+                if !isPresentedAsTab {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Close") {
+                            let storedToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
+                            if apiCredentialsChanged(storedURL: apiClient.baseURL, storedToken: storedToken) {
+                                apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
+                            }
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -92,20 +101,16 @@ struct SettingsView: View {
                 baseURL = apiClient.baseURL
                 apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
             }
-            .onDisappear {
-                Task {
-                    if let error = await apiClient.validateApiCredentials() {
-                        alertMessage = error
-                        showAlert = true
-                    } else {
-                        apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
-                    }
-                }
-            }
             .alert(isPresented: $showAlert) {
                 Alert(title: Text(alertMessage))
             }
         }
+    }
+
+    private func apiCredentialsChanged(storedURL: String, storedToken: String) -> Bool {
+        var trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        return trimmed != storedURL || apiToken != storedToken
     }
 
     private func authenticateBiometric(completion: @escaping (Bool) -> Void) {

@@ -277,7 +277,7 @@ struct AssetCheckoutSheet: View {
                 success = await apiClient.checkoutAssetCustom(assetId: asset.id, body: body)
             }
             isSaving = false
-            resultMessage = apiClient.lastApiMessage ?? (success ? "Check-out gelukt!" : "Check-out mislukt.")
+            resultMessage = apiClient.lastApiMessage ?? (success ? "Check-out successful!" : "Check-out failed.")
             showResult = true
             if success { isPresented = false }
         }

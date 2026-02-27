@@ -4,6 +4,10 @@ struct AssetDetailView: View {
     let asset: Asset
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    var returnToTab: MainTab? = nil
+    var onBackToPrevious: (() -> Void)? = nil
+    var onOpenUser: ((User) -> Void)? = nil
+    var onOpenLocation: ((Location) -> Void)? = nil
     @State private var userId: String = ""
     @Environment(\.dismiss) var dismiss
     @State private var hasLoggedAppearance = false
@@ -112,111 +116,61 @@ struct AssetDetailView: View {
                 HistoryView(itemType: "asset", itemId: asset.id, apiClient: apiClient)
             }
             Spacer(minLength: 0)
-            HStack(spacing: 10) {
-                Button(action: {
-                    editName = asset.name
-                    editAssetTag = asset.assetTag
-                    editSerial = asset.serial ?? ""
-                    editNotes = asset.notes ?? ""
-                    editOrderNumber = asset.orderNumber ?? ""
-                    editPurchaseCost = asset.purchaseCost ?? ""
-                    editBookValue = asset.bookValue ?? ""
-                    editCustomFields = [:]
-                    if let customFields = asset.customFields {
-                        for (key, field) in customFields {
-                            editCustomFields[key] = field.value ?? ""
-                        }
-                    }
-                    // Initialiseer selectievariabelen voor alle pickers
-                    if let modelId = asset.model?.id {
-                        selectedModelId = modelId
-                    } else if let firstModel = apiClient.assets.compactMap({ $0.model?.id }).first {
-                        selectedModelId = firstModel
-                    }
-                    if let statusId = asset.statusLabel.id as Int? {
-                        selectedStatusId = statusId
-                    } else if let firstStatus = apiClient.statusLabels.first?.id {
-                        selectedStatusId = firstStatus
-                    }
-                    if let categoryId = asset.category?.id {
-                        selectedCategoryId = categoryId
-                    } else if let firstCategory = apiClient.assets.compactMap({ $0.category?.id }).first {
-                        selectedCategoryId = firstCategory
-                    }
-                    if let manufacturerId = asset.manufacturer?.id {
-                        selectedManufacturerId = manufacturerId
-                    } else if let firstManufacturer = apiClient.assets.compactMap({ $0.manufacturer?.id }).first {
-                        selectedManufacturerId = firstManufacturer
-                    }
-                    if let supplierId = asset.supplier?.id {
-                        selectedSupplierId = supplierId
-                    } else if let firstSupplier = apiClient.assets.compactMap({ $0.supplier?.id }).first {
-                        selectedSupplierId = firstSupplier
-                    }
-                    if let companyId = asset.company?.id {
-                        selectedCompanyId = companyId
-                    } else if let firstCompany = apiClient.assets.compactMap({ $0.company?.id }).first {
-                        selectedCompanyId = firstCompany
-                    }
-                    if let locationId = asset.location?.id {
-                        selectedLocationId = locationId
-                    } else if let firstLocation = apiClient.locations.first?.id {
-                        selectedLocationId = firstLocation
-                    }
-                    // Set hasXDate variables for pre-filled dates
-                    hasPurchaseDate = asset.purchaseDate?.date != nil
-                    hasNextAuditDate = asset.nextAuditDate?.date != nil
-                    hasEolDate = asset.assetEolDate?.date != nil
-                    hasExpectedCheckin = asset.expectedCheckin?.date != nil
-                    showEditSheet = true
-                }) {
-                    Text("Edit")
+            HStack(spacing: 12) {
+                Button(action: prepareAndShowEditSheet) {
+                    Label("Edit", systemImage: "pencil")
                         .font(.headline)
-                        .padding()
                         .frame(maxWidth: .infinity)
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .controlSize(.large)
                 if asset.statusLabel.statusMeta?.lowercased() == "deployed" {
                     Button(action: {
                         Task {
                             let success = await apiClient.checkinAsset(assetId: asset.id)
                             checkInOutSuccess = success
-                            checkInOutMessage = success ? "Check-in gelukt!" : (apiClient.errorMessage ?? "Check-in mislukt.")
+                            checkInOutMessage = success ? "Check-in successful!" : (apiClient.errorMessage ?? "Check-in failed.")
                             showCheckInOutResult = true
                         }
                     }) {
-                        Text("Check In")
+                        Label("Check In", systemImage: "arrow.down.to.line")
                             .font(.headline)
-                            .padding()
                             .frame(maxWidth: .infinity)
-                            .background(Color.green)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.large)
                 } else {
-                    Button(action: {
-                        showCheckoutSheet = true
-                    }) {
-                        Text("Check Out")
+                    Button(action: { showCheckoutSheet = true }) {
+                        Label("Check Out", systemImage: "arrow.up.to.line")
                             .font(.headline)
-                            .padding()
                             .frame(maxWidth: .infinity)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
+                    .controlSize(.large)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
             .padding(.bottom, 8)
-            .background(Color.white.ignoresSafeArea(edges: .bottom))
+            .background(.bar)
         }
         .navigationTitle(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(returnToTab != nil)
         .padding(.top, 8)
         .toolbar {
+            if let _ = returnToTab, let onBack = onBackToPrevious {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        onBack()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/hardware/\(asset.id)") {
                     Link(destination: url) {
@@ -315,6 +269,62 @@ struct AssetDetailView: View {
         )
     }
 
+    private func prepareAndShowEditSheet() {
+        editName = asset.name
+        editAssetTag = asset.assetTag
+        editSerial = asset.serial ?? ""
+        editNotes = asset.notes ?? ""
+        editOrderNumber = asset.orderNumber ?? ""
+        editPurchaseCost = asset.purchaseCost ?? ""
+        editBookValue = asset.bookValue ?? ""
+        editCustomFields = [:]
+        if let customFields = asset.customFields {
+            for (key, field) in customFields {
+                editCustomFields[key] = field.value ?? ""
+            }
+        }
+        if let modelId = asset.model?.id {
+            selectedModelId = modelId
+        } else if let firstModel = apiClient.assets.compactMap({ $0.model?.id }).first {
+            selectedModelId = firstModel
+        }
+        if let statusId = asset.statusLabel.id as Int? {
+            selectedStatusId = statusId
+        } else if let firstStatus = apiClient.statusLabels.first?.id {
+            selectedStatusId = firstStatus
+        }
+        if let categoryId = asset.category?.id {
+            selectedCategoryId = categoryId
+        } else if let firstCategory = apiClient.assets.compactMap({ $0.category?.id }).first {
+            selectedCategoryId = firstCategory
+        }
+        if let manufacturerId = asset.manufacturer?.id {
+            selectedManufacturerId = manufacturerId
+        } else if let firstManufacturer = apiClient.assets.compactMap({ $0.manufacturer?.id }).first {
+            selectedManufacturerId = firstManufacturer
+        }
+        if let supplierId = asset.supplier?.id {
+            selectedSupplierId = supplierId
+        } else if let firstSupplier = apiClient.assets.compactMap({ $0.supplier?.id }).first {
+            selectedSupplierId = firstSupplier
+        }
+        if let companyId = asset.company?.id {
+            selectedCompanyId = companyId
+        } else if let firstCompany = apiClient.assets.compactMap({ $0.company?.id }).first {
+            selectedCompanyId = firstCompany
+        }
+        if let locationId = asset.location?.id {
+            selectedLocationId = locationId
+        } else if let firstLocation = apiClient.locations.first?.id {
+            selectedLocationId = firstLocation
+        }
+        hasPurchaseDate = asset.purchaseDate?.date != nil
+        hasNextAuditDate = asset.nextAuditDate?.date != nil
+        hasEolDate = asset.assetEolDate?.date != nil
+        hasExpectedCheckin = asset.expectedCheckin?.date != nil
+        showEditSheet = true
+    }
+
     private var detailsView: some View {
         ZStack {
             Color(.systemBackground)
@@ -376,7 +386,9 @@ struct AssetDetailView: View {
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
 
-                                NavigationLink(destination: UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab)) {
+                                Button {
+                                    onOpenUser?(user)
+                                } label: {
                                     HStack {
                                         Image(systemName: "person.circle")
                                             .foregroundColor(.gray)
@@ -393,10 +405,13 @@ struct AssetDetailView: View {
                                                 .foregroundColor(.secondary)
                                         }
                                         Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
                                     }
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(PlainButtonStyle())
+                                .buttonStyle(.plain)
                                 .padding()
                                 .background(Color(.systemGray6))
                                 .cornerRadius(12)

@@ -251,9 +251,14 @@ struct Supplier: Codable {
     let name: String
 }
 
-struct Company: Codable {
+struct Company: Codable, Identifiable {
     let id: Int
     let name: String
+}
+
+struct CompaniesResponse: Codable {
+    let total: Int?
+    let rows: [Company]
 }
 
 struct CreatedBy: Codable {
