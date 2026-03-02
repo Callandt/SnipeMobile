@@ -26,9 +26,28 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     private var fetchAssetsTask: Task<Void, Never>? = nil
+    private var fetchAssetsGeneration: Int = 0
+
+    /// Eigen session met 1 connectie per host om QUIC/nw_connection console-spam te verminderen.
+    private let urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.httpMaximumConnectionsPerHost = 1
+        config.timeoutIntervalForRequest = 60
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
 
     init() {
         self.isConfigured = UserDefaults.standard.bool(forKey: "isConfigured")
+        NotificationCenter.default.addObserver(forName: .cloudSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                let newValue = UserDefaults.standard.bool(forKey: "isConfigured")
+                if self.isConfigured != newValue {
+                    self.isConfigured = newValue
+                }
+            }
+        }
     }
 
     func saveConfiguration(baseURL: String, apiToken: String) {
@@ -36,7 +55,8 @@ class SnipeITAPIClient: ObservableObject {
         UserDefaults.standard.set(normalizedBaseURL, forKey: "baseURL")
         UserDefaults.standard.set(apiToken, forKey: "apiToken")
         self.isConfigured = true
-        
+        CloudSettingsStore.shared.writeAPIConfiguration(baseURL: normalizedBaseURL, apiToken: apiToken, isConfigured: true)
+
         Task {
             await fetchPrimaryThenBackground()
         }
@@ -63,19 +83,17 @@ class SnipeITAPIClient: ObservableObject {
         }
 
         Task(priority: .background) {
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await self.fetchUsers() }
-                group.addTask { await self.fetchAccessories() }
-                group.addTask { await self.fetchLocations() }
-                group.addTask { await self.fetchCompanies() }
-                group.addTask { await self.fetchStatusLabels() }
-            }
+            await self.fetchUsers()
+            await self.fetchAccessories()
+            await self.fetchLocations()
+            await self.fetchCompanies()
+            await self.fetchStatusLabels()
         }
     }
 
     func fetchAssets() async {
-        // Annuleer een bestaande fetch
-        fetchAssetsTask?.cancel()
+        fetchAssetsGeneration += 1
+        let myGen = fetchAssetsGeneration
 
         fetchAssetsTask = Task {
             guard !baseURL.isEmpty, !apiToken.isEmpty else {
@@ -93,20 +111,17 @@ class SnipeITAPIClient: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
 
             do {
-                print("START fetchAssets")
-                let (data, _) = try await URLSession.shared.data(for: request)
-                print("SUCCESS fetchAssets")
+                let (data, _) = try await urlSession.data(for: request)
                 let response = try JSONDecoder().decode(AssetResponse.self, from: data)
                 await MainActor.run {
-                    self.assets = response.rows
+                    if myGen == self.fetchAssetsGeneration {
+                        self.assets = response.rows
+                    }
                 }
             } catch {
-                if (error as? URLError)?.code == .cancelled {
-                    print("Fetch cancelled, no error shown to user.")
-                } else {
-                    await MainActor.run {
+                await MainActor.run {
+                    if myGen == self.fetchAssetsGeneration {
                         self.errorMessage = "Error fetching assets: \(error.localizedDescription)"
-                        print("Error details: \(error)")
                     }
                 }
             }
@@ -130,7 +145,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(UserResponse.self, from: data)
             await MainActor.run {
                 self.users = response.rows.sorted { $0.name < $1.name }
@@ -159,7 +174,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(AccessoriesResponse.self, from: data)
             await MainActor.run {
                 self.accessories = response.rows
@@ -188,7 +203,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(LocationsResponse.self, from: data)
             await MainActor.run {
                 self.locations = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
@@ -205,7 +220,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(CompaniesResponse.self, from: data)
             await MainActor.run {
                 self.companies = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
@@ -227,7 +242,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(UserResponse.self, from: data)
             return response.rows
         } catch {
@@ -248,7 +263,7 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 return true
             }
@@ -269,7 +284,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let msg = (json?["messages"] as? [String: Any])?.values.first as? String
@@ -301,7 +316,7 @@ class SnipeITAPIClient: ObservableObject {
             request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             do {
-                let (data, _) = try await URLSession.shared.data(for: request)
+                let (data, _) = try await urlSession.data(for: request)
                 let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
                 allActivities.append(contentsOf: response.rows)
                 if response.rows.count < limit {
@@ -327,7 +342,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
             return response.rows
         } catch {
@@ -342,7 +357,7 @@ class SnipeITAPIClient: ObservableObject {
         var request = URLRequest(url: fileUrl)
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 print("Download failed: status code \((response as? HTTPURLResponse)?.statusCode ?? -1)")
                 return nil
@@ -369,7 +384,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let rows = json["rows"] as? [[String: Any]] {
                 return rows.compactMap { row in
@@ -430,7 +445,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(ModelsResponse.self, from: data)
             await MainActor.run { self.models = response.rows }
         } catch {
@@ -446,7 +461,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let rows = json["rows"] as? [[String: Any]] {
                 let decoder = JSONDecoder()
@@ -494,7 +509,7 @@ class SnipeITAPIClient: ObservableObject {
         do {
             let data = try JSONEncoder().encode(body)
             request.httpBody = data
-            let (responseData, response) = try await URLSession.shared.data(for: request)
+            let (responseData, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
                 let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any]
                 let msg = (json?["messages"] as? [String: Any])?.values.first as? String
@@ -538,7 +553,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(CategoriesResponse.self, from: data)
             await MainActor.run { self.categories = response.rows }
         } catch {
@@ -563,7 +578,7 @@ class SnipeITAPIClient: ObservableObject {
         }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let msg = (json?["messages"] as? [String: Any])?.values.first as? String
@@ -587,21 +602,43 @@ class SnipeITAPIClient: ObservableObject {
     func updateAsset(assetId: Int, update: AssetUpdateRequest) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
         var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
+        request.httpMethod = "PATCH"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
             let body = try JSONEncoder().encode(update)
             request.httpBody = body
-            let (data, response) = try await URLSession.shared.data(for: request)
+            #if DEBUG
+            if let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                print("[SnipeMobile] PATCH /hardware/\(assetId) body: \(json)")
+            } else if let raw = String(data: body, encoding: .utf8) {
+                print("[SnipeMobile] PATCH /hardware/\(assetId) body (raw): \(raw)")
+            }
+            #endif
+            let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
+                #if DEBUG
+                let status = httpResponse.statusCode
+                let responseStr = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
+                print("[SnipeMobile] PATCH /hardware/\(assetId) status: \(status) response: \(responseStr.prefix(500))")
+                #endif
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let msg = (json?["messages"] as? [String: Any])?.values.first as? String
                     ?? json?["error"] as? String
                     ?? (httpResponse.statusCode == 200 ? "Changes saved!" : "Save failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200 {
-                    if let updatedAsset = try? JSONDecoder().decode(Asset.self, from: data) {
+                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    let payload = json?["payload"]
+                    let payloadData = payload.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                    if let payloadData = payloadData,
+                       let updatedAsset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
+                        await MainActor.run {
+                            if let idx = self.assets.firstIndex(where: { $0.id == updatedAsset.id }) {
+                                self.assets[idx] = updatedAsset
+                            }
+                        }
+                    } else if let updatedAsset = try? JSONDecoder().decode(Asset.self, from: data) {
                         await MainActor.run {
                             if let idx = self.assets.firstIndex(where: { $0.id == updatedAsset.id }) {
                                 self.assets[idx] = updatedAsset
@@ -646,7 +683,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let rows = json["rows"] as? [[String: Any]] {
                 let decoder = JSONDecoder()
@@ -676,7 +713,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let fields: [FieldDefinition]
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let decoder = JSONDecoder()
@@ -719,7 +756,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(StatusLabelResponse.self, from: data)
             await MainActor.run {
                 self.statusLabels = response.rows
@@ -801,7 +838,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 return true
             }
@@ -822,7 +859,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let msg = (json?["messages"] as? [String: Any])?.values.first as? String
@@ -847,7 +884,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 return nil // OK
             } else {
@@ -925,7 +962,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             print("DEBUG checkedout API response: ", String(data: data, encoding: .utf8) ?? "nil")
             do {
                 let decoded = try JSONDecoder().decode(AccessoryCheckedOutResponse.self, from: data)

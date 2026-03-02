@@ -9,6 +9,15 @@ enum MainTab: String, CaseIterable {
     case users = "Users"
     case locations = "Locations"
 
+    var localizedTitle: String {
+        switch self {
+        case .hardware: return L10n.string("tab_hardware")
+        case .accessories: return L10n.string("tab_accessories")
+        case .users: return L10n.string("tab_users")
+        case .locations: return L10n.string("tab_locations")
+        }
+    }
+
     var icon: String {
         switch self {
         case .hardware: return "laptopcomputer"
@@ -65,7 +74,7 @@ struct ContentView: View {
                 onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .hardware }
             )
             .tag(MainTab.hardware)
-            .tabItem { Label(MainTab.hardware.rawValue, systemImage: MainTab.hardware.icon) }
+            .tabItem { Label(MainTab.hardware.localizedTitle, systemImage: MainTab.hardware.icon) }
 
             AccessoriesTab(
                 apiClient: apiClient,
@@ -84,7 +93,7 @@ struct ContentView: View {
                 onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .accessories }
             )
             .tag(MainTab.accessories)
-            .tabItem { Label(MainTab.accessories.rawValue, systemImage: MainTab.accessories.icon) }
+            .tabItem { Label(MainTab.accessories.localizedTitle, systemImage: MainTab.accessories.icon) }
 
             UsersTab(
                 apiClient: apiClient,
@@ -103,7 +112,7 @@ struct ContentView: View {
                 onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .users }
             )
             .tag(MainTab.users)
-            .tabItem { Label(MainTab.users.rawValue, systemImage: MainTab.users.icon) }
+            .tabItem { Label(MainTab.users.localizedTitle, systemImage: MainTab.users.icon) }
 
             LocationsTab(
                 apiClient: apiClient,
@@ -121,7 +130,7 @@ struct ContentView: View {
                 onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .locations }
             )
             .tag(MainTab.locations)
-            .tabItem { Label(MainTab.locations.rawValue, systemImage: MainTab.locations.icon) }
+            .tabItem { Label(MainTab.locations.localizedTitle, systemImage: MainTab.locations.icon) }
         }
         #if os(iOS)
         .tabViewStyle(.automatic)
@@ -234,15 +243,15 @@ struct HardwareTab: View {
             Group {
                 if !apiClient.isConfigured {
                     ContentUnavailableView(
-                        "No Data Yet",
+                        L10n.string("no_data_yet"),
                         systemImage: "link.badge.plus",
-                        description: Text("Configure your API in Settings to see your assets.")
+                        description: Text(L10n.string("configure_api"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
                     ProgressView("Loading assets...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
                     List {
                         Section {
@@ -250,7 +259,7 @@ struct HardwareTab: View {
                                 Label("\(apiClient.assets.count)", systemImage: "laptopcomputer")
                                     .foregroundStyle(.primary)
                                 Spacer()
-                                Text("\(apiClient.assets.filter { $0.assignedTo != nil }.count) assigned")
+                                Text(L10n.string("assigned_count", apiClient.assets.filter { $0.assignedTo != nil }.count))
                                     .foregroundStyle(.secondary)
                             }
                             .listRowSeparator(.hidden)
@@ -277,7 +286,7 @@ struct HardwareTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
-            .navigationTitle("Hardware")
+            .navigationTitle(MainTab.hardware.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -285,7 +294,7 @@ struct HardwareTab: View {
                     } label: {
                         Image(systemName: "plus.circle")
                     }
-                    .accessibilityLabel("Add asset")
+                    .accessibilityLabel(L10n.string("add_asset"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -293,7 +302,7 @@ struct HardwareTab: View {
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel(L10n.string("scan_qr"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -303,7 +312,7 @@ struct HardwareTab: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Search assets")
+            .searchable(text: $searchText, prompt: L10n.string("search_assets"))
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true
@@ -385,15 +394,15 @@ struct AccessoriesTab: View {
             Group {
                 if !apiClient.isConfigured {
                     ContentUnavailableView(
-                        "No Data Yet",
+                        L10n.string("no_data_yet"),
                         systemImage: "link.badge.plus",
-                        description: Text("Configure your API in Settings.")
+                        description: Text(L10n.string("configure_api_short"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
                     ProgressView("Loading accessories...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
                     List {
                         Section {
@@ -426,7 +435,7 @@ struct AccessoriesTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
-            .navigationTitle("Accessories")
+            .navigationTitle(MainTab.accessories.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -434,7 +443,7 @@ struct AccessoriesTab: View {
                     } label: {
                         Image(systemName: "plus.circle")
                     }
-                    .accessibilityLabel("Add accessory")
+                    .accessibilityLabel(L10n.string("add_accessory"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -442,7 +451,7 @@ struct AccessoriesTab: View {
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel(L10n.string("scan_qr"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -452,7 +461,7 @@ struct AccessoriesTab: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Search accessories")
+            .searchable(text: $searchText, prompt: L10n.string("search_accessories"))
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true
@@ -506,15 +515,15 @@ struct UsersTab: View {
             Group {
                 if !apiClient.isConfigured {
                     ContentUnavailableView(
-                        "No Data Yet",
+                        L10n.string("no_data_yet"),
                         systemImage: "link.badge.plus",
-                        description: Text("Configure your API in Settings.")
+                        description: Text(L10n.string("configure_api_short"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
                     ProgressView("Loading users...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
                     List {
                         Section {
@@ -547,7 +556,7 @@ struct UsersTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
-            .navigationTitle("Users")
+            .navigationTitle(MainTab.users.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -555,7 +564,7 @@ struct UsersTab: View {
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel(L10n.string("scan_qr"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -565,7 +574,7 @@ struct UsersTab: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Search users")
+            .searchable(text: $searchText, prompt: L10n.string("search_users"))
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true
@@ -613,15 +622,15 @@ struct LocationsTab: View {
             Group {
                 if !apiClient.isConfigured {
                     ContentUnavailableView(
-                        "No Data Yet",
+                        L10n.string("no_data_yet"),
                         systemImage: "link.badge.plus",
-                        description: Text("Configure your API in Settings.")
+                        description: Text(L10n.string("configure_api_short"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
                     ProgressView("Loading locations...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
                     List {
                         Section {
@@ -654,7 +663,7 @@ struct LocationsTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
-            .navigationTitle("Locations")
+            .navigationTitle(MainTab.locations.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -662,7 +671,7 @@ struct LocationsTab: View {
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel(L10n.string("scan_qr"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -672,7 +681,7 @@ struct LocationsTab: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Search locations")
+            .searchable(text: $searchText, prompt: L10n.string("search_locations"))
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true

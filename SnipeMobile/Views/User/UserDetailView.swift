@@ -104,18 +104,18 @@ struct UserDetailView: View {
         ZStack {
             VStack(spacing: 0) {
                 Picker("Details", selection: $selectedTab) {
-                    Text("Details").tag(0)
-                    Text("History").tag(1)
+                    Text(L10n.string("details")).tag(0)
+                    Text(L10n.string("history")).tag(1)
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
 
                 // Copy notification overlay direct onder tabs
                 if showCopyNotification, let text = copyNotification {
                     VStack {
-                        Text("Copied: \(text)")
+                        Text(L10n.string("copied", text))
                             .font(.caption)
                             .foregroundColor(.white)
                             .padding(.vertical, 5)
@@ -139,7 +139,7 @@ struct UserDetailView: View {
                     VStack(spacing: 20) {
                         // --- Fixed Header ---
                         VStack(spacing: 15) {
-                            Text("User Info")
+                            Text(L10n.string("user_info"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .center)
 
@@ -164,7 +164,7 @@ struct UserDetailView: View {
 
                         if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Assigned Assets")
+                                Text(L10n.string("assigned_assets"))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
                                 assignedAssetsSection
@@ -172,16 +172,17 @@ struct UserDetailView: View {
                         }
                     }
                     .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
-                    .padding(.top, 4)
+                    .padding(.top, 2)
                 } else {
                     HistoryView(itemType: "user", itemId: user.id, apiClient: apiClient)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             // Copy notification overlay
             if showCopyNotification, let text = copyNotification {
                 VStack {
-                    Text("Copied: \(text)")
+                    Text(L10n.string("copied", text))
                         .font(.caption)
                         .foregroundColor(.white)
                         .padding(.vertical, 5)
@@ -198,7 +199,7 @@ struct UserDetailView: View {
                         }
                     Spacer()
                 }
-                .padding(.top)
+                .padding(.top, 8)
             }
         }
         .navigationTitle(HTMLDecoder.decode(user.decodedName))
@@ -210,7 +211,7 @@ struct UserDetailView: View {
                     Button {
                         onBack()
                     } label: {
-                        Label("Back", systemImage: "chevron.left")
+                        Label(L10n.string("back"), systemImage: "chevron.left")
                     }
                 }
             }

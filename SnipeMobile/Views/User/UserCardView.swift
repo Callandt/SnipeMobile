@@ -2,6 +2,7 @@ import SwiftUI
 
 struct UserCardView: View {
     let user: User
+    var useExplicitBackground: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
@@ -52,7 +53,10 @@ struct UserCardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(
+            useExplicitBackground ? Color(.secondarySystemGroupedBackground) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
         .contentShape(Rectangle())
     }
 } 

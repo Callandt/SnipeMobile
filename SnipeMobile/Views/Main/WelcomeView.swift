@@ -20,7 +20,7 @@ struct WelcomeView: View {
                         .shadow(radius: 8, y: 4)
                         .padding(.top, 16)
 
-                    Text("Welcome to SnipeMobile")
+                    Text(L10n.string("welcome_title"))
                         .font(.title).bold()
                         .multilineTextAlignment(.center)
                         .padding(.bottom, 8)
@@ -31,8 +31,8 @@ struct WelcomeView: View {
                                 .font(.title2)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Manage Assets On-the-Go").bold()
-                                Text("Scan QR codes to view and manage assets instantly.")
+                                Text(L10n.string("welcome_manage_assets")).bold()
+                                Text(L10n.string("welcome_scan_qr"))
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
@@ -42,8 +42,8 @@ struct WelcomeView: View {
                                 .font(.title2)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Connect Snipe-IT").bold()
-                                Text("Add your Snipe-IT API key in your profile to sync and start managing.")
+                                Text(L10n.string("welcome_connect")).bold()
+                                Text(L10n.string("welcome_connect_desc"))
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
@@ -53,14 +53,14 @@ struct WelcomeView: View {
                                 .font(.title2)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Always Free").bold()
-                                Text("The app is free forever. All features are available at no cost.")
+                                Text(L10n.string("welcome_free")).bold()
+                                Text(L10n.string("welcome_free_desc"))
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
                         }
                         Button(action: onGetStarted) {
-                            Text("Get Started")
+                            Text(L10n.string("get_started"))
                                 .font(.headline)
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)

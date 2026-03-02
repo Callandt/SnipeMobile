@@ -24,7 +24,6 @@ struct AssetDetailView: View {
     @State private var editBookValue: String = ""
     @State private var editCustomFields: [String: String] = [:]
     @State private var isSaving = false
-    @State private var showSaveSuccess = false
     @State private var selectedModelId: Int = 0
     @State private var selectedStatusId: Int = 0
     @State private var selectedCategoryId: Int = 0
@@ -55,15 +54,20 @@ struct AssetDetailView: View {
     @State private var checkInOutMessage = ""
     @State private var showCheckoutSheet = false
 
+    /// Huidige asset uit apiClient (na edit/check-in/check-out), anders de doorgegegeven asset.
+    private var currentAsset: Asset {
+        apiClient.assets.first { $0.id == asset.id } ?? asset
+    }
+
     private var assignedUser: User? {
-        guard let assignedToId = asset.assignedTo?.id else { return nil }
+        guard let assignedToId = currentAsset.assignedTo?.id else { return nil }
         return apiClient.users.first { $0.id == assignedToId }
     }
 
     private var editSheet: some View {
         AssetEditSheet(
             apiClient: apiClient,
-            asset: asset,
+            asset: currentAsset,
             isPresented: $showEditSheet,
             editName: $editName,
             editAssetTag: $editAssetTag,
@@ -74,7 +78,6 @@ struct AssetDetailView: View {
             editBookValue: $editBookValue,
             editCustomFields: $editCustomFields,
             isSaving: $isSaving,
-            showSaveSuccess: $showSaveSuccess,
             selectedModelId: $selectedModelId,
             selectedStatusId: $selectedStatusId,
             selectedCategoryId: $selectedCategoryId,
@@ -104,8 +107,8 @@ struct AssetDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("Details", selection: $selectedTab) {
-                Text("Details").tag(0)
-                Text("History").tag(1)
+                Text(L10n.string("details")).tag(0)
+                Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding()
@@ -113,28 +116,29 @@ struct AssetDetailView: View {
             if selectedTab == 0 {
                 detailsView
             } else {
-                HistoryView(itemType: "asset", itemId: asset.id, apiClient: apiClient)
+                HistoryView(itemType: "asset", itemId: currentAsset.id, apiClient: apiClient)
             }
             Spacer(minLength: 0)
             HStack(spacing: 12) {
                 Button(action: prepareAndShowEditSheet) {
-                    Label("Edit", systemImage: "pencil")
+                    Label(L10n.string("edit"), systemImage: "pencil")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
-                if asset.statusLabel.statusMeta?.lowercased() == "deployed" {
+                if currentAsset.statusLabel.statusMeta?.lowercased() == "deployed" {
                     Button(action: {
                         Task {
-                            let success = await apiClient.checkinAsset(assetId: asset.id)
+                            let success = await apiClient.checkinAsset(assetId: currentAsset.id)
                             checkInOutSuccess = success
                             checkInOutMessage = success ? "Check-in successful!" : (apiClient.errorMessage ?? "Check-in failed.")
                             showCheckInOutResult = true
+                            if success { Task { await apiClient.fetchPrimaryThenBackground() } }
                         }
                     }) {
-                        Label("Check In", systemImage: "arrow.down.to.line")
+                        Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                     }
@@ -143,7 +147,7 @@ struct AssetDetailView: View {
                     .controlSize(.large)
                 } else {
                     Button(action: { showCheckoutSheet = true }) {
-                        Label("Check Out", systemImage: "arrow.up.to.line")
+                        Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                     }
@@ -157,7 +161,7 @@ struct AssetDetailView: View {
             .padding(.bottom, 8)
             .background(.bar)
         }
-        .navigationTitle(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+        .navigationTitle(currentAsset.decodedModelName.isEmpty ? currentAsset.decodedName : currentAsset.decodedModelName)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(returnToTab != nil)
         .padding(.top, 8)
@@ -167,12 +171,12 @@ struct AssetDetailView: View {
                     Button {
                         onBack()
                     } label: {
-                        Label("Back", systemImage: "chevron.left")
+                        Label(L10n.string("back"), systemImage: "chevron.left")
                     }
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/hardware/\(asset.id)") {
+                if let url = URL(string: "\(apiClient.baseURL)/hardware/\(currentAsset.id)") {
                     Link(destination: url) {
                         Image(systemName: "safari")
                     }
@@ -182,19 +186,19 @@ struct AssetDetailView: View {
         .onAppear {
             selectedTab = 0
             if !hasLoggedAppearance {
-                print("AssetDetailView loaded, statusType: \(asset.statusLabel.name)")
+                print("AssetDetailView loaded, statusType: \(currentAsset.statusLabel.name)")
                 hasLoggedAppearance = true
             }
             Task {
                 await apiClient.fetchFieldDefinitions()
                 await apiClient.fetchStatusLabels()
             }
-            selectedModelId = asset.model?.id ?? 0
+            selectedModelId = currentAsset.model?.id ?? 0
             // Init date fields
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            if let purchaseDateStr = asset.purchaseDate?.date, let d = formatter.date(from: purchaseDateStr) {
+            if let purchaseDateStr = currentAsset.purchaseDate?.date, let d = formatter.date(from: purchaseDateStr) {
                 editPurchaseDate = d
                 hasPurchaseDate = true
                 showPurchaseDate = true
@@ -202,7 +206,7 @@ struct AssetDetailView: View {
                 hasPurchaseDate = false
                 showPurchaseDate = false
             }
-            if let nextAuditDateStr = asset.nextAuditDate?.date, let d = formatter.date(from: nextAuditDateStr) {
+            if let nextAuditDateStr = currentAsset.nextAuditDate?.date, let d = formatter.date(from: nextAuditDateStr) {
                 editNextAuditDate = d
                 hasNextAuditDate = true
                 showNextAuditDate = true
@@ -210,7 +214,7 @@ struct AssetDetailView: View {
                 hasNextAuditDate = false
                 showNextAuditDate = false
             }
-            if let expectedCheckinStr = asset.expectedCheckin?.date, let d = formatter.date(from: expectedCheckinStr) {
+            if let expectedCheckinStr = currentAsset.expectedCheckin?.date, let d = formatter.date(from: expectedCheckinStr) {
                 editExpectedCheckin = d
                 hasExpectedCheckin = true
                 showExpectedCheckin = true
@@ -218,7 +222,7 @@ struct AssetDetailView: View {
                 hasExpectedCheckin = false
                 showExpectedCheckin = false
             }
-            if let eolDateStr = asset.assetEolDate?.date, let d = formatter.date(from: eolDateStr) {
+            if let eolDateStr = currentAsset.assetEolDate?.date, let d = formatter.date(from: eolDateStr) {
                 editEolDate = d
                 hasEolDate = true
                 showEolDate = true
@@ -227,7 +231,7 @@ struct AssetDetailView: View {
                 showEolDate = false
             }
             // Alleen cijfers tonen in warranty months
-            editWarrantyMonths = (asset.warrantyMonths ?? "").components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+            editWarrantyMonths = (currentAsset.warrantyMonths ?? "").components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
         }
         .gesture(
             DragGesture(minimumDistance: 30, coordinateSpace: .local)
@@ -241,87 +245,66 @@ struct AssetDetailView: View {
             editSheet
         }
         .sheet(isPresented: $showCheckoutSheet) {
-            AssetCheckoutSheet(apiClient: apiClient, asset: asset, isPresented: $showCheckoutSheet)
+            AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: { Task { await apiClient.fetchPrimaryThenBackground() } })
         }
         .alert(isPresented: $showCheckInOutResult) {
-            Alert(title: Text(checkInOutSuccess ? "Succes" : "Fout"), message: Text(checkInOutMessage), dismissButton: .default(Text("OK")))
+            Alert(title: Text(checkInOutSuccess ? L10n.string("success") : L10n.string("error")), message: Text(checkInOutMessage), dismissButton: .default(Text(L10n.string("ok"))))
         }
-        .overlay(
-            Group {
-                if showSaveSuccess {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Label("Saved!", systemImage: "checkmark.circle.fill")
-                                .font(.title2)
-                                .padding()
-                                .background(Color.green.opacity(0.9))
-                                .foregroundColor(.white)
-                                .cornerRadius(16)
-                            Spacer()
-                        }
-                        Spacer()
-                    }
-                    .transition(.opacity)
-                }
-            }
-        )
     }
 
     private func prepareAndShowEditSheet() {
-        editName = asset.name
-        editAssetTag = asset.assetTag
-        editSerial = asset.serial ?? ""
-        editNotes = asset.notes ?? ""
-        editOrderNumber = asset.orderNumber ?? ""
-        editPurchaseCost = asset.purchaseCost ?? ""
-        editBookValue = asset.bookValue ?? ""
+        editName = currentAsset.name
+        editAssetTag = currentAsset.assetTag
+        editSerial = currentAsset.serial ?? ""
+        editNotes = currentAsset.notes ?? ""
+        editOrderNumber = currentAsset.orderNumber ?? ""
+        editPurchaseCost = currentAsset.purchaseCost ?? ""
+        editBookValue = currentAsset.bookValue ?? ""
         editCustomFields = [:]
-        if let customFields = asset.customFields {
+        if let customFields = currentAsset.customFields {
             for (key, field) in customFields {
                 editCustomFields[key] = field.value ?? ""
             }
         }
-        if let modelId = asset.model?.id {
+        if let modelId = currentAsset.model?.id {
             selectedModelId = modelId
         } else if let firstModel = apiClient.assets.compactMap({ $0.model?.id }).first {
             selectedModelId = firstModel
         }
-        if let statusId = asset.statusLabel.id as Int? {
+        if let statusId = currentAsset.statusLabel.id as Int? {
             selectedStatusId = statusId
         } else if let firstStatus = apiClient.statusLabels.first?.id {
             selectedStatusId = firstStatus
         }
-        if let categoryId = asset.category?.id {
+        if let categoryId = currentAsset.category?.id {
             selectedCategoryId = categoryId
         } else if let firstCategory = apiClient.assets.compactMap({ $0.category?.id }).first {
             selectedCategoryId = firstCategory
         }
-        if let manufacturerId = asset.manufacturer?.id {
+        if let manufacturerId = currentAsset.manufacturer?.id {
             selectedManufacturerId = manufacturerId
         } else if let firstManufacturer = apiClient.assets.compactMap({ $0.manufacturer?.id }).first {
             selectedManufacturerId = firstManufacturer
         }
-        if let supplierId = asset.supplier?.id {
+        if let supplierId = currentAsset.supplier?.id {
             selectedSupplierId = supplierId
         } else if let firstSupplier = apiClient.assets.compactMap({ $0.supplier?.id }).first {
             selectedSupplierId = firstSupplier
         }
-        if let companyId = asset.company?.id {
+        if let companyId = currentAsset.company?.id {
             selectedCompanyId = companyId
         } else if let firstCompany = apiClient.assets.compactMap({ $0.company?.id }).first {
             selectedCompanyId = firstCompany
         }
-        if let locationId = asset.location?.id {
+        if let locationId = currentAsset.location?.id {
             selectedLocationId = locationId
         } else if let firstLocation = apiClient.locations.first?.id {
             selectedLocationId = firstLocation
         }
-        hasPurchaseDate = asset.purchaseDate?.date != nil
-        hasNextAuditDate = asset.nextAuditDate?.date != nil
-        hasEolDate = asset.assetEolDate?.date != nil
-        hasExpectedCheckin = asset.expectedCheckin?.date != nil
+        hasPurchaseDate = currentAsset.purchaseDate?.date != nil
+        hasNextAuditDate = currentAsset.nextAuditDate?.date != nil
+        hasEolDate = currentAsset.assetEolDate?.date != nil
+        hasExpectedCheckin = currentAsset.expectedCheckin?.date != nil
         showEditSheet = true
     }
 
@@ -332,7 +315,7 @@ struct AssetDetailView: View {
 
             VStack(spacing: 20) {
                 if showCopyNotification, let text = copyNotification {
-                    Text("Copied: \(text)")
+                    Text(L10n.string("copied", text))
                         .font(.caption)
                         .foregroundColor(.white)
                         .padding(.vertical, 5)
@@ -351,28 +334,28 @@ struct AssetDetailView: View {
                 
                 ScrollView {
                     VStack(spacing: 15) {
-                        Text("Device Info")
+                        Text(L10n.string("device_info"))
                             .font(.headline)
                             .foregroundColor(.primary)
                             .padding(.top, 5)
                         VStack(spacing: 10) {
-                            if !asset.decodedAssetTag.isEmpty {
-                                copyableDetailRow(label: "Asset Tag", value: asset.decodedAssetTag)
+                            if !currentAsset.decodedAssetTag.isEmpty {
+                                copyableDetailRow(label: "Asset Tag", value: currentAsset.decodedAssetTag)
                             }
-                            if !asset.decodedSerial.isEmpty {
-                                copyableDetailRow(label: "Serial Number", value: asset.decodedSerial)
+                            if !currentAsset.decodedSerial.isEmpty {
+                                copyableDetailRow(label: "Serial Number", value: currentAsset.decodedSerial)
                             }
-                            if !asset.decodedModelName.isEmpty {
-                                copyableDetailRow(label: "Model", value: asset.decodedModelName)
+                            if !currentAsset.decodedModelName.isEmpty {
+                                copyableDetailRow(label: "Model", value: currentAsset.decodedModelName)
                             }
-                            if !asset.decodedManufacturerName.isEmpty {
-                                copyableDetailRow(label: "Manufacturer", value: asset.decodedManufacturerName)
+                            if !currentAsset.decodedManufacturerName.isEmpty {
+                                copyableDetailRow(label: "Manufacturer", value: currentAsset.decodedManufacturerName)
                             }
-                            if let statusMeta = asset.statusLabel.statusMeta, !statusMeta.isEmpty {
+                            if let statusMeta = currentAsset.statusLabel.statusMeta, !statusMeta.isEmpty {
                                 copyableDetailRow(label: "Status", value: statusMeta)
                             }
-                            if !asset.decodedCategoryName.isEmpty {
-                                copyableDetailRow(label: "Category", value: asset.decodedCategoryName)
+                            if !currentAsset.decodedCategoryName.isEmpty {
+                                copyableDetailRow(label: "Category", value: currentAsset.decodedCategoryName)
                             }
                         }
                         .padding()
@@ -380,9 +363,9 @@ struct AssetDetailView: View {
                         .cornerRadius(12)
 
                         // Assigned To Section
-                        if asset.statusLabel.statusMeta?.lowercased() == "deployed", let user = assignedUser {
+                        if currentAsset.statusLabel.statusMeta?.lowercased() == "deployed", let user = assignedUser {
                             VStack(spacing: 15) {
-                                Text("Assigned To")
+                                Text(L10n.string("assigned_to"))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
 
@@ -420,38 +403,38 @@ struct AssetDetailView: View {
                         }
                         // --- DATUMVELDEN ---
                         let hasAnyDate =
-                            (asset.purchaseDate?.formatted?.isEmpty == false) ||
-                            (asset.nextAuditDate?.formatted?.isEmpty == false) ||
-                            (asset.expectedCheckin?.formatted?.isEmpty == false) ||
-                            (asset.assetEolDate?.formatted?.isEmpty == false) ||
-                            (asset.lastAuditDate?.formatted?.isEmpty == false) ||
-                            (asset.lastCheckout?.formatted?.isEmpty == false) ||
-                            (asset.lastCheckin?.formatted?.isEmpty == false)
+                            (currentAsset.purchaseDate?.formatted?.isEmpty == false) ||
+                            (currentAsset.nextAuditDate?.formatted?.isEmpty == false) ||
+                            (currentAsset.expectedCheckin?.formatted?.isEmpty == false) ||
+                            (currentAsset.assetEolDate?.formatted?.isEmpty == false) ||
+                            (currentAsset.lastAuditDate?.formatted?.isEmpty == false) ||
+                            (currentAsset.lastCheckout?.formatted?.isEmpty == false) ||
+                            (currentAsset.lastCheckin?.formatted?.isEmpty == false)
                         if hasAnyDate {
-                            Text("Dates")
+                            Text(L10n.string("dates"))
                                 .font(.headline)
                                 .foregroundColor(.primary)
                                 .padding(.top, 5)
                             VStack(spacing: 10) {
-                                if let v = asset.purchaseDate?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "Purchase Date", value: v)
+                                if let v = currentAsset.purchaseDate?.formatted, !v.isEmpty {
+                                    copyableDetailRow(label: L10n.string("purchase_date"), value: v)
                                 }
-                                if let v = asset.nextAuditDate?.formatted, !v.isEmpty {
+                                if let v = currentAsset.nextAuditDate?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: "Next Audit Date", value: v)
                                 }
-                                if let v = asset.expectedCheckin?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "Expected Checkin", value: v)
+                                if let v = currentAsset.expectedCheckin?.formatted, !v.isEmpty {
+                                    copyableDetailRow(label: L10n.string("expected_checkin"), value: v)
                                 }
-                                if let v = asset.assetEolDate?.formatted, !v.isEmpty {
+                                if let v = currentAsset.assetEolDate?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: "EOL Date", value: v)
                                 }
-                                if let v = asset.lastAuditDate?.formatted, !v.isEmpty {
+                                if let v = currentAsset.lastAuditDate?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: "Last Audit Date", value: v)
                                 }
-                                if let v = asset.lastCheckout?.formatted, !v.isEmpty {
+                                if let v = currentAsset.lastCheckout?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: "Last Checkout", value: v)
                                 }
-                                if let v = asset.lastCheckin?.formatted, !v.isEmpty {
+                                if let v = currentAsset.lastCheckin?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: "Last Checkin", value: v)
                                 }
                             }
@@ -461,21 +444,21 @@ struct AssetDetailView: View {
                         }
 
                         // Value Info alleen tonen als er minstens één waarde is
-                        let hasValueInfo = (asset.purchaseCost?.isEmpty == false) || (asset.bookValue?.isEmpty == false) || (asset.orderNumber?.isEmpty == false)
+                        let hasValueInfo = (currentAsset.purchaseCost?.isEmpty == false) || (currentAsset.bookValue?.isEmpty == false) || (currentAsset.orderNumber?.isEmpty == false)
                         if hasValueInfo {
-                            Text("Value Info")
+                            Text(L10n.string("value_info"))
                                 .font(.headline)
                                 .foregroundColor(.primary)
                                 .padding(.top, 5)
                             VStack(spacing: 10) {
-                                if let purchaseCost = asset.purchaseCost, !purchaseCost.isEmpty {
-                                    copyableDetailRow(label: "Purchase Cost", value: purchaseCost)
+                                if let purchaseCost = currentAsset.purchaseCost, !purchaseCost.isEmpty {
+                                    copyableDetailRow(label: L10n.string("purchase_cost"), value: purchaseCost)
                                 }
-                                if let bookValue = asset.bookValue, !bookValue.isEmpty {
+                                if let bookValue = currentAsset.bookValue, !bookValue.isEmpty {
                                     copyableDetailRow(label: "Book Value", value: bookValue)
                                 }
-                                if let orderNumber = asset.orderNumber, !orderNumber.isEmpty {
-                                    copyableDetailRow(label: "Order Number", value: orderNumber)
+                                if let orderNumber = currentAsset.orderNumber, !orderNumber.isEmpty {
+                                    copyableDetailRow(label: L10n.string("order_number"), value: orderNumber)
                                 }
                             }
                             .padding()
@@ -483,7 +466,8 @@ struct AssetDetailView: View {
                             .cornerRadius(12)
                         }
 
-                        if let customFields = asset.customFields, !customFields.isEmpty {
+                        if let customFields = currentAsset.customFields,
+                           customFields.contains(where: { ($0.value.value ?? "").isEmpty == false }) {
                             Text("Custom Fields")
                                 .font(.headline)
                                 .foregroundColor(.primary)
@@ -528,18 +512,18 @@ struct AssetDetailView: View {
 
     @ViewBuilder
     private var generalSection: some View {
-        Section(header: Text("General")) {
+        Section(header: Text(L10n.string("general"))) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Name")
+                Text(L10n.string("name"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Name", text: $editName)
+                TextField(L10n.string("name"), text: $editName)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Serial")
+                Text(L10n.string("serial"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Serial", text: $editSerial)
+                TextField(L10n.string("serial"), text: $editSerial)
             }
             if !apiClient.assets.isEmpty {
                 Picker("Model", selection: $selectedModelId) {
@@ -554,14 +538,14 @@ struct AssetDetailView: View {
                 }
             }
             Picker("Status", selection: Binding(
-                get: { asset.statusLabel.id },
+                get: { currentAsset.statusLabel.id },
                 set: { _ in /* status change not yet implemented */ }
             )) {
-                Text(asset.statusLabel.name).tag(asset.statusLabel.id)
+                Text(currentAsset.statusLabel.name).tag(currentAsset.statusLabel.id)
             }
             if !apiClient.assets.isEmpty {
                 Picker("Category", selection: Binding(
-                    get: { asset.category?.id ?? 0 },
+                    get: { currentAsset.category?.id ?? 0 },
                     set: { _ in /* category change not yet implemented */ }
                 )) {
                     ForEach(Array(Set(apiClient.assets.compactMap { $0.category?.id }).sorted()), id: \.self) { id in
@@ -573,7 +557,7 @@ struct AssetDetailView: View {
             }
             if !apiClient.assets.isEmpty {
                 Picker("Manufacturer", selection: Binding(
-                    get: { asset.manufacturer?.id ?? 0 },
+                    get: { currentAsset.manufacturer?.id ?? 0 },
                     set: { _ in /* manufacturer change not yet implemented */ }
                 )) {
                     ForEach(Array(Set(apiClient.assets.compactMap { $0.manufacturer?.id }).sorted()), id: \.self) { id in
@@ -585,7 +569,7 @@ struct AssetDetailView: View {
             }
             if !apiClient.assets.isEmpty {
                 Picker("Supplier", selection: Binding(
-                    get: { asset.supplier?.id ?? 0 },
+                    get: { currentAsset.supplier?.id ?? 0 },
                     set: { _ in /* supplier change not yet implemented */ }
                 )) {
                     ForEach(Array(Set(apiClient.assets.compactMap { $0.supplier?.id }).sorted()), id: \.self) { id in
@@ -597,7 +581,7 @@ struct AssetDetailView: View {
             }
             if !apiClient.assets.isEmpty {
                 Picker("Company", selection: Binding(
-                    get: { asset.company?.id ?? 0 },
+                    get: { currentAsset.company?.id ?? 0 },
                     set: { _ in /* company change not yet implemented */ }
                 )) {
                     ForEach(Array(Set(apiClient.assets.compactMap { $0.company?.id }).sorted()), id: \.self) { id in
@@ -613,7 +597,7 @@ struct AssetDetailView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Picker("Location", selection: Binding(
-                        get: { asset.location?.id ?? 0 },
+                        get: { currentAsset.location?.id ?? 0 },
                         set: { _ in /* location change not yet geïmplementeerd */ }
                     )) {
                         ForEach(apiClient.locations, id: \.id) { loc in
@@ -627,40 +611,40 @@ struct AssetDetailView: View {
 
     @ViewBuilder
     private var financialSection: some View {
-        Section(header: Text("Financial")) {
+        Section(header: Text(L10n.string("financial"))) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Purchase Cost")
+                Text(L10n.string("purchase_cost"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Purchase Cost", text: $editPurchaseCost)
+                TextField(L10n.string("purchase_cost"), text: $editPurchaseCost)
                     .keyboardType(.decimalPad)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Order Number")
+                Text(L10n.string("order_number"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Order Number", text: $editOrderNumber)
+                TextField(L10n.string("order_number"), text: $editOrderNumber)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Warranty (months)")
+                Text(L10n.string("warranty_months"))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack {
                     TextField("", text: $editWarrantyMonths)
                         .keyboardType(.numberPad)
-                    Text("months")
+                    Text(L10n.string("months"))
                         .foregroundColor(.secondary)
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Purchase Date")
+                Text(L10n.string("purchase_date"))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 if hasPurchaseDate {
                     DatePicker("", selection: $editPurchaseDate, displayedComponents: .date)
                         .labelsHidden()
                 } else {
-                    Toggle("Set Purchase Date", isOn: $showPurchaseDate)
+                    Toggle(L10n.string("set_purchase_date"), isOn: $showPurchaseDate)
                         .font(.caption)
                     if showPurchaseDate {
                         DatePicker("", selection: $editPurchaseDate, displayedComponents: .date)
@@ -669,14 +653,14 @@ struct AssetDetailView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Expected Checkin Date")
+                Text(L10n.string("expected_checkin_date"))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 if hasExpectedCheckin {
                     DatePicker("", selection: $editExpectedCheckin, displayedComponents: .date)
                         .labelsHidden()
                 } else {
-                    Toggle("Set Expected Checkin Date", isOn: $showExpectedCheckin)
+                    Toggle(L10n.string("set_expected_checkin"), isOn: $showExpectedCheckin)
                         .font(.caption)
                     if showExpectedCheckin {
                         DatePicker("", selection: $editExpectedCheckin, displayedComponents: .date)
@@ -692,7 +676,7 @@ struct AssetDetailView: View {
                     DatePicker("", selection: $editEolDate, displayedComponents: .date)
                         .labelsHidden()
                 } else {
-                    Toggle("Set EOL Date", isOn: $showEolDate)
+                    Toggle(L10n.string("set_eol_date"), isOn: $showEolDate)
                         .font(.caption)
                     if showEolDate {
                         DatePicker("", selection: $editEolDate, displayedComponents: .date)
@@ -708,7 +692,7 @@ struct AssetDetailView: View {
                     DatePicker("", selection: $editNextAuditDate, displayedComponents: .date)
                         .labelsHidden()
                 } else {
-                    Toggle("Set Next Audit Date", isOn: $showNextAuditDate)
+                    Toggle(L10n.string("set_next_audit"), isOn: $showNextAuditDate)
                         .font(.caption)
                     if showNextAuditDate {
                         DatePicker("", selection: $editNextAuditDate, displayedComponents: .date)

@@ -18,7 +18,6 @@ struct AssetEditSheet: View {
     @Binding var editBookValue: String
     @Binding var editCustomFields: [String: String]
     @Binding var isSaving: Bool
-    @Binding var showSaveSuccess: Bool
     @Binding var selectedModelId: Int
     @Binding var selectedStatusId: Int
     @Binding var selectedCategoryId: Int
@@ -65,16 +64,16 @@ struct AssetEditSheet: View {
                 notesSection
                 customFieldsSection
             }
-            .navigationTitle("Edit Asset")
+            .navigationTitle(L10n.string("edit_asset"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
+                    Button(L10n.string("cancel")) { isPresented = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
                         ProgressView()
                     } else {
-                        Button("Save") {
+                        Button(L10n.string("save")) {
                             // Check for archive status while assigned
                             let archiveStatus = apiClient.statusLabels.first { $0.name.lowercased() == "archived" }?.id
                             let isArchiving = selectedStatusId == archiveStatus
@@ -92,20 +91,24 @@ struct AssetEditSheet: View {
                                 let nextAuditDateString = hasNextAuditDate ? formatter.string(from: editNextAuditDate) : nil
                                 let expectedCheckinString = hasExpectedCheckin ? formatter.string(from: editExpectedCheckin) : nil
                                 let eolDateString = hasEolDate ? formatter.string(from: editEolDate) : nil
+                                let trim: (String) -> String? = { s in
+                                    let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    return t.isEmpty ? nil : t
+                                }
                                 let update = SnipeITAPIClient.AssetUpdateRequest(
-                                    name: editName,
-                                    asset_tag: editAssetTag,
-                                    serial: editSerial,
+                                    name: trim(editName) ?? asset.name,
+                                    asset_tag: trim(editAssetTag) ?? asset.assetTag,
+                                    serial: trim(editSerial),
                                     model_id: selectedModelId,
                                     status_id: selectedStatusId,
                                     category_id: selectedCategoryId,
                                     manufacturer_id: selectedManufacturerId,
                                     supplier_id: selectedSupplierId,
-                                    notes: editNotes,
-                                    order_number: editOrderNumber,
-                                    location_id: selectedLocationId,
-                                    purchase_cost: editPurchaseCost,
-                                    book_value: editBookValue,
+                                    notes: trim(editNotes),
+                                    order_number: trim(editOrderNumber),
+                                    location_id: selectedLocationId == 0 ? nil : selectedLocationId,
+                                    purchase_cost: NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost),
+                                    book_value: NumberFormatHelpers.normalizeDecimalForAPI(editBookValue),
                                     custom_fields: editCustomFields,
                                     purchase_date: purchaseDateString,
                                     next_audit_date: nextAuditDateString,
@@ -114,10 +117,11 @@ struct AssetEditSheet: View {
                                 )
                                 let success = await apiClient.updateAsset(assetId: asset.id, update: update)
                                 isSaving = false
-                                resultMessage = apiClient.lastApiMessage ?? (success ? "Changes saved!" : "Save failed.")
-                                showResult = true
                                 if success {
                                     isPresented = false
+                                } else {
+                                    resultMessage = apiClient.lastApiMessage ?? "Save failed."
+                                    showResult = true
                                 }
                             }
                         }
@@ -125,27 +129,27 @@ struct AssetEditSheet: View {
                 }
             }
             .alert(isPresented: $showArchiveError) {
-                Alert(title: Text("Cannot archive"), message: Text("This asset is still assigned to a user or location. Please check in the asset before setting it to 'archived'."), dismissButton: .default(Text("OK")))
+                Alert(title: Text(L10n.string("cannot_archive")), message: Text(L10n.string("cannot_archive_msg")), dismissButton: .default(Text(L10n.string("ok"))))
             }
             .alert(isPresented: $showResult) {
-                Alert(title: Text("Result"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
+                Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
             }
         }
     }
 
     private var generalSection: some View {
-        Section(header: Text("General")) {
+        Section(header: Text(L10n.string("general"))) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Name")
+                Text(L10n.string("name"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Name", text: $editName)
+                TextField(L10n.string("name"), text: $editName)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Serial")
+                Text(L10n.string("serial"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Serial", text: $editSerial)
+                TextField(L10n.string("serial"), text: $editSerial)
             }
             if !apiClient.assets.isEmpty {
                 let modelPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { asset in
@@ -161,64 +165,66 @@ struct AssetEditSheet: View {
                 .opacity(0.6)
             }
             if !apiClient.assets.isEmpty {
+                let supplierPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.supplier?.id })).compactMap { id in
+                    apiClient.assets.first(where: { $0.supplier?.id == id })?.supplier.map {
+                        IdNamePair(id: $0.id, name: $0.name)
+                    }
+                }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 Picker("Supplier", selection: $selectedSupplierId) {
-                    ForEach(Array(Set(apiClient.assets.compactMap { $0.supplier?.id }).sorted()), id: \.self) { id in
-                        if let sup = apiClient.assets.first(where: { $0.supplier?.id == id })?.supplier {
-                            Text(sup.name).tag(sup.id)
-                        }
+                    ForEach(supplierPairs) { pair in
+                        Text(pair.name).tag(pair.id)
                     }
                 }
             }
             if !apiClient.assets.isEmpty {
+                let companyPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.company?.id })).compactMap { id in
+                    apiClient.assets.first(where: { $0.company?.id == id })?.company.map {
+                        IdNamePair(id: $0.id, name: $0.name)
+                    }
+                }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 Picker("Company", selection: $selectedCompanyId) {
-                    ForEach(Array(Set(apiClient.assets.compactMap { $0.company?.id }).sorted()), id: \.self) { id in
-                        if let comp = apiClient.assets.first(where: { $0.company?.id == id })?.company {
-                            Text(comp.name).tag(comp.id)
-                        }
+                    ForEach(companyPairs) { pair in
+                        Text(pair.name).tag(pair.id)
                     }
                 }
             }
             // Status alleen tonen als asset niet uitgecheckt is (niet bewerkbaar bij checkout)
             if !isAssetCheckedOut {
                 Picker("Status", selection: $selectedStatusId) {
-                    ForEach(apiClient.statusLabels, id: \.id) { label in
+                    let sortedStatuses = apiClient.statusLabels.sorted {
+                        displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
+                    }
+                    ForEach(sortedStatuses, id: \.id) { label in
                         Text(displayName(for: label)).tag(label.id)
                     }
                 }
             }
         }
-        .onAppear {
-            print("DEBUG: aantal statusLabels: \(apiClient.statusLabels.count)")
-            for label in apiClient.statusLabels {
-                print("DEBUG: statusLabel: id=\(label.id), name=\(label.name)")
-            }
-            print("DEBUG: selectedStatusId: \(selectedStatusId)")
-        }
     }
 
     private var financialSection: some View {
-        Section(header: Text("Financial")) {
+        Section(header: Text(L10n.string("financial"))) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Purchase Cost")
+                Text(L10n.string("purchase_cost"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Purchase Cost", text: $editPurchaseCost)
+                TextField(L10n.string("purchase_cost"), text: $editPurchaseCost)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Order Number")
+                Text(L10n.string("order_number"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Order Number", text: $editOrderNumber)
+                TextField(L10n.string("order_number"), text: $editOrderNumber)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Warranty Months")
+                Text(L10n.string("warranty_months"))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("Warranty Months", text: $editWarrantyMonths)
+                TextField(L10n.string("warranty_months"), text: $editWarrantyMonths)
             }
             // Purchase Date
             HStack {
-                Toggle("Set Purchase Date", isOn: $hasPurchaseDate)
+                Toggle(L10n.string("set_purchase_date"), isOn: $hasPurchaseDate)
                     .font(.caption)
                 if hasPurchaseDate {
                     DatePicker("", selection: $editPurchaseDate, displayedComponents: .date)
@@ -227,7 +233,7 @@ struct AssetEditSheet: View {
             }
             // EOL Date (moved after Purchase Date)
             HStack {
-                Toggle("Set EOL Date", isOn: $hasEolDate)
+                Toggle(L10n.string("set_eol_date"), isOn: $hasEolDate)
                     .font(.caption)
                 if hasEolDate {
                     DatePicker("", selection: $editEolDate, displayedComponents: .date)
@@ -236,7 +242,7 @@ struct AssetEditSheet: View {
             }
             // Next Audit Date
             HStack {
-                Toggle("Set Next Audit Date", isOn: $hasNextAuditDate)
+                Toggle(L10n.string("set_next_audit"), isOn: $hasNextAuditDate)
                     .font(.caption)
                 if hasNextAuditDate {
                     DatePicker("", selection: $editNextAuditDate, displayedComponents: .date)
@@ -247,7 +253,7 @@ struct AssetEditSheet: View {
     }
 
     private var notesSection: some View {
-        Section(header: Text("Notes")) {
+        Section(header: Text(L10n.string("notes"))) {
             TextEditor(text: $editNotes)
                 .frame(minHeight: 120)
         }
@@ -270,10 +276,10 @@ struct AssetEditSheet: View {
     }
 
     private var customFieldsSection: some View {
-        Section(header: Text("Custom Fields")) {
+        Section(header: Text(L10n.string("custom_fields"))) {
             let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
             if editCustomFields.isEmpty {
-                Text("No custom fields")
+                Text(L10n.string("no_custom_fields"))
                     .foregroundColor(.secondary)
             } else {
                 ForEach(Array(editCustomFields.keys.sorted()), id: \.self) { key in
@@ -283,7 +289,10 @@ struct AssetEditSheet: View {
                             get: { editCustomFields[key] ?? "" },
                             set: { editCustomFields[key] = $0 }
                         )) {
-                            ForEach(options, id: \.self) { option in
+                            let sortedOptions = options.sorted {
+                                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+                            }
+                            ForEach(sortedOptions, id: \.self) { option in
                                 Text(option).tag(option)
                             }
                         }

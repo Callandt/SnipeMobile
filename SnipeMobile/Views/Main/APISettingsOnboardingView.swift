@@ -25,11 +25,11 @@ struct APISettingsOnboardingView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .shadow(radius: 8, y: 4)
                             .padding(.top, 16)
-                        Text("Connect to Snipe-IT")
+                        Text(L10n.string("connect_snipe_it"))
                             .font(.title).bold()
                             .multilineTextAlignment(.center)
                             .padding(.top, 8)
-                        Text("Enter your Snipe-IT API URL and API Key to sync your assets. You can skip this step and add it later in Settings.")
+                        Text(L10n.string("connect_snipe_it_desc"))
                             .font(.body)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -37,7 +37,7 @@ struct APISettingsOnboardingView: View {
 
                         // Toevoegen van de link naar de Snipe-IT API key uitleg
                         Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
-                            Text("How to generate an API key?")
+                            Text(L10n.string("how_api_key"))
                                 .font(.footnote)
                                 .foregroundColor(Color.blue)
                                 .underline()
@@ -82,7 +82,7 @@ struct APISettingsOnboardingView: View {
                                 }
                             }
                         }) {
-                            Text("Continue")
+                            Text(L10n.string("continue"))
                                 .font(.headline)
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)

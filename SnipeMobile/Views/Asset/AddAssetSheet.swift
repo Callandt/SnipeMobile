@@ -32,16 +32,20 @@ struct AddAssetSheet: View {
             && selectedStatusId != 0
     }
 
-    /// Computes the next available asset tag from existing assets (max numeric value + 1).
+    /// Computes the next available asset tag, zero-padded like bestaande tags (bijv. 00581).
     private var nextAvailableAssetTag: String {
         let tags = apiClient.assets.map { $0.assetTag.trimmingCharacters(in: .whitespaces) }
         let numbers = tags.compactMap { tag -> Int? in
-            // Support both plain numbers and prefix+number (e.g. "ASSET-123" → 123)
             let digits = tag.filter(\.isNumber)
             return digits.isEmpty ? nil : Int(digits)
         }
         let nextNum = (numbers.max() ?? 0) + 1
-        return "\(nextNum)"
+        let digitLengths = tags.compactMap { tag -> Int? in
+            let digits = tag.filter(\.isNumber)
+            return digits.isEmpty ? nil : digits.count
+        }
+        let width = digitLengths.max() ?? 5
+        return String(format: "%0*d", width, nextNum)
     }
 
     var body: some View {
@@ -52,7 +56,7 @@ struct AddAssetSheet: View {
                 notesSection
                 customFieldsSection
             }
-            .navigationTitle("New asset")
+            .navigationTitle(L10n.string("new_asset"))
             .toolbar { toolbarContent }
             .onAppear(perform: setupOnAppear)
             .onChange(of: apiClient.assets) { _, _ in
@@ -61,12 +65,8 @@ struct AddAssetSheet: View {
             .task(id: selectedModelId) {
                 await loadAndDisplayCustomFieldsForModel()
             }
-            .alert("Result", isPresented: $showResult) {
-                Button("OK") {
-                    if resultMessage.contains("created") {
-                        isPresented = false
-                    }
-                }
+            .alert(L10n.string("error"), isPresented: $showResult) {
+                Button(L10n.string("ok"), role: .cancel) { }
             } message: {
                 Text(resultMessage)
             }
@@ -76,13 +76,13 @@ struct AddAssetSheet: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") { isPresented = false }
+            Button(L10n.string("cancel")) { isPresented = false }
         }
         ToolbarItem(placement: .confirmationAction) {
             if isSaving {
                 ProgressView()
             } else {
-                Button("Create") { saveAsset() }
+                Button(L10n.string("create")) { saveAsset() }
                     .disabled(!canSave)
             }
         }
@@ -151,76 +151,95 @@ struct AddAssetSheet: View {
     }
 
     private var generalSection: some View {
-        Section(header: Text("General")) {
-            TextField("Name (optional)", text: $name)
+        Section(header: Text(L10n.string("general"))) {
+            TextField(L10n.string("name_optional"), text: $name)
             HStack {
-                Text("Asset tag")
+                Text(L10n.string("asset_tag"))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(assetTag.isEmpty ? nextAvailableAssetTag : assetTag)
                     .foregroundStyle(.primary)
             }
-            TextField("Serial (optional)", text: $serial)
+            TextField(L10n.string("serial_optional"), text: $serial)
+
+            // Model alfabetisch op naam
             Picker("Model", selection: $selectedModelId) {
-                Text("Choose model…").tag(0)
-                ForEach(apiClient.models) { model in
+                Text(L10n.string("choose_model")).tag(0)
+                let sortedModels = apiClient.models.sorted {
+                    HTMLDecoder.decode($0.name).localizedCaseInsensitiveCompare(HTMLDecoder.decode($1.name)) == .orderedAscending
+                }
+                ForEach(sortedModels) { model in
                     Text(HTMLDecoder.decode(model.name)).tag(model.id)
                 }
             }
+
+            // Status alfabetisch op weergavenaam
             Picker("Status", selection: $selectedStatusId) {
-                Text("Choose status…").tag(0)
-                ForEach(apiClient.statusLabels, id: \.id) { label in
+                Text(L10n.string("choose_status")).tag(0)
+                let sortedStatuses = apiClient.statusLabels.sorted {
+                    displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
+                }
+                ForEach(sortedStatuses, id: \.id) { label in
                     Text(displayName(for: label)).tag(label.id)
                 }
             }
             if !apiClient.locations.isEmpty {
-                Picker("Location (optional)", selection: Binding(
+                Picker(L10n.string("location_optional"), selection: Binding(
                     get: { selectedLocationId ?? -1 },
                     set: { selectedLocationId = $0 == -1 ? nil : $0 }
                 )) {
-                    Text("None").tag(-1)
-                    ForEach(apiClient.locations) { loc in
+                    Text(L10n.string("none")).tag(-1)
+                    let sortedLocations = apiClient.locations.sorted {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+                    ForEach(sortedLocations) { loc in
                         Text(loc.name).tag(loc.id)
                     }
                 }
             }
             if !apiClient.companies.isEmpty {
-                Picker("Company (optional)", selection: Binding(
+                Picker(L10n.string("company_optional"), selection: Binding(
                     get: { selectedCompanyId ?? -1 },
                     set: { selectedCompanyId = $0 == -1 ? nil : $0 }
                 )) {
-                    Text("None").tag(-1)
-                    ForEach(apiClient.companies) { company in
+                    Text(L10n.string("none")).tag(-1)
+                    let sortedCompanies = apiClient.companies.sorted {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+                    ForEach(sortedCompanies) { company in
                         Text(company.name).tag(company.id)
                     }
                 }
             }
-            Toggle("BYOD?", isOn: $byod)
+            Toggle(L10n.string("byod"), isOn: $byod)
         }
     }
 
     private var purchaseSection: some View {
-        Section(header: Text("Purchase & warranty")) {
-            TextField("Order number (optional)", text: $orderNumber)
-            TextField("Purchase price (optional)", text: $purchaseCost)
+        Section(header: Text(L10n.string("purchase_warranty"))) {
+            TextField(L10n.string("order_number_optional"), text: $orderNumber)
+            TextField(L10n.string("purchase_price_optional"), text: $purchaseCost)
                 .keyboardType(.decimalPad)
-            Toggle("Purchase date", isOn: $hasPurchaseDate)
+            Toggle(L10n.string("purchase_date"), isOn: $hasPurchaseDate)
             if hasPurchaseDate {
                 DatePicker("", selection: $purchaseDate, displayedComponents: .date)
             }
-            Toggle("EOL date", isOn: $hasEolDate)
+            Toggle(L10n.string("eol_date"), isOn: $hasEolDate)
             if hasEolDate {
                 DatePicker("", selection: $eolDate, displayedComponents: .date)
             }
-            TextField("Warranty (months, optional)", text: $warrantyMonths)
+            TextField(L10n.string("warranty_months_optional"), text: $warrantyMonths)
                 .keyboardType(.numberPad)
             if !suppliersFromAssets.isEmpty {
-                Picker("Supplier (optional)", selection: Binding(
+                Picker(L10n.string("supplier_optional"), selection: Binding(
                     get: { selectedSupplierId ?? -1 },
                     set: { selectedSupplierId = $0 == -1 ? nil : $0 }
                 )) {
-                    Text("None").tag(-1)
-                    ForEach(suppliersFromAssets, id: \.id) { sup in
+                    Text(L10n.string("none")).tag(-1)
+                    let sortedSuppliers = suppliersFromAssets.sorted {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+                    ForEach(sortedSuppliers, id: \.id) { sup in
                         Text(sup.name).tag(sup.id)
                     }
                 }
@@ -230,7 +249,7 @@ struct AddAssetSheet: View {
 
     private var suppliersFromAssets: [(id: Int, name: String)] {
         let ids = Set(apiClient.assets.compactMap { $0.supplier?.id })
-        return ids.sorted().compactMap { id in
+        return ids.compactMap { id in
             apiClient.assets.first(where: { $0.supplier?.id == id }).flatMap { a in
                 a.supplier.map { (id: $0.id, name: $0.name) }
             }
@@ -238,7 +257,7 @@ struct AddAssetSheet: View {
     }
 
     private var notesSection: some View {
-        Section(header: Text("Notes")) {
+        Section(header: Text(L10n.string("notes"))) {
             TextEditor(text: $notes)
                 .frame(minHeight: 80)
         }
@@ -247,7 +266,7 @@ struct AddAssetSheet: View {
     private var customFieldsSection: some View {
         Group {
             if !displayedFieldDefinitions.isEmpty {
-                Section(header: Text("Custom fields")) {
+                Section(header: Text(L10n.string("custom_fields"))) {
                     ForEach(displayedFieldDefinitions, id: \.name) { fieldDef in
                         let key = fieldDef.name
                         if fieldDef.type == "listbox", let options = fieldDef.field_values_array, !options.isEmpty {
@@ -256,7 +275,10 @@ struct AddAssetSheet: View {
                                 set: { customFields[key] = $0 }
                             )) {
                                 Text("—").tag("")
-                                ForEach(options, id: \.self) { option in
+                                let sortedOptions = options.sorted {
+                                    $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+                                }
+                                ForEach(sortedOptions, id: \.self) { option in
                                     Text(option).tag(option)
                                 }
                             }
@@ -319,7 +341,7 @@ struct AddAssetSheet: View {
             location_id: selectedLocationId,
             notes: notes.isEmpty ? nil : notes,
             order_number: orderNumber.isEmpty ? nil : orderNumber.trimmingCharacters(in: .whitespaces),
-            purchase_cost: purchaseCost.isEmpty ? nil : purchaseCost.trimmingCharacters(in: .whitespaces),
+            purchase_cost: NumberFormatHelpers.normalizeDecimalForAPI(purchaseCost.trimmingCharacters(in: .whitespaces)),
             book_value: nil,
             custom_fields: customFields.isEmpty ? nil : customFields,
             purchase_date: purchaseDateStr,
@@ -336,9 +358,18 @@ struct AddAssetSheet: View {
         )
         Task {
             let success = await apiClient.createAsset(req)
-            isSaving = false
-            resultMessage = apiClient.lastApiMessage ?? (success ? "Asset created!" : "Create failed.")
-            showResult = true
+            if success {
+                await apiClient.fetchAssets()
+            }
+            await MainActor.run {
+                isSaving = false
+                if success {
+                    isPresented = false
+                } else {
+                    resultMessage = apiClient.lastApiMessage ?? "Create failed."
+                    showResult = true
+                }
+            }
         }
     }
 }

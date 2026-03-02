@@ -7,6 +7,8 @@
 
 import SwiftUI
 import LocalAuthentication
+import AVFoundation
+import CodeScanner
 
 class AppSettings: ObservableObject {
     @AppStorage("appLanguage") var appLanguage: String = "en" { willSet { objectWillChange.send() } }
@@ -17,6 +19,9 @@ class AppSettings: ObservableObject {
 }
 
 @main struct SnipeMobileApp: App {
+    init() {
+        CloudSettingsStore.shared.mergeFromCloud()
+    }
     @StateObject private var apiClient = SnipeITAPIClient()
     @StateObject private var appSettings = AppSettings()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
@@ -43,10 +48,12 @@ class AppSettings: ObservableObject {
                             onContinue: { url, key in
                                 apiClient.saveConfiguration(baseURL: url, apiToken: key)
                                 hasCompletedOnboarding = true
+                                CloudSettingsStore.shared.setHasCompletedOnboarding(true)
                                 showAPISettings = false
                             },
                             onSkip: {
                                 hasCompletedOnboarding = true
+                                CloudSettingsStore.shared.setHasCompletedOnboarding(true)
                                 showAPISettings = false
                             },
                             apiClient: apiClient
@@ -151,33 +158,27 @@ class AppSettings: ObservableObject {
 struct MainSplitView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @EnvironmentObject private var appSettings: AppSettings
-    @State private var selectedTab: String
+    @State private var selectedSection: MainTab = .hardware
     @State private var selectedAsset: Asset?
     @State private var selectedAccessory: Accessory?
     @State private var selectedUser: User?
     @State private var selectedLocation: Location?
     @State private var showSettings = false
+    @State private var showAddAsset = false
+    @State private var showAddAccessory = false
+    @State private var showScanner = false
+    @State private var scannedAssetId: Int?
+    @State private var isRefreshing = false
     @State private var searchText: String = ""
     @State private var selectedAssetDetailTab: Int = 0
     @State private var selectedAccessoryDetailTab: Int = 0
     @State private var selectedUserDetailTab: Int = 0
     @State private var selectedLocationDetailTab: Int = 0
+    /// Bij true: onChange(of: selectedSection) niet clearen (we komen van een link in een detail).
+    @State private var skipClearSelectionOnSectionChange = false
 
-    let tabs: [String]
     init(apiClient: SnipeITAPIClient) {
         self.apiClient = apiClient
-        let settings = AppSettings()
-        if settings.isDutch {
-            _selectedTab = State(initialValue: "Hardware")
-            self.tabs = ["Hardware", "Accessoires", "Gebruikers", "Locaties"]
-        } else {
-            _selectedTab = State(initialValue: "Hardware")
-            self.tabs = ["Hardware", "Accessories", "Users", "Locations"]
-        }
-    }
-
-    var tabGrid: [[String]] {
-        [[tabs[0], tabs[1]], [tabs[2], tabs[3]]]
     }
 
     // Filtered lists per tab
@@ -216,237 +217,563 @@ struct MainSplitView: View {
         }
     }
 
+    private func ipadCardRowBackground(selected: Bool) -> some View {
+        ZStack {
+            Color(.systemGroupedBackground)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.systemGray6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2)
+                )
+                .padding(.vertical, 6)
+        }
+    }
+
+    private var ipadSearchPrompt: String {
+        switch selectedSection {
+        case .hardware: return L10n.string("search_assets")
+        case .accessories: return L10n.string("search_accessories")
+        case .users: return L10n.string("search_users")
+        case .locations: return L10n.string("search_locations")
+        }
+    }
+
     var body: some View {
+        mainSplitView
+    }
+
+    private var mainSplitView: some View {
         NavigationSplitView {
-            VStack(spacing: 0) {
-                // 2x2 grid tabbar direct onder navigationbar
-                VStack(spacing: 12) {
-                    ForEach(tabGrid, id: \.self) { row in
-                        HStack(spacing: 16) {
-                            ForEach(row, id: \.self) { tab in
-                                Button(action: { selectedTab = tab }) {
-                                    Text(tab)
-                                        .font(.headline)
-                                        .foregroundColor(selectedTab == tab ? .white : .accentColor)
-                                        .padding(.vertical, 10)
-                                        .frame(maxWidth: .infinity)
-                                        .background(selectedTab == tab ? Color.accentColor : Color(.systemGray5))
-                                        .clipShape(Capsule())
-                                        .shadow(color: selectedTab == tab ? Color.accentColor.opacity(0.18) : .clear, radius: 6, y: 2)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                .background(Color(.systemBackground))
-                .overlay(Divider(), alignment: .bottom)
-                // Zoekbalk
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-                    TextField("Search...", text: $searchText)
-                        .textFieldStyle(PlainTextFieldStyle())
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                }
-                .padding(10)
-                .background(Color(.systemGray5))
-                .cornerRadius(14)
-                .padding(.horizontal, 24)
-                .padding(.top, 10)
-                .padding(.bottom, 12)
-                // Cards
-                Group {
-                    switch selectedTab {
-                    case tabs[0]:
-                        ScrollView {
-                            LazyVStack(spacing: 24) {
-                                ForEach(filteredAssets) { asset in
-                                    AssetCardView(asset: asset)
-                                        .onTapGesture {
-                                            selectedAsset = asset
-                                            selectedAssetDetailTab = 0
-                                        }
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .fill(.ultraThinMaterial)
-                                                .shadow(color: selectedAsset?.id == asset.id ? Color.accentColor.opacity(0.18) : Color.black.opacity(0.07), radius: 10, y: 4)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .stroke(selectedAsset?.id == asset.id ? Color.accentColor : Color.clear, lineWidth: 2)
-                                        )
-                                        .frame(maxWidth: 600)
-                                        .padding(.horizontal)
-                                }
-                                if filteredAssets.isEmpty {
-                                    Text("No hardware found.")
-                                        .foregroundColor(.secondary)
-                                        .padding(.top, 40)
-                                }
-                                Spacer(minLength: 32)
-                            }
-                            .padding(.top, 24)
-                            .frame(maxWidth: .infinity)
-                        }
-                    case tabs[1]:
-                        ScrollView {
-                            LazyVStack(spacing: 24) {
-                                ForEach(filteredAccessories) { accessory in
-                                    AccessoryCardView(accessory: accessory)
-                                        .onTapGesture {
-                                            selectedAccessory = accessory
-                                            selectedAccessoryDetailTab = 0
-                                        }
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .fill(.ultraThinMaterial)
-                                                .shadow(color: selectedAccessory?.id == accessory.id ? Color.accentColor.opacity(0.18) : Color.black.opacity(0.07), radius: 10, y: 4)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .stroke(selectedAccessory?.id == accessory.id ? Color.accentColor : Color.clear, lineWidth: 2)
-                                        )
-                                        .frame(maxWidth: 600)
-                                        .padding(.horizontal)
-                                }
-                                if filteredAccessories.isEmpty {
-                                    Text("No accessories found.")
-                                        .foregroundColor(.secondary)
-                                        .padding(.top, 40)
-                                }
-                                Spacer(minLength: 32)
-                            }
-                            .padding(.top, 24)
-                            .frame(maxWidth: .infinity)
-                        }
-                    case tabs[2]:
-                        ScrollView {
-                            LazyVStack(spacing: 24) {
-                                ForEach(filteredUsers) { user in
-                                    UserCardView(user: user)
-                                        .onTapGesture {
-                                            selectedUser = user
-                                            selectedUserDetailTab = 0
-                                        }
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .fill(.ultraThinMaterial)
-                                                .shadow(color: selectedUser?.id == user.id ? Color.accentColor.opacity(0.18) : Color.black.opacity(0.07), radius: 10, y: 4)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .stroke(selectedUser?.id == user.id ? Color.accentColor : Color.clear, lineWidth: 2)
-                                        )
-                                        .frame(maxWidth: 600)
-                                        .padding(.horizontal)
-                                }
-                                if filteredUsers.isEmpty {
-                                    Text("No users found.")
-                                        .foregroundColor(.secondary)
-                                        .padding(.top, 40)
-                                }
-                                Spacer(minLength: 32)
-                            }
-                            .padding(.top, 24)
-                            .frame(maxWidth: .infinity)
-                        }
-                    case tabs[3]:
-                        ScrollView {
-                            LazyVStack(spacing: 24) {
-                                ForEach(filteredLocations) { location in
-                                    LocationCardView(location: location)
-                                        .onTapGesture {
-                                            selectedLocation = location
-                                            selectedLocationDetailTab = 0
-                                        }
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .fill(.ultraThinMaterial)
-                                                .shadow(color: selectedLocation?.id == location.id ? Color.accentColor.opacity(0.18) : Color.black.opacity(0.07), radius: 10, y: 4)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 24)
-                                                .stroke(selectedLocation?.id == location.id ? Color.accentColor : Color.clear, lineWidth: 2)
-                                        )
-                                        .frame(maxWidth: 600)
-                                        .padding(.horizontal)
-                                }
-                                if filteredLocations.isEmpty {
-                                    Text("No locations found.")
-                                        .foregroundColor(.secondary)
-                                        .padding(.top, 40)
-                                }
-                                Spacer(minLength: 32)
-                            }
-                            .padding(.top, 24)
-                            .frame(maxWidth: .infinity)
-                        }
-                    default:
-                        EmptyView()
-                    }
-                }
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView(apiClient: apiClient)
-            }
-            .onAppear {
-                if apiClient.assets.isEmpty && apiClient.users.isEmpty && apiClient.accessories.isEmpty && apiClient.locations.isEmpty {
-                    Task { await apiClient.fetchPrimaryThenBackground() }
-                }
-            }
-            .navigationTitle("SnipeMobile")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showSettings = true }) {
-                        Image(systemName: "gearshape")
-                    }
-                }
-            }
-            .onChange(of: selectedTab) {
-                selectedAsset = nil
-                selectedAccessory = nil
-                selectedUser = nil
-                selectedLocation = nil
-            }
+            ipadSidebar
+        } content: {
+            ipadContentWithToolbar
         } detail: {
-            switch selectedTab {
-            case "Hardware":
-                if let asset = selectedAsset {
-                    AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $selectedAssetDetailTab)
-                } else {
-                    Text("Select an asset")
-                        .foregroundColor(.secondary)
+            ipadDetailContent
+        }
+        .navigationSplitViewStyle(.balanced)
+        .onChange(of: selectedSection) { _, _ in
+            if skipClearSelectionOnSectionChange {
+                skipClearSelectionOnSectionChange = false
+                return
+            }
+            selectedAsset = nil
+            selectedAccessory = nil
+            selectedUser = nil
+            selectedLocation = nil
+        }
+        .onChange(of: selectedAsset?.id) { _, _ in
+            selectedAssetDetailTab = 0
+        }
+        .onChange(of: selectedAccessory?.id) { _, _ in
+            selectedAccessoryDetailTab = 0
+        }
+        .onChange(of: selectedUser?.id) { _, _ in
+            selectedUserDetailTab = 0
+        }
+        .onChange(of: selectedLocation?.id) { _, _ in
+            selectedLocationDetailTab = 0
+        }
+        .sheet(isPresented: $showSettings) {
+            settingsSheet
+        }
+        .sheet(isPresented: $showAddAsset) {
+            AddAssetSheet(apiClient: apiClient, isPresented: $showAddAsset)
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAddAccessory) {
+            AddAccessorySheet(apiClient: apiClient, isPresented: $showAddAccessory)
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showScanner, onDismiss: scannerDismiss) {
+            CodeScannerView(codeTypes: [.qr], completion: handleScanResult)
+        }
+        .onChange(of: scannedAssetId) { _, new in
+            selectScannedAsset(id: new)
+        }
+        .onChange(of: apiClient.assets.count) { _, _ in
+            selectScannedAsset(id: scannedAssetId)
+        }
+    }
+
+    private var settingsSheet: some View {
+        SettingsView(apiClient: apiClient)
+            .preferredColorScheme(
+                appSettings.appTheme == "light" ? .light :
+                appSettings.appTheme == "dark" ? .dark : nil
+            )
+    }
+
+    private func scannerDismiss() {
+        if let id = scannedAssetId,
+           let asset = apiClient.assets.first(where: { $0.id == id }) {
+            selectedSection = .hardware
+            selectedAsset = asset
+            selectedAssetDetailTab = 0
+        }
+        scannedAssetId = nil
+    }
+
+    private func selectScannedAsset(id: Int?) {
+        guard let id = id, let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
+        selectedSection = .hardware
+        selectedAsset = asset
+        selectedAssetDetailTab = 0
+    }
+
+    private var ipadSidebar: some View {
+        List {
+            Section {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label(L10n.string("scan_qr"), systemImage: "qrcode.viewfinder")
                 }
-            case "Accessories":
-                if let accessory = selectedAccessory {
-                    AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $selectedAccessoryDetailTab)
-                } else {
-                    Text("Select an accessory")
-                        .foregroundColor(.secondary)
+                .buttonStyle(.plain)
+
+                ForEach(MainTab.allCases, id: \.self) { section in
+                    Button {
+                        selectedSection = section
+                    } label: {
+                        Label(section.localizedTitle, systemImage: section.icon)
+                            .foregroundStyle(selectedSection == section ? Color.accentColor : .primary)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(selectedSection == section ? Color.accentColor.opacity(0.15) : nil)
                 }
-            case "Users":
-                if let user = selectedUser {
-                    UserDetailView(user: user, apiClient: apiClient, selectedTab: $selectedUserDetailTab)
-                } else {
-                    Text("Select a user")
-                        .foregroundColor(.secondary)
+            }
+
+            Section {
+                Button {
+                    showSettings = true
+                } label: {
+                    Label(L10n.string("settings"), systemImage: "gearshape")
                 }
-            case "Locations":
-                if let location = selectedLocation {
-                    LocationDetailView(location: location, apiClient: apiClient, selectedTab: $selectedLocationDetailTab)
-                } else {
-                    Text("Select a location")
-                        .foregroundColor(.secondary)
-                }
-            default:
-                EmptyView()
+                .buttonStyle(.plain)
             }
         }
+        .listStyle(.sidebar)
+        .navigationTitle("SnipeMobile")
+        .navigationBarTitleDisplayMode(.large)
+        .onAppear {
+            if apiClient.assets.isEmpty && apiClient.users.isEmpty && apiClient.accessories.isEmpty && apiClient.locations.isEmpty {
+                Task { await apiClient.fetchPrimaryThenBackground() }
+            }
+        }
+    }
+
+    private var ipadContentWithToolbar: some View {
+        ipadContentColumn
+            .navigationTitle(selectedSection.localizedTitle)
+            .navigationBarTitleDisplayMode(.large)
+            .searchable(text: $searchText, prompt: Text(ipadSearchPrompt))
+            .toolbar {
+                if selectedSection == .hardware || selectedSection == .accessories {
+                    ToolbarItem(placement: .primaryAction) {
+                        HStack(spacing: 16) {
+                            if selectedSection == .hardware {
+                                Button(action: { showAddAsset = true }) {
+                                    Image(systemName: "plus.circle")
+                                }
+                                .accessibilityLabel(L10n.string("add_asset"))
+                            }
+                            if selectedSection == .accessories {
+                                Button(action: { showAddAccessory = true }) {
+                                    Image(systemName: "plus.circle")
+                                }
+                                .accessibilityLabel(L10n.string("add_accessory"))
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var ipadDetailContent: some View {
+        switch selectedSection {
+        case .hardware:
+            if let asset = selectedAsset {
+                AssetDetailView(
+                    asset: asset,
+                    apiClient: apiClient,
+                    selectedTab: $selectedAssetDetailTab,
+                    onOpenUser: { [apiClient] user in
+                        let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
+                        selectedUser = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedLocation = nil
+                        selectedUserDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .users
+                    },
+                    onOpenLocation: { [apiClient] location in
+                        let resolved = apiClient.locations.first(where: { $0.id == location.id }) ?? location
+                        selectedLocation = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocationDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .locations
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    L10n.string("select_asset"),
+                    systemImage: "laptopcomputer",
+                    description: Text("Choose an asset from the list")
+                )
+            }
+        case .accessories:
+            if let accessory = selectedAccessory {
+                AccessoryDetailView(
+                    accessory: accessory,
+                    apiClient: apiClient,
+                    selectedTab: $selectedAccessoryDetailTab,
+                    onOpenUser: { [apiClient] user in
+                        let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
+                        selectedUser = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedLocation = nil
+                        selectedUserDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .users
+                    },
+                    onOpenAsset: { [apiClient] asset in
+                        let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
+                        selectedAsset = resolved
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAssetDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .hardware
+                    },
+                    onOpenLocation: { [apiClient] location in
+                        let resolved = apiClient.locations.first(where: { $0.id == location.id }) ?? location
+                        selectedLocation = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocationDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .locations
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    L10n.string("select_accessory"),
+                    systemImage: "mediastick",
+                    description: Text("Choose an accessory from the list")
+                )
+            }
+        case .users:
+            if let user = selectedUser {
+                UserDetailView(
+                    user: user,
+                    apiClient: apiClient,
+                    selectedTab: $selectedUserDetailTab,
+                    onOpenAsset: { [apiClient] asset in
+                        let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
+                        selectedAsset = resolved
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAssetDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .hardware
+                    },
+                    onOpenAccessory: { [apiClient] accessory in
+                        let resolved = apiClient.accessories.first(where: { $0.id == accessory.id }) ?? accessory
+                        selectedAccessory = resolved
+                        selectedAsset = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAccessoryDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .accessories
+                    },
+                    onOpenLocation: { [apiClient] location in
+                        let resolved = apiClient.locations.first(where: { $0.id == location.id }) ?? location
+                        selectedLocation = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocationDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .locations
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    L10n.string("select_user"),
+                    systemImage: "person.2",
+                    description: Text("Choose a user from the list")
+                )
+            }
+        case .locations:
+            if let location = selectedLocation {
+                LocationDetailView(
+                    location: location,
+                    apiClient: apiClient,
+                    selectedTab: $selectedLocationDetailTab,
+                    onOpenUser: { [apiClient] user in
+                        let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
+                        selectedUser = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedLocation = nil
+                        selectedUserDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .users
+                    },
+                    onOpenAsset: { [apiClient] asset in
+                        let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
+                        selectedAsset = resolved
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAssetDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .hardware
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    L10n.string("select_location"),
+                    systemImage: "mappin.and.ellipse",
+                    description: Text("Choose a location from the list")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var ipadContentColumn: some View {
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api_short"))
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = apiClient.errorMessage {
+                ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                switch selectedSection {
+                case .hardware:
+                    ipadAssetList
+                case .accessories:
+                    ipadAccessoryList
+                case .users:
+                    ipadUserList
+                case .locations:
+                    ipadLocationList
+                }
+            }
+        }
+    }
+
+    private var ipadAssetList: some View {
+        List {
+            ForEach(filteredAssets) { asset in
+                let isSelected = selectedAsset?.id == asset.id
+                Button {
+                    selectedAsset = asset
+                } label: {
+                    AssetCardView(asset: asset, useExplicitBackground: true)
+                        .overlay {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+        .overlay {
+            if filteredAssets.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(L10n.string("no_hardware"), systemImage: "laptopcomputer")
+            }
+        }
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchPrimaryThenBackground()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
+    }
+
+    private var ipadAccessoryList: some View {
+        List {
+            ForEach(filteredAccessories) { accessory in
+                let isSelected = selectedAccessory?.id == accessory.id
+                Button {
+                    selectedAccessory = accessory
+                } label: {
+                    AccessoryCardView(accessory: accessory, useExplicitBackground: true)
+                        .overlay {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+        .overlay {
+            if filteredAccessories.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(L10n.string("no_accessories"), systemImage: "mediastick")
+            }
+        }
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchPrimaryThenBackground()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
+    }
+
+    private var ipadUserList: some View {
+        List {
+            ForEach(filteredUsers) { user in
+                let isSelected = selectedUser?.id == user.id
+                Button {
+                    selectedUser = user
+                } label: {
+                    UserCardView(user: user, useExplicitBackground: true)
+                        .overlay {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+        .overlay {
+            if filteredUsers.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(L10n.string("no_users"), systemImage: "person.2")
+            }
+        }
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchPrimaryThenBackground()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
+    }
+
+    private var ipadLocationList: some View {
+        List {
+            ForEach(filteredLocations) { location in
+                let isSelected = selectedLocation?.id == location.id
+                Button {
+                    selectedLocation = location
+                } label: {
+                    LocationCardView(location: location, useExplicitBackground: true)
+                        .overlay {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+        .overlay {
+            if filteredLocations.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(L10n.string("no_locations"), systemImage: "mappin.and.ellipse")
+            }
+        }
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchPrimaryThenBackground()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
+    }
+
+    private func handleScanResult(_ result: Result<ScanResult, ScanError>) {
+        showScanner = false
+        switch result {
+        case .success(let scanResult):
+            if let url = URL(string: scanResult.string), let id = extractAssetId(from: url) {
+                apiClient.errorMessage = nil
+                if apiClient.assets.first(where: { $0.id == id }) != nil {
+                    scannedAssetId = id
+                    selectedSection = .hardware
+                } else if apiClient.assets.isEmpty {
+                    scannedAssetId = id
+                    selectedSection = .hardware
+                    Task { await apiClient.fetchPrimaryThenBackground() }
+                } else {
+                    scannedAssetId = nil
+                    apiClient.errorMessage = "Asset with ID \(id) not found."
+                }
+            } else {
+                apiClient.errorMessage = "Invalid QR code: no valid asset ID"
+            }
+        case .failure(let error):
+            apiClient.errorMessage = "Scan failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func extractAssetId(from url: URL) -> Int? {
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let path = components.path.components(separatedBy: "/").last,
+           let id = Int(path) {
+            return id
+        }
+        return nil
     }
 
     // Helper om de sidebar te togglen
@@ -462,3 +789,4 @@ struct MainSplitView: View {
         #endif
     }
 }
+

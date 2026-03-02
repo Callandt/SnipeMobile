@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AssetCardView: View {
     let asset: Asset
+    /// Op iPad lijst: false = transparant (rij-achtergrond zichtbaar), true = eigen kaart-achtergrond.
+    var useExplicitBackground: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
@@ -16,7 +18,7 @@ struct AssetCardView: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    Text("Tag: \(asset.decodedAssetTag)")
+                    Text(String(format: L10n.string("tag_label"), asset.decodedAssetTag))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     if let status = asset.statusLabel.statusMeta, !status.isEmpty {
@@ -58,7 +60,10 @@ struct AssetCardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(
+            useExplicitBackground ? Color(.secondarySystemGroupedBackground) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
         .contentShape(Rectangle())
     }
 } 

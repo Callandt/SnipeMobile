@@ -26,8 +26,8 @@ struct LocationDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("Select a tab", selection: $selectedTab) {
-                Text("Users (\(usersAtLocation.count))").tag(0)
-                Text("Assets (\(assetsAtLocation.count))").tag(1)
+                Text(L10n.string("users_count", usersAtLocation.count)).tag(0)
+                Text(L10n.string("assets_count", assetsAtLocation.count)).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
@@ -36,7 +36,7 @@ struct LocationDetailView: View {
 
             if selectedTab == 0 {
                 if usersAtLocation.isEmpty {
-                    ContentUnavailableView("No users", systemImage: "person.2", description: Text("No users at this location."))
+                    ContentUnavailableView(L10n.string("no_users"), systemImage: "person.2", description: Text(L10n.string("no_users_location")))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.top, 4)
                 } else {
@@ -62,7 +62,7 @@ struct LocationDetailView: View {
                 }
             } else if selectedTab == 1 {
                 if assetsAtLocation.isEmpty {
-                    ContentUnavailableView("No assets", systemImage: "laptopcomputer", description: Text("No assets at this location."))
+                    ContentUnavailableView(L10n.string("no_assets"), systemImage: "laptopcomputer", description: Text(L10n.string("no_assets_location")))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.top, 4)
                 } else {
@@ -97,7 +97,7 @@ struct LocationDetailView: View {
                     Button {
                         onBack()
                     } label: {
-                        Label("Back", systemImage: "chevron.left")
+                        Label(L10n.string("back"), systemImage: "chevron.left")
                     }
                 }
             }

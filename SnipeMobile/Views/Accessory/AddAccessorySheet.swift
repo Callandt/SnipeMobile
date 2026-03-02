@@ -13,27 +13,27 @@ struct AddAccessorySheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(header: Text("General")) {
+                Section(header: Text(L10n.string("general"))) {
                     TextField("Name", text: $name)
                     Picker("Category", selection: $selectedCategoryId) {
-                        Text("Choose category…").tag(0)
+                        Text(L10n.string("choose_category")).tag(0)
                         ForEach(apiClient.categories) { cat in
                             Text(HTMLDecoder.decode(cat.name)).tag(cat.id)
                         }
                     }
-                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...9999)
+                    Stepper("\(L10n.string("quantity")): \(quantity)", value: $quantity, in: 1...9999)
                 }
             }
-            .navigationTitle("New accessory")
+            .navigationTitle(L10n.string("new_accessory"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
+                    Button(L10n.string("cancel")) { isPresented = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
                         ProgressView()
                     } else {
-                        Button("Create") { saveAccessory() }
+                        Button(L10n.string("create")) { saveAccessory() }
                             .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedCategoryId == 0)
                     }
                 }
@@ -46,8 +46,8 @@ struct AddAccessorySheet: View {
                     selectedCategoryId = first.id
                 }
             }
-            .alert("Result", isPresented: $showResult) {
-                Button("OK") {
+            .alert(L10n.string("result"), isPresented: $showResult) {
+                Button(L10n.string("ok")) {
                     if resultMessage.contains("created") {
                         isPresented = false
                     }

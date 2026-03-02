@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccessoryCardView: View {
     let accessory: Accessory
+    var useExplicitBackground: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
@@ -16,7 +17,7 @@ struct AccessoryCardView: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    Text("Tag: \(accessory.decodedAssetTag)")
+                    Text(String(format: L10n.string("tag_label"), accessory.decodedAssetTag))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
@@ -58,7 +59,10 @@ struct AccessoryCardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(
+            useExplicitBackground ? Color(.secondarySystemGroupedBackground) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
         .contentShape(Rectangle())
     }
 } 

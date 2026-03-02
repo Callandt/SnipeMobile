@@ -18,8 +18,8 @@ struct AccessoryDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("Details", selection: $selectedTab) {
-                Text("Details").tag(0)
-                Text("History").tag(1)
+                Text(L10n.string("details")).tag(0)
+                Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding()
@@ -41,21 +41,21 @@ struct AccessoryDetailView: View {
                         .padding(.horizontal)
 
                         if accessory.qty != nil || accessory.minAmt != nil || accessory.remaining != nil || accessory.checkoutsCount != nil {
-                            Text("Stock & Usage")
+                            Text(L10n.string("stock_usage"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .center)
                             VStack(alignment: .leading, spacing: 10) {
                                 if let qty = accessory.qty {
-                                    HStack { Text("Total Quantity").foregroundColor(.secondary); Spacer(); Text("\(qty)").bold() }
+                                    HStack { Text(L10n.string("total_quantity")).foregroundColor(.secondary); Spacer(); Text("\(qty)").bold() }
                                 }
                                 if let minAmt = accessory.minAmt {
-                                    HStack { Text("Minimum Amount").foregroundColor(.secondary); Spacer(); Text("\(minAmt)").bold() }
+                                    HStack { Text(L10n.string("minimum_amount")).foregroundColor(.secondary); Spacer(); Text("\(minAmt)").bold() }
                                 }
                                 if let remaining = accessory.remaining {
-                                    HStack { Text("Remaining").foregroundColor(.secondary); Spacer(); Text("\(remaining)").bold() }
+                                    HStack { Text(L10n.string("remaining")).foregroundColor(.secondary); Spacer(); Text("\(remaining)").bold() }
                                 }
                                 if let checkouts = accessory.checkoutsCount {
-                                    HStack { Text("Checkouts Count").foregroundColor(.secondary); Spacer(); Text("\(checkouts)").bold() }
+                                    HStack { Text(L10n.string("checkouts_count")).foregroundColor(.secondary); Spacer(); Text("\(checkouts)").bold() }
                                 }
                             }
                             .padding()

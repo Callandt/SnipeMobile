@@ -26,16 +26,16 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Form {
-                Section(header: Text("Appearance")) {
-                    Picker("Theme", selection: $appTheme) {
-                        Text("System").tag("system")
-                        Text("Light").tag("light")
-                        Text("Dark").tag("dark")
+                Section(header: Text(L10n.string("appearance"))) {
+                    Picker(L10n.string("theme"), selection: $appTheme) {
+                        Text(L10n.string("system")).tag("system")
+                        Text(L10n.string("light")).tag("light")
+                        Text(L10n.string("dark")).tag("dark")
                     }
                     .pickerStyle(SegmentedPickerStyle())
                 }
-                Section(header: Text("Security")) {
-                    Toggle("Require biometrics at launch", isOn: Binding(
+                Section(header: Text(L10n.string("security"))) {
+                    Toggle(L10n.string("require_biometrics"), isOn: Binding(
                         get: { useBiometrics },
                         set: { newValue in
                             pendingBiometricsValue = newValue
@@ -50,14 +50,14 @@ struct SettingsView: View {
                     ))
                     .disabled(pendingBiometricsValue != nil)
                 }
-                Section(header: Text("API Settings")) {
+                Section(header: Text(L10n.string("api_settings"))) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Enter your Snipe-IT API URL and API Key to sync your assets.")
+                        Text(L10n.string("api_settings_desc"))
                             .font(.body)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.leading)
                         Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
-                            Text("How to generate an API key?")
+                            Text(L10n.string("how_api_key"))
                                 .font(.footnote)
                                 .foregroundColor(Color.blue)
                                 .underline()
@@ -72,16 +72,17 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Settings")
+            .navigationTitle(L10n.string("settings"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if !isPresentedAsTab {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Close") {
+                        Button(L10n.string("close")) {
                             let storedToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
                             if apiCredentialsChanged(storedURL: apiClient.baseURL, storedToken: storedToken) {
                                 apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
                             }
+                            CloudSettingsStore.shared.pushToCloud()
                             dismiss()
                         }
                     }
@@ -100,6 +101,15 @@ struct SettingsView: View {
             .onAppear {
                 baseURL = apiClient.baseURL
                 apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
+            }
+            .onChange(of: appTheme) { _, newValue in
+                CloudSettingsStore.shared.setAppTheme(newValue)
+            }
+            .onChange(of: useBiometrics) { _, newValue in
+                CloudSettingsStore.shared.setUseBiometrics(newValue)
+            }
+            .onChange(of: settingsLanguage) { _, newValue in
+                CloudSettingsStore.shared.setSettingsLanguage(newValue)
             }
             .alert(isPresented: $showAlert) {
                 Alert(title: Text(alertMessage))
@@ -135,16 +145,16 @@ struct AppearanceSettingsView: View {
     @Binding var appTheme: String
     var body: some View {
         Form {
-            Section(header: Text("Theme")) {
-                Picker("Theme", selection: $appTheme) {
-                    Text("System").tag("system")
-                    Text("Light").tag("light")
-                    Text("Dark").tag("dark")
+            Section(header: Text(L10n.string("theme"))) {
+                Picker(L10n.string("theme"), selection: $appTheme) {
+                    Text(L10n.string("system")).tag("system")
+                    Text(L10n.string("light")).tag("light")
+                    Text(L10n.string("dark")).tag("dark")
                 }
                 .pickerStyle(SegmentedPickerStyle())
             }
         }
-        .navigationTitle("Appearance")
+        .navigationTitle(L10n.string("appearance"))
     }
 }
 
@@ -152,11 +162,11 @@ struct SecuritySettingsView: View {
     @Binding var useBiometrics: Bool
     var body: some View {
         Form {
-            Section(header: Text("Security")) {
-                Toggle("Require biometrics at launch", isOn: $useBiometrics)
+            Section(header: Text(L10n.string("security"))) {
+                Toggle(L10n.string("require_biometrics"), isOn: $useBiometrics)
             }
         }
-        .navigationTitle("Security")
+        .navigationTitle(L10n.string("security"))
     }
 }
 
@@ -168,7 +178,7 @@ struct APISettingsView: View {
     @Binding var alertMessage: String
     var body: some View {
         Form {
-            Section(header: Text("API Settings")) {
+            Section(header: Text(L10n.string("api_settings"))) {
                 TextField("Snipe-IT URL (e.g., https://snipeit.yourcompany.com)", text: $baseURL)
                     .autocapitalization(.none)
                     .textContentType(.URL)
@@ -176,7 +186,7 @@ struct APISettingsView: View {
                     .textContentType(.password)
             }
         }
-        .navigationTitle("API Settings")
+        .navigationTitle(L10n.string("api_settings"))
         .onAppear {
             baseURL = apiClient.baseURL
             apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""

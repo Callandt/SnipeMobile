@@ -4,6 +4,7 @@ struct AssetCheckoutSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     let asset: Asset
     @Binding var isPresented: Bool
+    var onSuccess: (() -> Void)? = nil
 
     @State private var checkoutName: String = ""
     @State private var notes: String = ""
@@ -28,12 +29,12 @@ struct AssetCheckoutSheet: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 28) {
-                        Text("Check Out Asset")
+                        Text(L10n.string("check_out_asset"))
                             .font(.title2).bold()
                             .padding(.top, 24)
-                        Picker("Check out to", selection: $selectedTab) {
-                            Text("User").tag(0)
-                            Text("Location").tag(1)
+                        Picker(L10n.string("check_out_to"), selection: $selectedTab) {
+                            Text(L10n.string("user")).tag(0)
+                            Text(L10n.string("location")).tag(1)
                         }
                         .pickerStyle(SegmentedPickerStyle())
                         .padding(.horizontal)
@@ -41,7 +42,7 @@ struct AssetCheckoutSheet: View {
 
                         if selectedTab == 0 {
                             VStack(alignment: .leading, spacing: 16) {
-                                Text("Select user")
+                                Text(L10n.string("select_user_short"))
                                     .font(.headline)
                                     .foregroundColor(Color.primary)
                                     .padding(.horizontal, 18)
@@ -86,7 +87,7 @@ struct AssetCheckoutSheet: View {
                             .padding(.horizontal, 10)
                         } else {
                             VStack(alignment: .leading, spacing: 16) {
-                                Text("Select location")
+                                Text(L10n.string("select_location_short"))
                                     .font(.headline)
                                     .foregroundColor(Color.primary)
                                     .padding(.horizontal, 18)
@@ -132,7 +133,7 @@ struct AssetCheckoutSheet: View {
                         }
 
                         VStack(alignment: .leading, spacing: 18) {
-                            Text("Asset details")
+                            Text(L10n.string("asset_details"))
                                 .font(.headline)
                                 .foregroundColor(Color.primary)
                                 .padding(.horizontal, 18)
@@ -141,7 +142,7 @@ struct AssetCheckoutSheet: View {
                                 // Status picklist
                                 if !deployableStatusLabels.isEmpty {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("Status")
+                                        Text(L10n.string("status"))
                                             .font(.subheadline)
                                             .foregroundColor(.secondary)
                                             .padding(.horizontal, 0)
@@ -166,7 +167,7 @@ struct AssetCheckoutSheet: View {
                                     .frame(maxWidth: .infinity)
                             }
                             .padding(.horizontal, 14)
-                            Text("Notes")
+                            Text(L10n.string("notes"))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 18)
@@ -177,7 +178,7 @@ struct AssetCheckoutSheet: View {
                                 .cornerRadius(12)
                                 .foregroundColor(Color.primary)
                                 .padding(.horizontal, 14)
-                            Toggle("Expected Checkin", isOn: $hasExpectedCheckin)
+                            Toggle(L10n.string("expected_checkin"), isOn: $hasExpectedCheckin)
                                 .padding(.horizontal, 18)
                             if hasExpectedCheckin {
                                 DatePicker("Date", selection: $expectedCheckin, displayedComponents: .date)
@@ -197,7 +198,7 @@ struct AssetCheckoutSheet: View {
                             if isSaving {
                                 ProgressView()
                             } else {
-                                Text("Check Out")
+                            Text(L10n.string("check_out"))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
                                     .padding()
@@ -216,11 +217,11 @@ struct AssetCheckoutSheet: View {
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
+                    Button(L10n.string("cancel")) { isPresented = false }
                 }
             }
             .alert(isPresented: $showResult) {
-                Alert(title: Text("Result"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
+                Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
             }
         }
     }
@@ -279,15 +280,19 @@ struct AssetCheckoutSheet: View {
             isSaving = false
             resultMessage = apiClient.lastApiMessage ?? (success ? "Check-out successful!" : "Check-out failed.")
             showResult = true
-            if success { isPresented = false }
+            if success {
+                isPresented = false
+                onSuccess?()
+            }
         }
     }
 
     // Set a default status selection if none is set and deployableStatusLabels is not empty
-    init(apiClient: SnipeITAPIClient, asset: Asset, isPresented: Binding<Bool>) {
+    init(apiClient: SnipeITAPIClient, asset: Asset, isPresented: Binding<Bool>, onSuccess: (() -> Void)? = nil) {
         self.apiClient = apiClient
         self.asset = asset
         self._isPresented = isPresented
+        self.onSuccess = onSuccess
         // Default selection for status picker to avoid nil tag warning
         if let firstDeployable = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
             _selectedStatusId = State(initialValue: firstDeployable.id)

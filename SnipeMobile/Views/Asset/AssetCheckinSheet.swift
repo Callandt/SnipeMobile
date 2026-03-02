@@ -23,12 +23,12 @@ struct AssetCheckinSheet: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 28) {
-                        Text("Check In Asset")
+                        Text(L10n.string("check_in_asset"))
                             .font(.title2).bold()
                             .padding(.top, 24)
                         
                         VStack(alignment: .leading) {
-                            Text("Asset details")
+                            Text(L10n.string("asset_details"))
                                 .font(.headline)
                                 .foregroundColor(Color.primary)
                                 .padding(.horizontal, 18)
@@ -36,10 +36,10 @@ struct AssetCheckinSheet: View {
                             
                             VStack(spacing: 16) {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Status")
+                                    Text(L10n.string("status"))
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
-                                    Picker("Status", selection: $selectedStatusId) {
+                                    Picker(L10n.string("status"), selection: $selectedStatusId) {
                                         ForEach(apiClient.statusLabels.sorted(by: { ($0.statusMeta ?? "") < ($1.statusMeta ?? "") }), id: \.id) { status in
                                             Text(status.statusMeta ?? "").tag(Optional(status.id))
                                         }
@@ -53,20 +53,20 @@ struct AssetCheckinSheet: View {
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    TextField("Name (custom asset name)", text: $name)
+                                    TextField(L10n.string("name"), text: $name)
                                         .padding(12)
                                         .background(Color(.secondarySystemBackground))
                                         .cornerRadius(12)
                                         .foregroundColor(Color.primary)
                                         .frame(maxWidth: .infinity)
-                                    Text("This will be shown as the asset name in the system. Leave unchanged to keep the current name.")
+                                    Text(L10n.string("name_help_checkin"))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                         .padding(.leading, 2)
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Notes")
+                                    Text(L10n.string("notes"))
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
                                     TextEditor(text: $notes)
@@ -78,12 +78,12 @@ struct AssetCheckinSheet: View {
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Location")
+                                    Text(L10n.string("location"))
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
                                     HStack {
-                                        Picker(selectedLocationId == nil ? "Select Location" : (apiClient.locations.first(where: { $0.id == selectedLocationId })?.name ?? "Location"), selection: $selectedLocationId) {
-                                            Text("None").tag(nil as Int?)
+                                        Picker(selectedLocationId == nil ? L10n.string("select_location") : (apiClient.locations.first(where: { $0.id == selectedLocationId })?.name ?? L10n.string("location")), selection: $selectedLocationId) {
+                                            Text(L10n.string("none")).tag(nil as Int?)
                                             ForEach(sortedLocations, id: \.id) { loc in
                                                 Text(loc.name).tag(Optional(loc.id))
                                             }
@@ -132,7 +132,7 @@ struct AssetCheckinSheet: View {
                                 if success { isPresented = false }
                             }
                         }) {
-                            Text("Check In")
+                            Text(L10n.string("check_in"))
                                 .font(.headline)
                                 .padding()
                                 .frame(maxWidth: .infinity)
@@ -163,7 +163,7 @@ struct AssetCheckinSheet: View {
                 }
             }
             .alert(isPresented: $showResult) {
-                Alert(title: Text("Result"), message: Text(resultMessage), dismissButton: .default(Text("OK")))
+                Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
             }
         }
     }

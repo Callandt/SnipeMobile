@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LocationCardView: View {
     let location: Location
+    var useExplicitBackground: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
@@ -18,7 +19,10 @@ struct LocationCardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(
+            useExplicitBackground ? Color(.secondarySystemGroupedBackground) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
         .contentShape(Rectangle())
     }
 } 

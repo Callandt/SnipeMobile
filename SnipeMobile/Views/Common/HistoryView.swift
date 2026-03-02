@@ -27,7 +27,7 @@ struct HistoryView: View {
                     .foregroundColor(.red)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.history.isEmpty {
-                Text("No history found for this item.")
+                Text(L10n.string("no_history"))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -95,7 +95,7 @@ struct HistoryView: View {
                         .font(.body.weight(.medium))
                         .foregroundColor(.primary)
                 } else {
-                    Text("No details available")
+                    Text(L10n.string("no_details"))
                         .font(.body.weight(.medium))
                         .foregroundColor(.primary)
                 }
@@ -154,7 +154,7 @@ struct HistoryView: View {
             // PDF-link tonen indien aanwezig
             if let pdfUrl = activity.file?.url, pdfUrl.lowercased().hasSuffix(".pdf") {
                 Button(action: { openPdfUrl = PdfUrl(url: pdfUrl) }) {
-                    Label("View PDF", systemImage: "doc.richtext")
+                    Label(L10n.string("view_pdf"), systemImage: "doc.richtext")
                         .font(.caption)
                         .foregroundColor(.accentColor)
                 }
