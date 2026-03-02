@@ -32,6 +32,13 @@ enum L10n {
         return String(format: template, arg)
     }
 
+    /// Vertaalt Snipe-IT status_meta (deployed, deployable, etc.) naar de app-taal.
+    static func statusLabel(_ statusMeta: String) -> String {
+        let key = "status_\(statusMeta.trimmingCharacters(in: .whitespaces).lowercased())"
+        let out = string(key)
+        return out == key ? statusMeta : out
+    }
+
     private static let english: [String: String] = [
         "tab_hardware": "Hardware",
         "tab_accessories": "Accessories",
@@ -70,6 +77,9 @@ enum L10n {
         "serial_optional": "Serial (optional)",
         "choose_model": "Choose model…",
         "choose_status": "Choose status…",
+        "choose_location": "Choose location…",
+        "choose_company": "Choose company…",
+        "choose_supplier": "Choose supplier…",
         "none": "None",
         "location_optional": "Location (optional)",
         "company_optional": "Company (optional)",
@@ -168,6 +178,33 @@ enum L10n {
         "no_details": "No details available",
         "view_pdf": "View PDF",
         "name_help_checkin": "This will be shown as the asset name in the system. Leave unchanged to keep the current name.",
+        "loading_assets": "Loading assets…",
+        "loading_accessories": "Loading accessories…",
+        "loading_users": "Loading users…",
+        "loading_locations": "Loading locations…",
+        "loading_assigned": "Loading assigned…",
+        "loading_history": "Loading history…",
+        "status_deployed": "Deployed",
+        "status_deployable": "Deployable",
+        "status_archived": "Archived",
+        "status_pending": "Pending",
+        "status_broken": "Broken",
+        "status_lost": "Lost",
+        "status_ready_to_deploy": "Ready to deploy",
+        "model": "Model",
+        "manufacturer": "Manufacturer",
+        "category": "Category",
+        "serial_number": "Serial Number",
+        "next_audit_date": "Next Audit Date",
+        "last_audit_date": "Last Audit Date",
+        "last_checkout": "Last Checkout",
+        "last_checkin": "Last Checkin",
+        "book_value": "Book Value",
+        "accessory_info": "Accessory Info",
+        "history_to": "To",
+        "email": "Email",
+        "employee_number": "Employee Number",
+        "job_title": "Job Title",
     ]
 
     private static let dutch: [String: String] = [
@@ -208,6 +245,9 @@ enum L10n {
         "serial_optional": "Serienummer (optioneel)",
         "choose_model": "Kies model…",
         "choose_status": "Kies status…",
+        "choose_location": "Kies locatie…",
+        "choose_company": "Kies bedrijf…",
+        "choose_supplier": "Kies leverancier…",
         "none": "Geen",
         "location_optional": "Locatie (optioneel)",
         "company_optional": "Bedrijf (optioneel)",
@@ -306,5 +346,32 @@ enum L10n {
         "no_details": "Geen details beschikbaar",
         "view_pdf": "Bekijk PDF",
         "name_help_checkin": "Dit wordt de naam van het asset in het systeem. Laat ongewijzigd om de huidige naam te behouden.",
+        "loading_assets": "Assets laden…",
+        "loading_accessories": "Accessoires laden…",
+        "loading_users": "Gebruikers laden…",
+        "loading_locations": "Locaties laden…",
+        "loading_assigned": "Toegewezen laden…",
+        "loading_history": "Geschiedenis laden…",
+        "status_deployed": "Uitgegeven",
+        "status_deployable": "Inzetbaar",
+        "status_archived": "Gearchiveerd",
+        "status_pending": "In behandeling",
+        "status_broken": "Defect",
+        "status_lost": "Zoek",
+        "status_ready_to_deploy": "Klaar voor uitgifte",
+        "model": "Model",
+        "manufacturer": "Fabrikant",
+        "category": "Categorie",
+        "serial_number": "Serienummer",
+        "next_audit_date": "Volgende auditdatum",
+        "last_audit_date": "Laatste auditdatum",
+        "last_checkout": "Laatste uitcheck",
+        "last_checkin": "Laatste incheck",
+        "book_value": "Boekwaarde",
+        "accessory_info": "Accessoire-info",
+        "history_to": "Aan",
+        "email": "E-mail",
+        "employee_number": "Personeelsnummer",
+        "job_title": "Functietitel",
     ]
 }

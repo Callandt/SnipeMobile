@@ -53,6 +53,8 @@ struct ContentView: View {
     @State private var usersPath = NavigationPath()
     @State private var locationsPath = NavigationPath()
     @State private var accessoriesPath = NavigationPath()
+    /// True wanneer een detailview op de stack staat; tabbar blijft dan volledig zichtbaar.
+    @State private var isDetailViewActive = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -67,10 +69,11 @@ struct ContentView: View {
                 showingScanner: $showingScanner,
                 showingAddAsset: $showingAddAsset,
                 navigationPath: $hardwarePath,
+                isDetailViewActive: $isDetailViewActive,
                 pendingAssetToOpen: $pendingAssetToOpen,
                 returnToTab: $returnToTab,
                 onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; hardwarePath = NavigationPath() } },
-                onOpenUser: { pendingUserToOpen = $0; selectedTab = .users; returnToTab = .hardware },
+                onOpenUser: { u in pendingUserToOpen = u; usersPath.append(u); selectedTab = .users; returnToTab = .hardware },
                 onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .hardware }
             )
             .tag(MainTab.hardware)
@@ -85,10 +88,11 @@ struct ContentView: View {
                 showingScanner: $showingScanner,
                 showingAddAccessory: $showingAddAccessory,
                 navigationPath: $accessoriesPath,
+                isDetailViewActive: $isDetailViewActive,
                 pendingAccessoryToOpen: $pendingAccessoryToOpen,
                 returnToTab: $returnToTab,
                 onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; accessoriesPath = NavigationPath() } },
-                onOpenUser: { pendingUserToOpen = $0; selectedTab = .users; returnToTab = .accessories },
+                onOpenUser: { u in pendingUserToOpen = u; usersPath.append(u); selectedTab = .users; returnToTab = .accessories },
                 onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .accessories },
                 onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .accessories }
             )
@@ -104,6 +108,7 @@ struct ContentView: View {
                 showingScanner: $showingScanner,
                 showingAddAsset: $showingAddAsset,
                 navigationPath: $usersPath,
+                isDetailViewActive: $isDetailViewActive,
                 pendingUserToOpen: $pendingUserToOpen,
                 returnToTab: $returnToTab,
                 onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; usersPath = NavigationPath() } },
@@ -123,10 +128,11 @@ struct ContentView: View {
                 showingScanner: $showingScanner,
                 showingAddAsset: $showingAddAsset,
                 navigationPath: $locationsPath,
+                isDetailViewActive: $isDetailViewActive,
                 pendingLocationToOpen: $pendingLocationToOpen,
                 returnToTab: $returnToTab,
                 onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; locationsPath = NavigationPath() } },
-                onOpenUser: { pendingUserToOpen = $0; selectedTab = .users; returnToTab = .locations },
+                onOpenUser: { u in pendingUserToOpen = u; usersPath.append(u); selectedTab = .users; returnToTab = .locations },
                 onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .locations }
             )
             .tag(MainTab.locations)
@@ -135,10 +141,24 @@ struct ContentView: View {
         #if os(iOS)
         .tabViewStyle(.automatic)
         #endif
-        .onChange(of: selectedTab) { _, _ in
+        .onChange(of: selectedTab) { _, newTab in
+            // Zoeken resetten bij tabwissel
             searchText = ""
+            // Tabbar-state resetten; zichtbare view (lijst of detail) zet correcte waarde
+            isDetailViewActive = false
+            // Alleen naar de lijst terugkeren als de gebruiker zelf op een tab tikt
+            // (returnToTab == nil). Bij programmatische navigatie tussen tabs
+            // (bijv. vanuit een detail naar een andere tab) laten we de path met
+            // de geopende detail-view intact.
+            guard returnToTab == nil else { return }
+            switch newTab {
+            case .hardware: hardwarePath = NavigationPath()
+            case .accessories: accessoriesPath = NavigationPath()
+            case .users: usersPath = NavigationPath()
+            case .locations: locationsPath = NavigationPath()
+            }
         }
-        .modifier(TabBarMinimizeBehaviorModifier())
+        .modifier(TabBarMinimizeBehaviorModifier(isDetailVisible: isDetailViewActive))
         .sheet(isPresented: $showingScanner, onDismiss: {
             selectedTab = .hardware
         }) {
@@ -221,6 +241,7 @@ struct HardwareTab: View {
     @Binding var showingScanner: Bool
     @Binding var showingAddAsset: Bool
     @Binding var navigationPath: NavigationPath
+    @Binding var isDetailViewActive: Bool
     @Binding var pendingAssetToOpen: Asset?
     @Binding var returnToTab: MainTab?
     var onBackToPreviousTab: () -> Void
@@ -248,7 +269,7 @@ struct HardwareTab: View {
                         description: Text(L10n.string("configure_api"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView("Loading assets...")
+                    ProgressView(L10n.string("loading_assets"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
                     ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
@@ -286,6 +307,7 @@ struct HardwareTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
+            .onAppear { isDetailViewActive = false }
             .navigationTitle(MainTab.hardware.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -322,7 +344,7 @@ struct HardwareTab: View {
                 }
             }
             .navigationDestination(for: Asset.self) { asset in
-                AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation)
+                AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation)
             }
         }
         .onAppear {
@@ -370,6 +392,7 @@ struct AccessoriesTab: View {
     @Binding var showingScanner: Bool
     @Binding var showingAddAccessory: Bool
     @Binding var navigationPath: NavigationPath
+    @Binding var isDetailViewActive: Bool
     @Binding var pendingAccessoryToOpen: Accessory?
     @Binding var returnToTab: MainTab?
     var onBackToPreviousTab: () -> Void
@@ -399,7 +422,7 @@ struct AccessoriesTab: View {
                         description: Text(L10n.string("configure_api_short"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView("Loading accessories...")
+                    ProgressView(L10n.string("loading_accessories"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
                     ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
@@ -435,6 +458,7 @@ struct AccessoriesTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
+            .onAppear { isDetailViewActive = false }
             .navigationTitle(MainTab.accessories.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -471,7 +495,7 @@ struct AccessoriesTab: View {
                 }
             }
             .navigationDestination(for: Accessory.self) { accessory in
-                AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $accessoryDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset, onOpenLocation: onOpenLocation)
+                AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $accessoryDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset, onOpenLocation: onOpenLocation)
             }
         }
         .onChange(of: pendingAccessoryToOpen) { _, new in
@@ -493,6 +517,7 @@ struct UsersTab: View {
     @Binding var showingScanner: Bool
     @Binding var showingAddAsset: Bool
     @Binding var navigationPath: NavigationPath
+    @Binding var isDetailViewActive: Bool
     @Binding var pendingUserToOpen: User?
     @Binding var returnToTab: MainTab?
     var onBackToPreviousTab: () -> Void
@@ -520,7 +545,7 @@ struct UsersTab: View {
                         description: Text(L10n.string("configure_api_short"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView("Loading users...")
+                    ProgressView(L10n.string("loading_users"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
                     ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
@@ -556,6 +581,7 @@ struct UsersTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
+            .onAppear { isDetailViewActive = false }
             .navigationTitle(MainTab.users.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -584,14 +610,11 @@ struct UsersTab: View {
                 }
             }
             .navigationDestination(for: User.self) { user in
-                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAsset, onOpenAccessory: onOpenAccessory, onOpenLocation: onOpenLocation)
+                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAsset, onOpenAccessory: onOpenAccessory, onOpenLocation: onOpenLocation)
             }
         }
         .onChange(of: pendingUserToOpen) { _, new in
-            if let user = new {
-                navigationPath.append(user)
-                pendingUserToOpen = nil
-            }
+            if new != nil { pendingUserToOpen = nil }
         }
     }
 }
@@ -606,6 +629,7 @@ struct LocationsTab: View {
     @Binding var showingScanner: Bool
     @Binding var showingAddAsset: Bool
     @Binding var navigationPath: NavigationPath
+    @Binding var isDetailViewActive: Bool
     @Binding var pendingLocationToOpen: Location?
     @Binding var returnToTab: MainTab?
     var onBackToPreviousTab: () -> Void
@@ -627,7 +651,7 @@ struct LocationsTab: View {
                         description: Text(L10n.string("configure_api_short"))
                     )
                 } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView("Loading locations...")
+                    ProgressView(L10n.string("loading_locations"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = apiClient.errorMessage {
                     ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
@@ -663,6 +687,7 @@ struct LocationsTab: View {
                     .listSectionSeparator(.hidden)
                 }
             }
+            .onAppear { isDetailViewActive = false }
             .navigationTitle(MainTab.locations.localizedTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -691,7 +716,7 @@ struct LocationsTab: View {
                 }
             }
             .navigationDestination(for: Location.self) { location in
-                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset)
+                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset)
             }
         }
         .onChange(of: pendingLocationToOpen) { _, new in
@@ -703,11 +728,12 @@ struct LocationsTab: View {
     }
 }
 
-// MARK: - iOS 26 Liquid Glass: tab bar minimaliseert bij scrollen
+// MARK: - iOS 26 Liquid Glass: tab bar minimaliseert alleen bij scrollen in lijstviews
 struct TabBarMinimizeBehaviorModifier: ViewModifier {
+    let isDetailVisible: Bool
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.tabBarMinimizeBehavior(.onScrollDown)
+            content.tabBarMinimizeBehavior(isDetailVisible ? .never : .onScrollDown)
         } else {
             content
         }

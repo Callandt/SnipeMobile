@@ -1,6 +1,10 @@
 import Foundation
 import SwiftUI
 
+#if !DEBUG
+private func print(_ items: Any..., separator: String = " ", terminator: String = "\n") {}
+#endif
+
 @MainActor
 class SnipeITAPIClient: ObservableObject {
     @Published var assets: [Asset] = []
@@ -77,15 +81,15 @@ class SnipeITAPIClient: ObservableObject {
         }
 
         await fetchAssets()
+        await fetchUsers()
+        await fetchAccessories()
+        await fetchLocations()
 
         await MainActor.run {
             isLoading = false
         }
 
         Task(priority: .background) {
-            await self.fetchUsers()
-            await self.fetchAccessories()
-            await self.fetchLocations()
             await self.fetchCompanies()
             await self.fetchStatusLabels()
         }
@@ -107,6 +111,7 @@ class SnipeITAPIClient: ObservableObject {
             }
 
             var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
             request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -141,6 +146,7 @@ class SnipeITAPIClient: ObservableObject {
         }
 
         var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -153,7 +159,9 @@ class SnipeITAPIClient: ObservableObject {
         } catch {
             await MainActor.run {
                 self.errorMessage = "Error fetching users: \(error.localizedDescription)"
+                #if DEBUG
                 print("Error details: \(error)")
+                #endif
             }
         }
     }
@@ -170,6 +178,7 @@ class SnipeITAPIClient: ObservableObject {
         }
 
         var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -182,7 +191,9 @@ class SnipeITAPIClient: ObservableObject {
         } catch {
             await MainActor.run {
                 self.errorMessage = "Error fetching accessories: \(error.localizedDescription)"
+                #if DEBUG
                 print("Error details: \(error)")
+                #endif
             }
         }
     }
@@ -194,11 +205,14 @@ class SnipeITAPIClient: ObservableObject {
         }
 
         guard let url = URL(string: "\(baseURL)/api/v1/locations") else {
+            #if DEBUG
             print("Invalid URL for locations")
+            #endif
             return
         }
 
         var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 

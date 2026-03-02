@@ -107,9 +107,7 @@ struct AddAssetSheet: View {
         if apiClient.statusLabels.isEmpty {
             Task { await apiClient.fetchStatusLabels() }
         }
-        if selectedStatusId == 0, let first = apiClient.statusLabels.first {
-            selectedStatusId = first.id
-        }
+        // Status blijft standaard op "Kies status" (geen auto-select)
         if apiClient.companies.isEmpty {
             Task { await apiClient.fetchCompanies() }
         }
@@ -185,10 +183,10 @@ struct AddAssetSheet: View {
             }
             if !apiClient.locations.isEmpty {
                 Picker(L10n.string("location_optional"), selection: Binding(
-                    get: { selectedLocationId ?? -1 },
-                    set: { selectedLocationId = $0 == -1 ? nil : $0 }
+                    get: { selectedLocationId ?? 0 },
+                    set: { selectedLocationId = $0 == 0 ? nil : $0 }
                 )) {
-                    Text(L10n.string("none")).tag(-1)
+                    Text(L10n.string("choose_location")).tag(0)
                     let sortedLocations = apiClient.locations.sorted {
                         $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                     }
@@ -199,10 +197,10 @@ struct AddAssetSheet: View {
             }
             if !apiClient.companies.isEmpty {
                 Picker(L10n.string("company_optional"), selection: Binding(
-                    get: { selectedCompanyId ?? -1 },
-                    set: { selectedCompanyId = $0 == -1 ? nil : $0 }
+                    get: { selectedCompanyId ?? 0 },
+                    set: { selectedCompanyId = $0 == 0 ? nil : $0 }
                 )) {
-                    Text(L10n.string("none")).tag(-1)
+                    Text(L10n.string("choose_company")).tag(0)
                     let sortedCompanies = apiClient.companies.sorted {
                         $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                     }
@@ -219,7 +217,7 @@ struct AddAssetSheet: View {
         Section(header: Text(L10n.string("purchase_warranty"))) {
             TextField(L10n.string("order_number_optional"), text: $orderNumber)
             TextField(L10n.string("purchase_price_optional"), text: $purchaseCost)
-                .keyboardType(.decimalPad)
+                .keyboardType(.numbersAndPunctuation)
             Toggle(L10n.string("purchase_date"), isOn: $hasPurchaseDate)
             if hasPurchaseDate {
                 DatePicker("", selection: $purchaseDate, displayedComponents: .date)
@@ -232,10 +230,10 @@ struct AddAssetSheet: View {
                 .keyboardType(.numberPad)
             if !suppliersFromAssets.isEmpty {
                 Picker(L10n.string("supplier_optional"), selection: Binding(
-                    get: { selectedSupplierId ?? -1 },
-                    set: { selectedSupplierId = $0 == -1 ? nil : $0 }
+                    get: { selectedSupplierId ?? 0 },
+                    set: { selectedSupplierId = $0 == 0 ? nil : $0 }
                 )) {
-                    Text(L10n.string("none")).tag(-1)
+                    Text(L10n.string("choose_supplier")).tag(0)
                     let sortedSuppliers = suppliersFromAssets.sorted {
                         $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                     }
@@ -329,7 +327,7 @@ struct AddAssetSheet: View {
             return f
         }()
         let nameValue = name.trimmingCharacters(in: .whitespaces)
-        let nameToSend = nameValue.isEmpty ? assetTag.trimmingCharacters(in: .whitespaces) : nameValue
+        let nameToSend = nameValue
         let purchaseDateStr = hasPurchaseDate ? formatter.string(from: purchaseDate) : nil
         let eolDateStr = hasEolDate ? formatter.string(from: eolDate) : nil
         let req = SnipeITAPIClient.AssetCreateRequest(

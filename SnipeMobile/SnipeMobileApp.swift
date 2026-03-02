@@ -174,6 +174,8 @@ struct MainSplitView: View {
     @State private var selectedAccessoryDetailTab: Int = 0
     @State private var selectedUserDetailTab: Int = 0
     @State private var selectedLocationDetailTab: Int = 0
+    /// Voor detailviews: tabbar-state (op iPhone in ContentView gebruikt; op iPad niet gebruikt).
+    @State private var isDetailViewActive = false
     /// Bij true: onChange(of: selectedSection) niet clearen (we komen van een link in een detail).
     @State private var skipClearSelectionOnSectionChange = false
 
@@ -398,6 +400,7 @@ struct MainSplitView: View {
                     asset: asset,
                     apiClient: apiClient,
                     selectedTab: $selectedAssetDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
                     onOpenUser: { [apiClient] user in
                         let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
                         selectedUser = resolved
@@ -432,6 +435,7 @@ struct MainSplitView: View {
                     accessory: accessory,
                     apiClient: apiClient,
                     selectedTab: $selectedAccessoryDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
                     onOpenUser: { [apiClient] user in
                         let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
                         selectedUser = resolved
@@ -476,6 +480,7 @@ struct MainSplitView: View {
                     user: user,
                     apiClient: apiClient,
                     selectedTab: $selectedUserDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
                     onOpenAsset: { [apiClient] asset in
                         let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
                         selectedAsset = resolved
@@ -520,6 +525,7 @@ struct MainSplitView: View {
                     location: location,
                     apiClient: apiClient,
                     selectedTab: $selectedLocationDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
                     onOpenUser: { [apiClient] user in
                         let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
                         selectedUser = resolved

@@ -20,7 +20,7 @@ struct HistoryView: View {
     var body: some View {
         Group {
             if viewModel.isLoading {
-                ProgressView("Loading history...")
+                ProgressView(L10n.string("loading_history"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.error {
                 Text(error)
@@ -32,12 +32,7 @@ struct HistoryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 15) {
-                        ForEach(viewModel.history) { activity in
-                            historyRow(activity: activity)
-                        }
-                    }
-                    .padding()
+                    timelineContent
                 }
             }
         }
@@ -58,140 +53,230 @@ struct HistoryView: View {
         }
     }
 
+    // MARK: - Tijdlijn layout
+    private var timelineContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(viewModel.history.enumerated()), id: \.element.id) { index, activity in
+                timelineItem(activity: activity, isLast: index == viewModel.history.count - 1)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 24)
+        .background(
+            // Doorlopende verticale lijn links van de knopen
+            GeometryReader { geo in
+                let lineX = 20.0 + 6.0
+                Path { path in
+                    path.move(to: CGPoint(x: lineX, y: 0))
+                    path.addLine(to: CGPoint(x: lineX, y: geo.size.height))
+                }
+                .stroke(Color.accentColor.opacity(0.25), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            }
+        )
+    }
+
     @ViewBuilder
-    private func historyRow(activity: Activity) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                // Actietype badge
-                Text(activity.actionType.capitalized)
-                    .font(.caption2.bold())
-                    .padding(.vertical, 4)
+    private func timelineItem(activity: Activity, isLast: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            // Knoop op de lijn
+            Circle()
+                .fill(timelineColor(for: activity))
+                .frame(width: 12, height: 12)
+                .overlay(
+                    Circle()
+                        .stroke(Color(.systemBackground), lineWidth: 2.5)
+                )
+                .shadow(color: timelineColor(for: activity).opacity(0.4), radius: 3, x: 0, y: 1)
+                .padding(.top, 6)
+
+            // Kaart inhoud
+            historyCard(activity: activity)
+                .padding(.leading, 16)
+                .padding(.bottom, 24)
+        }
+    }
+
+    private func timelineColor(for activity: Activity) -> Color {
+        let lower = activity.actionType.lowercased()
+        if lower.contains("check") && (lower.contains("out") || lower.contains("uit")) { return Color.green }
+        if lower.contains("check") && lower.contains("in") { return Color.blue }
+        if lower.contains("update") { return Color.orange }
+        if lower.contains("create") { return Color.purple }
+        if lower.contains("delete") { return Color.red }
+        return Color.accentColor
+    }
+
+    @ViewBuilder
+    private func historyCard(activity: Activity) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Badge + datum op één lijn
+            HStack(alignment: .center, spacing: 10) {
+                Text(L10n.isDutch ? prettifyActionTypeNL(activity.actionType) : activity.actionType.capitalized)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(timelineColor(for: activity))
                     .padding(.horizontal, 10)
-                    .background(Color.accentColor.opacity(0.15))
-                    .foregroundColor(Color.accentColor)
+                    .padding(.vertical, 5)
+                    .background(timelineColor(for: activity).opacity(0.12))
                     .clipShape(Capsule())
-                Spacer()
-                // Datum
+                Spacer(minLength: 8)
                 Text(activity.createdAt?.formatted ?? "")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+
             // Hoofdtekst
             Group {
                 if !activity.decodedNote.isEmpty {
                     Text(activity.decodedNote)
-                        .font(.body.weight(.medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
                 } else if let item = activity.item?.name, let target = activity.target?.name {
                     Text("\(HTMLDecoder.decode(item)) → \(HTMLDecoder.decode(target))")
-                        .font(.body.weight(.medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
                 } else if let item = activity.item?.name {
                     Text(HTMLDecoder.decode(item))
-                        .font(.body.weight(.medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
                 } else if let target = activity.target?.name {
                     Text(HTMLDecoder.decode(target))
-                        .font(.body.weight(.medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
                 } else {
                     Text(L10n.string("no_details"))
-                        .font(.body.weight(.medium))
-                        .foregroundColor(.primary)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
                 }
             }
+
             // Meta-wijzigingen als chips
-            if let meta = activity.log_meta {
-                VStack(alignment: .leading, spacing: 6) {
+            if let meta = activity.log_meta, !meta.isEmpty {
+                FlowLayout(spacing: 6) {
                     ForEach(Array(meta.keys).sorted(), id: \.self) { key in
                         let change = meta[key]
                         let prettyKey = prettifyFieldLabel(key)
                         if let new = change?.new {
-                            let oldValue = (change?.old?.isEmpty ?? true) ? "NULL" : (change?.old ?? "NULL")
-                            let newValue = new.isEmpty ? "NULL" : new
+                            let oldValue = (change?.old?.isEmpty ?? true) ? "–" : (change?.old ?? "–")
+                            let newValue = new.isEmpty ? "–" : new
                             Text("\(prettyKey): \(oldValue) → \(newValue)")
                                 .font(.caption2)
-                                .padding(.vertical, 2)
+                                .padding(.vertical, 4)
                                 .padding(.horizontal, 8)
-                                .background(Color.accentColor.opacity(0.08))
-                                .foregroundColor(Color.accentColor)
+                                .background(Color(.tertiarySystemFill))
+                                .foregroundColor(.secondary)
                                 .clipShape(Capsule())
                         } else if let old = change?.old {
-                            Text("\(prettyKey): \(old) → NULL")
+                            Text("\(prettyKey): \(old) → –")
                                 .font(.caption2)
-                                .padding(.vertical, 2)
+                                .padding(.vertical, 4)
                                 .padding(.horizontal, 8)
-                                .background(Color.accentColor.opacity(0.08))
-                                .foregroundColor(Color.accentColor)
+                                .background(Color(.tertiarySystemFill))
+                                .foregroundColor(.secondary)
                                 .clipShape(Capsule())
                         }
                     }
                 }
             }
-            // Gebruiker die de actie uitvoerde
-            if let user = activity.admin ?? activity.created_by {
-                HStack(spacing: 6) {
-                    Image(systemName: "person.crop.circle")
-                        .foregroundColor(.accentColor)
-                    Text(user.name)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+
+            // Onderste rij: gebruiker + ontvanger + PDF
+            HStack(spacing: 14) {
+                if let user = activity.admin ?? activity.created_by {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(user.name)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
-                .padding(.top, 2)
-            }
-            // Toon ontvanger bij elke checkout-achtige actie
-            let isCheckout = activity.actionType.lowercased().contains("check") && (activity.actionType.lowercased().contains("out") || activity.actionType.lowercased().contains("uit"))
-            if isCheckout, let target = activity.target {
-                HStack(spacing: 6) {
-                    Image(systemName: target.type == "user" ? "person.crop.circle.badge.checkmark" : "mappin.and.ellipse")
-                        .foregroundColor(.accentColor)
-                    Text("To: \(HTMLDecoder.decode(target.name))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                let isCheckout = activity.actionType.lowercased().contains("check") && (activity.actionType.lowercased().contains("out") || activity.actionType.lowercased().contains("uit"))
+                if isCheckout, let target = activity.target {
+                    HStack(spacing: 4) {
+                        Image(systemName: target.type == "user" ? "person.crop.circle.badge.checkmark" : "mappin.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("\(L10n.string("history_to")): \(HTMLDecoder.decode(target.name))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
-                .padding(.top, 2)
-            }
-            // PDF-link tonen indien aanwezig
-            if let pdfUrl = activity.file?.url, pdfUrl.lowercased().hasSuffix(".pdf") {
-                Button(action: { openPdfUrl = PdfUrl(url: pdfUrl) }) {
-                    Label(L10n.string("view_pdf"), systemImage: "doc.richtext")
-                        .font(.caption)
+                if let pdfUrl = activity.file?.url, pdfUrl.lowercased().hasSuffix(".pdf") {
+                    Button(action: { openPdfUrl = PdfUrl(url: pdfUrl) }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.richtext.fill")
+                                .font(.caption2)
+                            Text(L10n.string("view_pdf"))
+                                .font(.caption2)
+                        }
                         .foregroundColor(.accentColor)
+                    }
                 }
-                .padding(.top, 4)
             }
         }
-        .padding()
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color(.black).opacity(0.06), radius: 4, x: 0, y: 2)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
-        .padding(.vertical, 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(.separator).opacity(0.5), lineWidth: 0.5)
+        )
     }
 
-    // Helper functie om technische veldnamen om te zetten naar gebruikersvriendelijke labels
+    // Eenvoudige flow layout voor chips (wrap naar volgende regel)
+    private struct FlowLayout: Layout {
+        var spacing: CGFloat = 8
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            let result = arrange(proposal: proposal, subviews: subviews)
+            return result.size
+        }
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            let result = arrange(proposal: proposal, subviews: subviews)
+            for (i, subview) in subviews.enumerated() {
+                subview.place(at: CGPoint(x: bounds.minX + result.positions[i].x, y: bounds.minY + result.positions[i].y), proposal: .unspecified)
+            }
+        }
+        private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+            let maxWidth = proposal.width ?? .infinity
+            var positions: [CGPoint] = []
+            var x: CGFloat = 0, y: CGFloat = 0
+            var rowHeight: CGFloat = 0
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                if maxWidth != .infinity, x + size.width > maxWidth, x > 0 { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+                positions.append(CGPoint(x: x, y: y))
+                rowHeight = max(rowHeight, size.height)
+                x += size.width + spacing
+            }
+            let width = maxWidth.isFinite ? maxWidth : max(0, x - spacing)
+            return (CGSize(width: width, height: y + rowHeight), positions)
+        }
+    }
+
+    // Helper: technische veldnamen → gebruikersvriendelijke labels (via L10n)
     private func prettifyFieldLabel(_ field: String) -> String {
-        let mapping: [String: String] = [
-            "purchase_cost": "Purchase Cost",
-            "book_value": "Book Value",
-            "order_number": "Order Number",
-            "asset_tag": "Asset Tag",
-            "serial": "Serial Number",
-            "model": "Model",
-            "manufacturer": "Manufacturer",
-            "category": "Category",
-            "assigned_to": "Assigned To",
-            "location": "Location",
-            "status_label": "Status",
-            "name": "Name",
-            "email": "Email",
-            "employee_number": "Employee Number",
-            "jobtitle": "Job Title",
-            // Voeg hier meer mappings toe indien gewenst
+        let l10nKeys: [String: String] = [
+            "purchase_cost": "purchase_cost",
+            "book_value": "book_value",
+            "order_number": "order_number",
+            "asset_tag": "asset_tag",
+            "serial": "serial_number",
+            "model": "model",
+            "manufacturer": "manufacturer",
+            "category": "category",
+            "assigned_to": "assigned_to",
+            "location": "location",
+            "status_label": "status",
+            "name": "name",
+            "email": "email",
+            "employee_number": "employee_number",
+            "jobtitle": "job_title",
         ]
-        if let pretty = mapping[field] {
-            return pretty
+        if let key = l10nKeys[field] {
+            return L10n.string(key)
         }
         // Custom fields: verwijder alle whitespace/underscores aan het begin én vóór 'snipeit' (case-insensitive), gevolgd door spaties/underscores/tabs aan het begin en een nummer aan het einde
         var cleaned = field.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -208,10 +293,10 @@ struct HistoryView: View {
         return cleaned.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
-    // Helper voor NL actietypes
+    // Helper voor NL actietypes (API geeft vaak Engels: "Checked out", "Check in", etc.)
     private func prettifyActionTypeNL(_ type: String) -> String {
         let lower = type.lowercased()
-        if lower.contains("check") && lower.contains("uit") { return "Uitgecheckt" }
+        if lower.contains("check") && (lower.contains("out") || lower.contains("uit")) { return "Uitgecheckt" }
         if lower.contains("check") && lower.contains("in") { return "Ingecheckt" }
         if lower.contains("update") { return "Bijgewerkt" }
         if lower.contains("create") { return "Aangemaakt" }

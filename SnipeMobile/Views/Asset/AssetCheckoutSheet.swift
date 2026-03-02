@@ -227,7 +227,9 @@ struct AssetCheckoutSheet: View {
     }
 
     var filteredUsers: [User] {
+        #if DEBUG
         print("DEBUG: filteredUsers count=\(apiClient.users.count)")
+        #endif
         return apiClient.users
             .filter {
                 userSearchText.isEmpty ||
@@ -238,7 +240,9 @@ struct AssetCheckoutSheet: View {
     }
 
     var filteredLocations: [Location] {
+        #if DEBUG
         print("DEBUG: filteredLocations count=\(apiClient.locations.count)")
+        #endif
         return apiClient.locations
             .filter {
                 locationSearchText.isEmpty ||

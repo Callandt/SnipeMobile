@@ -98,17 +98,17 @@ struct AssetEditSheet: View {
                                 let update = SnipeITAPIClient.AssetUpdateRequest(
                                     name: trim(editName) ?? asset.name,
                                     asset_tag: trim(editAssetTag) ?? asset.assetTag,
-                                    serial: trim(editSerial),
+                                    serial: trim(editSerial) ?? "",
                                     model_id: selectedModelId,
                                     status_id: selectedStatusId,
                                     category_id: selectedCategoryId,
                                     manufacturer_id: selectedManufacturerId,
                                     supplier_id: selectedSupplierId,
-                                    notes: trim(editNotes),
-                                    order_number: trim(editOrderNumber),
-                                    location_id: selectedLocationId == 0 ? nil : selectedLocationId,
-                                    purchase_cost: NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost),
-                                    book_value: NumberFormatHelpers.normalizeDecimalForAPI(editBookValue),
+                                    notes: trim(editNotes) ?? "",
+                                    order_number: trim(editOrderNumber) ?? "",
+                                    location_id: asset.location?.id,
+                                    purchase_cost: NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost) ?? "",
+                                    book_value: NumberFormatHelpers.normalizeDecimalForAPI(editBookValue) ?? "",
                                     custom_fields: editCustomFields,
                                     purchase_date: purchaseDateString,
                                     next_audit_date: nextAuditDateString,
@@ -116,6 +116,9 @@ struct AssetEditSheet: View {
                                     eol_date: eolDateString
                                 )
                                 let success = await apiClient.updateAsset(assetId: asset.id, update: update)
+                                if success {
+                                    await apiClient.fetchAssets()
+                                }
                                 isSaving = false
                                 if success {
                                     isPresented = false
@@ -156,13 +159,15 @@ struct AssetEditSheet: View {
                     guard let model = asset.model else { return nil }
                     return IdNamePair(id: model.id, name: HTMLDecoder.decode(model.name))
                 })).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                Picker("Model", selection: $selectedModelId) {
-                    ForEach(modelPairs) { pair in
-                        Text(pair.name).tag(pair.id)
+                if !modelPairs.isEmpty {
+                    Picker("Model", selection: $selectedModelId) {
+                        ForEach(modelPairs) { pair in
+                            Text(pair.name).tag(pair.id)
+                        }
                     }
+                    .disabled(true)
+                    .opacity(0.6)
                 }
-                .disabled(true)
-                .opacity(0.6)
             }
             if !apiClient.assets.isEmpty {
                 let supplierPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.supplier?.id })).compactMap { id in
@@ -170,9 +175,11 @@ struct AssetEditSheet: View {
                         IdNamePair(id: $0.id, name: $0.name)
                     }
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                Picker("Supplier", selection: $selectedSupplierId) {
-                    ForEach(supplierPairs) { pair in
-                        Text(pair.name).tag(pair.id)
+                if !supplierPairs.isEmpty {
+                    Picker("Supplier", selection: $selectedSupplierId) {
+                        ForEach(supplierPairs) { pair in
+                            Text(pair.name).tag(pair.id)
+                        }
                     }
                 }
             }
@@ -182,20 +189,31 @@ struct AssetEditSheet: View {
                         IdNamePair(id: $0.id, name: $0.name)
                     }
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                Picker("Company", selection: $selectedCompanyId) {
-                    ForEach(companyPairs) { pair in
-                        Text(pair.name).tag(pair.id)
+                if !companyPairs.isEmpty {
+                    Picker("Company", selection: $selectedCompanyId) {
+                        ForEach(companyPairs) { pair in
+                            Text(pair.name).tag(pair.id)
+                        }
                     }
                 }
             }
-            // Status alleen tonen als asset niet uitgecheckt is (niet bewerkbaar bij checkout)
-            if !isAssetCheckedOut {
-                Picker("Status", selection: $selectedStatusId) {
-                    let sortedStatuses = apiClient.statusLabels.sorted {
-                        displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
-                    }
+            // Status alleen tonen als asset niet uitgecheckt is en we statuslabels hebben (voorkomt Picker-crash)
+            if !isAssetCheckedOut, !apiClient.statusLabels.isEmpty {
+                let sortedStatuses = apiClient.statusLabels.sorted {
+                    displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
+                }
+                let validStatusIds = Set(apiClient.statusLabels.map(\.id))
+                Picker("Status", selection: Binding(
+                    get: { validStatusIds.contains(selectedStatusId) ? selectedStatusId : (sortedStatuses.first?.id ?? 0) },
+                    set: { selectedStatusId = $0 }
+                )) {
                     ForEach(sortedStatuses, id: \.id) { label in
                         Text(displayName(for: label)).tag(label.id)
+                    }
+                }
+                .onAppear {
+                    if !validStatusIds.contains(selectedStatusId), let first = sortedStatuses.first?.id {
+                        selectedStatusId = first
                     }
                 }
             }
@@ -260,6 +278,7 @@ struct AssetEditSheet: View {
     }
 
     private func debugCustomFields(customFieldDefs: [SnipeITAPIClient.FieldDefinition], editCustomFields: [String: String]) {
+        #if DEBUG
         let defsString = customFieldDefs.map { "\($0.name):\($0.type ?? "")" }.joined(separator: ", ")
         let fieldsString = editCustomFields.map { "\($0.key):\($0.value)" }.joined(separator: ", ")
         print("DEBUG: customFieldDefs: \(defsString)")
@@ -273,6 +292,7 @@ struct AssetEditSheet: View {
                 print("DEBUG: veld \(key): GEEN definitie gevonden")
             }
         }
+        #endif
     }
 
     private var customFieldsSection: some View {

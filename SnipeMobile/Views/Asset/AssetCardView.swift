@@ -22,7 +22,7 @@ struct AssetCardView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     if let status = asset.statusLabel.statusMeta, !status.isEmpty {
-                        Text(status)
+                        Text(L10n.statusLabel(status))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

@@ -4,6 +4,7 @@ struct AssetDetailView: View {
     let asset: Asset
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    @Binding var isDetailViewActive: Bool
     var returnToTab: MainTab? = nil
     var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
@@ -60,8 +61,13 @@ struct AssetDetailView: View {
     }
 
     private var assignedUser: User? {
-        guard let assignedToId = currentAsset.assignedTo?.id else { return nil }
-        return apiClient.users.first { $0.id == assignedToId }
+        guard currentAsset.assignedTo?.type == "user", let id = currentAsset.assignedTo?.id else { return nil }
+        return apiClient.users.first { $0.id == id }
+    }
+
+    private var assignedLocation: Location? {
+        guard currentAsset.assignedTo?.type == "location", let id = currentAsset.assignedTo?.id else { return nil }
+        return apiClient.locations.first { $0.id == id }
     }
 
     private var editSheet: some View {
@@ -111,7 +117,9 @@ struct AssetDetailView: View {
                 Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
 
             if selectedTab == 0 {
                 detailsView
@@ -161,11 +169,19 @@ struct AssetDetailView: View {
             .padding(.bottom, 8)
             .background(.bar)
         }
-        .navigationTitle(currentAsset.decodedModelName.isEmpty ? currentAsset.decodedName : currentAsset.decodedModelName)
+        .onAppear { isDetailViewActive = true }
+        .onDisappear { isDetailViewActive = false }
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(returnToTab != nil)
-        .padding(.top, 8)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(currentAsset.decodedModelName.isEmpty ? currentAsset.decodedName : currentAsset.decodedModelName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             if let _ = returnToTab, let onBack = onBackToPrevious {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -186,7 +202,6 @@ struct AssetDetailView: View {
         .onAppear {
             selectedTab = 0
             if !hasLoggedAppearance {
-                print("AssetDetailView loaded, statusType: \(currentAsset.statusLabel.name)")
                 hasLoggedAppearance = true
             }
             Task {
@@ -266,46 +281,48 @@ struct AssetDetailView: View {
                 editCustomFields[key] = field.value ?? ""
             }
         }
-        if let modelId = currentAsset.model?.id {
+        let modelIds = Set(apiClient.assets.compactMap { $0.model?.id })
+        if let modelId = currentAsset.model?.id, modelIds.contains(modelId) {
             selectedModelId = modelId
-        } else if let firstModel = apiClient.assets.compactMap({ $0.model?.id }).first {
-            selectedModelId = firstModel
+        } else if let first = modelIds.first {
+            selectedModelId = first
         }
-        if let statusId = currentAsset.statusLabel.id as Int? {
-            selectedStatusId = statusId
-        } else if let firstStatus = apiClient.statusLabels.first?.id {
-            selectedStatusId = firstStatus
+        let statusIds = apiClient.statusLabels.map(\.id)
+        if statusIds.contains(currentAsset.statusLabel.id) {
+            selectedStatusId = currentAsset.statusLabel.id
+        } else if let first = apiClient.statusLabels.first?.id {
+            selectedStatusId = first
         }
-        if let categoryId = currentAsset.category?.id {
-            selectedCategoryId = categoryId
-        } else if let firstCategory = apiClient.assets.compactMap({ $0.category?.id }).first {
-            selectedCategoryId = firstCategory
-        }
-        if let manufacturerId = currentAsset.manufacturer?.id {
-            selectedManufacturerId = manufacturerId
-        } else if let firstManufacturer = apiClient.assets.compactMap({ $0.manufacturer?.id }).first {
-            selectedManufacturerId = firstManufacturer
-        }
-        if let supplierId = currentAsset.supplier?.id {
-            selectedSupplierId = supplierId
-        } else if let firstSupplier = apiClient.assets.compactMap({ $0.supplier?.id }).first {
-            selectedSupplierId = firstSupplier
-        }
-        if let companyId = currentAsset.company?.id {
-            selectedCompanyId = companyId
-        } else if let firstCompany = apiClient.assets.compactMap({ $0.company?.id }).first {
-            selectedCompanyId = firstCompany
-        }
-        if let locationId = currentAsset.location?.id {
-            selectedLocationId = locationId
-        } else if let firstLocation = apiClient.locations.first?.id {
-            selectedLocationId = firstLocation
+        let categoryIds = Set(apiClient.assets.compactMap { $0.category?.id })
+        if let id = currentAsset.category?.id, categoryIds.contains(id) {
+            selectedCategoryId = id
+        } else if let first = categoryIds.first { selectedCategoryId = first }
+        let manufacturerIds = Set(apiClient.assets.compactMap { $0.manufacturer?.id })
+        if let id = currentAsset.manufacturer?.id, manufacturerIds.contains(id) {
+            selectedManufacturerId = id
+        } else if let first = manufacturerIds.first { selectedManufacturerId = first }
+        let supplierIds = Set(apiClient.assets.compactMap { $0.supplier?.id })
+        if let id = currentAsset.supplier?.id, supplierIds.contains(id) {
+            selectedSupplierId = id
+        } else if let first = supplierIds.first { selectedSupplierId = first }
+        let companyIds = Set(apiClient.assets.compactMap { $0.company?.id })
+        if let id = currentAsset.company?.id, companyIds.contains(id) {
+            selectedCompanyId = id
+        } else if let first = companyIds.first { selectedCompanyId = first }
+        let locationIds = Set(apiClient.locations.map(\.id))
+        if let id = currentAsset.location?.id, locationIds.contains(id) {
+            selectedLocationId = id
+        } else if let first = apiClient.locations.first?.id {
+            selectedLocationId = first
         }
         hasPurchaseDate = currentAsset.purchaseDate?.date != nil
         hasNextAuditDate = currentAsset.nextAuditDate?.date != nil
         hasEolDate = currentAsset.assetEolDate?.date != nil
         hasExpectedCheckin = currentAsset.expectedCheckin?.date != nil
-        showEditSheet = true
+        // Sheet op volgende runloop tonen om SwiftUI-assert/breakpoint bij gelijktijdige state-updates te vermijden
+        DispatchQueue.main.async {
+            showEditSheet = true
+        }
     }
 
     private var detailsView: some View {
@@ -337,67 +354,89 @@ struct AssetDetailView: View {
                         Text(L10n.string("device_info"))
                             .font(.headline)
                             .foregroundColor(.primary)
-                            .padding(.top, 5)
                         VStack(spacing: 10) {
                             if !currentAsset.decodedAssetTag.isEmpty {
-                                copyableDetailRow(label: "Asset Tag", value: currentAsset.decodedAssetTag)
+                                copyableDetailRow(label: L10n.string("asset_tag"), value: currentAsset.decodedAssetTag)
                             }
                             if !currentAsset.decodedSerial.isEmpty {
-                                copyableDetailRow(label: "Serial Number", value: currentAsset.decodedSerial)
+                                copyableDetailRow(label: L10n.string("serial_number"), value: currentAsset.decodedSerial)
                             }
                             if !currentAsset.decodedModelName.isEmpty {
-                                copyableDetailRow(label: "Model", value: currentAsset.decodedModelName)
+                                copyableDetailRow(label: L10n.string("model"), value: currentAsset.decodedModelName)
                             }
                             if !currentAsset.decodedManufacturerName.isEmpty {
-                                copyableDetailRow(label: "Manufacturer", value: currentAsset.decodedManufacturerName)
+                                copyableDetailRow(label: L10n.string("manufacturer"), value: currentAsset.decodedManufacturerName)
                             }
                             if let statusMeta = currentAsset.statusLabel.statusMeta, !statusMeta.isEmpty {
-                                copyableDetailRow(label: "Status", value: statusMeta)
+                                copyableDetailRow(label: L10n.string("status"), value: L10n.statusLabel(statusMeta))
                             }
                             if !currentAsset.decodedCategoryName.isEmpty {
-                                copyableDetailRow(label: "Category", value: currentAsset.decodedCategoryName)
+                                copyableDetailRow(label: L10n.string("category"), value: currentAsset.decodedCategoryName)
                             }
                         }
                         .padding()
                         .background(Color(.systemGray6))
                         .cornerRadius(12)
 
-                        // Assigned To Section
-                        if currentAsset.statusLabel.statusMeta?.lowercased() == "deployed", let user = assignedUser {
-                            VStack(spacing: 15) {
+                        // Assigned To Section (zelfde opmaak als Accessory detail: grijze kaart, icoon + naam + chevron)
+                        if currentAsset.statusLabel.statusMeta?.lowercased() == "deployed", currentAsset.assignedTo != nil {
+                            VStack(alignment: .leading, spacing: 15) {
                                 Text(L10n.string("assigned_to"))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
-
-                                Button {
-                                    onOpenUser?(user)
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "person.circle")
-                                            .foregroundColor(.gray)
-                                            .frame(width: 30, height: 30)
-                                        VStack(alignment: .leading) {
-                                            Text(user.decodedName)
-                                                .font(.headline)
-                                                .foregroundColor(.primary)
-                                            Text(user.decodedEmail)
-                                                .font(.subheadline)
-                                                .foregroundColor(.secondary)
-                                            Text(user.decodedLocationName)
-                                                .font(.subheadline)
-                                                .foregroundColor(.secondary)
+                                if let user = assignedUser {
+                                    Button { onOpenUser?(user) } label: {
+                                        HStack {
+                                            Image(systemName: "person.circle")
+                                                .foregroundStyle(.tertiary)
+                                                .frame(width: 30, height: 30)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(user.decodedName)
+                                                    .font(.headline)
+                                                    .foregroundStyle(.primary)
+                                                if !user.decodedEmail.isEmpty {
+                                                    Text(user.decodedEmail)
+                                                        .font(.subheadline)
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                                if !user.decodedLocationName.isEmpty {
+                                                    Text(user.decodedLocationName)
+                                                        .font(.subheadline)
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
                                         }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
                                     }
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(.plain)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
+                                } else if let loc = assignedLocation {
+                                    Button { onOpenLocation?(loc) } label: {
+                                        HStack {
+                                            Image(systemName: "mappin.and.ellipse")
+                                                .foregroundStyle(.tertiary)
+                                                .frame(width: 30, height: 30)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(HTMLDecoder.decode(loc.name))
+                                                    .font(.headline)
+                                                    .foregroundStyle(.primary)
+                                            }
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
                                 }
-                                .buttonStyle(.plain)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(12)
                             }
                             .padding(.top, 5)
                         }
@@ -420,22 +459,22 @@ struct AssetDetailView: View {
                                     copyableDetailRow(label: L10n.string("purchase_date"), value: v)
                                 }
                                 if let v = currentAsset.nextAuditDate?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "Next Audit Date", value: v)
+                                    copyableDetailRow(label: L10n.string("next_audit_date"), value: v)
                                 }
                                 if let v = currentAsset.expectedCheckin?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("expected_checkin"), value: v)
                                 }
                                 if let v = currentAsset.assetEolDate?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "EOL Date", value: v)
+                                    copyableDetailRow(label: L10n.string("eol_date"), value: v)
                                 }
                                 if let v = currentAsset.lastAuditDate?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "Last Audit Date", value: v)
+                                    copyableDetailRow(label: L10n.string("last_audit_date"), value: v)
                                 }
                                 if let v = currentAsset.lastCheckout?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "Last Checkout", value: v)
+                                    copyableDetailRow(label: L10n.string("last_checkout"), value: v)
                                 }
                                 if let v = currentAsset.lastCheckin?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: "Last Checkin", value: v)
+                                    copyableDetailRow(label: L10n.string("last_checkin"), value: v)
                                 }
                             }
                             .padding()
@@ -455,7 +494,7 @@ struct AssetDetailView: View {
                                     copyableDetailRow(label: L10n.string("purchase_cost"), value: purchaseCost)
                                 }
                                 if let bookValue = currentAsset.bookValue, !bookValue.isEmpty {
-                                    copyableDetailRow(label: "Book Value", value: bookValue)
+                                    copyableDetailRow(label: L10n.string("book_value"), value: bookValue)
                                 }
                                 if let orderNumber = currentAsset.orderNumber, !orderNumber.isEmpty {
                                     copyableDetailRow(label: L10n.string("order_number"), value: orderNumber)
@@ -468,7 +507,7 @@ struct AssetDetailView: View {
 
                         if let customFields = currentAsset.customFields,
                            customFields.contains(where: { ($0.value.value ?? "").isEmpty == false }) {
-                            Text("Custom Fields")
+                            Text(L10n.string("custom_fields"))
                                 .font(.headline)
                                 .foregroundColor(.primary)
                                 .padding(.top, 5)
@@ -484,6 +523,7 @@ struct AssetDetailView: View {
                             .cornerRadius(12)
                         }
                     }
+                    .padding(.top, 16)
                     .padding(.horizontal)
                 }
             }

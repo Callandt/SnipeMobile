@@ -4,6 +4,7 @@ struct LocationDetailView: View {
     let location: Location
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    @Binding var isDetailViewActive: Bool
     var returnToTab: MainTab? = nil
     var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
@@ -32,25 +33,23 @@ struct LocationDetailView: View {
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
             .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.bottom, 2)
 
             if selectedTab == 0 {
                 if usersAtLocation.isEmpty {
                     ContentUnavailableView(L10n.string("no_users"), systemImage: "person.2", description: Text(L10n.string("no_users_location")))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.top, 4)
+                        .padding(.top, 16)
                 } else {
                     List {
                         Section {
                             ForEach(usersAtLocation) { user in
-                                Button {
-                                    onOpenUser?(user)
-                                } label: {
-                                    UserCardView(user: user)
+                                Button { onOpenUser?(user) } label: {
+                                    assignedToStyleUserRow(user: user)
                                 }
                                 .buttonStyle(.plain)
                                 .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                                 .listRowBackground(Color.clear)
                             }
                         }
@@ -58,25 +57,25 @@ struct LocationDetailView: View {
                     .listStyle(.insetGrouped)
                     .listSectionSpacing(.compact)
                     .listSectionSeparator(.hidden)
-                    .padding(.top, 4)
+                    .contentMargins(.top, 16, for: .scrollContent)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemBackground))
                 }
             } else if selectedTab == 1 {
                 if assetsAtLocation.isEmpty {
                     ContentUnavailableView(L10n.string("no_assets"), systemImage: "laptopcomputer", description: Text(L10n.string("no_assets_location")))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.top, 4)
+                        .padding(.top, 16)
                 } else {
                     List {
                         Section {
                             ForEach(assetsAtLocation) { asset in
-                                Button {
-                                    onOpenAsset?(asset)
-                                } label: {
-                                    AssetCardView(asset: asset)
+                                Button { onOpenAsset?(asset) } label: {
+                                    assignedToStyleAssetRow(asset: asset)
                                 }
                                 .buttonStyle(.plain)
                                 .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                                 .listRowBackground(Color.clear)
                             }
                         }
@@ -84,14 +83,26 @@ struct LocationDetailView: View {
                     .listStyle(.insetGrouped)
                     .listSectionSpacing(.compact)
                     .listSectionSeparator(.hidden)
-                    .padding(.top, 4)
+                    .contentMargins(.top, 16, for: .scrollContent)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemBackground))
                 }
             }
         }
-        .navigationTitle(location.name)
+        .background(Color(.systemBackground))
+        .onAppear { isDetailViewActive = true }
+        .onDisappear { isDetailViewActive = false }
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(HTMLDecoder.decode(location.name))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             if let _ = returnToTab, let onBack = onBackToPrevious {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -112,5 +123,53 @@ struct LocationDetailView: View {
         .onAppear {
             selectedTab = 0
         }
+    }
+
+    /// Kaartrij in stijl van Accessory Toegewezen aan (grijs, icoon + naam); geen chevron.
+    private func assignedToStyleUserRow(user: User) -> some View {
+        HStack {
+            Image(systemName: "person.circle")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(HTMLDecoder.decode(user.decodedName))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if !user.decodedEmail.isEmpty {
+                    Text(HTMLDecoder.decode(user.decodedEmail))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if !user.decodedLocationName.isEmpty {
+                    Text(HTMLDecoder.decode(user.decodedLocationName))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private func assignedToStyleAssetRow(asset: Asset) -> some View {
+        HStack {
+            Image(systemName: "laptopcomputer")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(asset.decodedAssetTag)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
     }
 } 

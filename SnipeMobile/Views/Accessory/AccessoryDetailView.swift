@@ -4,6 +4,7 @@ struct AccessoryDetailView: View {
     let accessory: Accessory
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    @Binding var isDetailViewActive: Bool
     var returnToTab: MainTab? = nil
     var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
@@ -22,12 +23,14 @@ struct AccessoryDetailView: View {
                 Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
 
             if selectedTab == 0 {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        Text("Accessory Info")
+                        Text(L10n.string("accessory_info"))
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .center)
                         VStack(alignment: .leading, spacing: 15) {
@@ -68,41 +71,66 @@ struct AccessoryDetailView: View {
                         checkedOutSection
                         Spacer()
                     }
-                    .padding(.top)
+                    .padding(.top, 16)
                 }
             } else {
                 HistoryView(itemType: "accessory", itemId: accessory.id, apiClient: apiClient)
             }
             Spacer(minLength: 0)
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Button(action: {}) {
-                    Text("Edit")
+                    Label(L10n.string("edit"), systemImage: "pencil")
                         .font(.headline)
-                        .padding()
                         .frame(maxWidth: .infinity)
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                Button(action: {}) {
-                    Text((accessory.statusLabel?.statusMeta?.lowercased() == "deployed") ? "Check In" : "Check Out")
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background((accessory.statusLabel?.statusMeta?.lowercased() == "deployed") ? Color.green : Color.blue)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .controlSize(.large)
+                if accessory.statusLabel?.statusMeta?.lowercased() == "deployed" {
+                    Button(action: {
+                        let active = checkedOutRows.filter { $0.availableActions?.checkin == true }
+                        if let first = active.first {
+                            checkinTarget = first
+                            showCheckinSheet = true
+                        }
+                    }) {
+                        Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.large)
+                } else {
+                    Button(action: {}) {
+                        Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
+                    .controlSize(.large)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
             .padding(.bottom, 8)
-            .background(Color.white.ignoresSafeArea(edges: .bottom))
+            .background(.bar)
         }
-        .navigationTitle(accessory.decodedName)
+        .background(Color(.systemBackground))
+        .onAppear { isDetailViewActive = true }
+        .onDisappear { isDetailViewActive = false }
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(returnToTab != nil)
-        .padding(.top, 8)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(accessory.decodedName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             if let _ = returnToTab, let onBack = onBackToPrevious {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -182,44 +210,46 @@ struct AccessoryDetailView: View {
     private func accessoryInfoRows() -> [AnyView] {
         var rows: [AnyView] = []
         if !accessory.decodedName.isEmpty {
-            rows.append(AnyView(detailRow(label: "Name", value: accessory.decodedName)))
+            rows.append(AnyView(detailRow(label: L10n.string("name"), value: accessory.decodedName)))
         }
         if !accessory.decodedAssetTag.isEmpty {
-            rows.append(AnyView(detailRow(label: "Asset Tag", value: accessory.decodedAssetTag)))
+            rows.append(AnyView(detailRow(label: L10n.string("asset_tag"), value: accessory.decodedAssetTag)))
         }
         if let status = accessory.statusLabel?.statusMeta, !status.isEmpty {
-            rows.append(AnyView(detailRow(label: "Status", value: status)))
+            rows.append(AnyView(detailRow(label: L10n.string("status"), value: L10n.statusLabel(status))))
         }
         if !accessory.decodedAssignedToName.isEmpty {
-            rows.append(AnyView(detailRow(label: "Assigned To", value: accessory.decodedAssignedToName)))
+            rows.append(AnyView(detailRow(label: L10n.string("assigned_to"), value: accessory.decodedAssignedToName)))
         }
         if !accessory.decodedLocationName.isEmpty {
-            rows.append(AnyView(detailRow(label: "Location", value: accessory.decodedLocationName)))
+            rows.append(AnyView(detailRow(label: L10n.string("location"), value: accessory.decodedLocationName)))
         }
         if !accessory.decodedManufacturerName.isEmpty {
-            rows.append(AnyView(detailRow(label: "Manufacturer", value: accessory.decodedManufacturerName)))
+            rows.append(AnyView(detailRow(label: L10n.string("manufacturer"), value: accessory.decodedManufacturerName)))
         }
         if !accessory.decodedCategoryName.isEmpty {
-            rows.append(AnyView(detailRow(label: "Category", value: accessory.decodedCategoryName)))
+            rows.append(AnyView(detailRow(label: L10n.string("category"), value: accessory.decodedCategoryName)))
         }
         return rows
     }
 
-    // --- Nieuwe checkedout section ---
+    // --- Assigned To: zelfde opmaak als Hardware (grijze kaarten, Bewerken/Check in-out stijl) ---
     var checkedOutSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Assigned To")
+        VStack(alignment: .leading, spacing: 15) {
+            Text(L10n.string("assigned_to"))
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .center)
             if isLoading {
-                ProgressView("Loading assigned...")
+                ProgressView(L10n.string("loading_assigned"))
                     .frame(maxWidth: .infinity)
+                    .padding()
             } else {
                 let activeRows = checkedOutRows.filter { $0.availableActions?.checkin == true }
                 if activeRows.isEmpty {
-                    Text("Not assigned to any user or location.")
+                    Text(L10n.string("assigned_to_any"))
                         .foregroundColor(.secondary)
-                        .padding(.horizontal)
+                        .frame(maxWidth: .infinity)
+                        .padding()
                 } else {
                     ForEach(activeRows) { row in
                         Button(action: {
@@ -237,19 +267,28 @@ struct AccessoryDetailView: View {
                             if row.assignedTo?.type == "user",
                                let assigned = row.assignedTo,
                                let id = assigned.id,
-                               let name = assigned.name,
-                               let firstName = assigned.firstName {
+                               assigned.name != nil,
+                               assigned.firstName != nil,
+                               let fullUser = apiClient.users.first(where: { $0.id == id }) {
                                 HStack {
-                                    let user = User(
-                                        id: id,
-                                        name: name,
-                                        first_name: firstName,
-                                        email: assigned.username,
-                                        location: nil,
-                                        employeeNumber: nil,
-                                        jobtitle: nil
-                                    )
-                                    UserCardView(user: user)
+                                    Image(systemName: "person.circle")
+                                        .foregroundStyle(.tertiary)
+                                        .frame(width: 30, height: 30)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(fullUser.decodedName)
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+                                        if !fullUser.decodedEmail.isEmpty {
+                                            Text(fullUser.decodedEmail)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        if !fullUser.decodedLocationName.isEmpty {
+                                            Text(fullUser.decodedLocationName)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
                                     Spacer()
                                     Image(systemName: "chevron.right")
                                         .font(.caption)
@@ -258,16 +297,16 @@ struct AccessoryDetailView: View {
                             } else if row.assignedTo?.type == "location" {
                                 HStack {
                                     Image(systemName: "mappin.and.ellipse")
-                                        .foregroundColor(.gray)
+                                        .foregroundStyle(.tertiary)
                                         .frame(width: 30, height: 30)
-                                    VStack(alignment: .leading) {
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text(row.assignedTo?.name ?? "")
                                             .font(.headline)
-                                            .foregroundColor(.primary)
+                                            .foregroundStyle(.primary)
                                         if let note = row.note, !note.isEmpty {
                                             Text(note)
                                                 .font(.subheadline)
-                                                .foregroundColor(.secondary)
+                                                .foregroundStyle(.secondary)
                                         }
                                     }
                                     Spacer()
@@ -275,11 +314,14 @@ struct AccessoryDetailView: View {
                                         .font(.caption)
                                         .foregroundStyle(.tertiary)
                                 }
-                                .padding(.horizontal)
                             }
                         }
+                        .buttonStyle(.plain)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
                         .contextMenu {
-                            Button("Check in") {
+                            Button(L10n.string("check_in")) {
                                 checkinTarget = row
                                 showCheckinSheet = true
                             }
@@ -288,6 +330,7 @@ struct AccessoryDetailView: View {
                 }
             }
         }
+        .padding(.horizontal)
     }
 
     // --- Nieuwe checkin functie ---

@@ -4,6 +4,7 @@ struct UserDetailView: View {
     let user: User
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
+    @Binding var isDetailViewActive: Bool
     var returnToTab: MainTab? = nil
     var onBackToPrevious: (() -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
@@ -61,36 +62,30 @@ struct UserDetailView: View {
                 ForEach(assignedItems) { item in
                     switch item {
                     case .asset(let asset):
-                        Button {
-                            onOpenAsset?(asset)
-                        } label: {
-                            AssetCardView(asset: asset)
+                        Button { onOpenAsset?(asset) } label: {
+                            assignedToStyleAssetRow(asset: asset)
                         }
                         .buttonStyle(.plain)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                         .listRowBackground(Color.clear)
                     case .accessory(let accessory):
-                        Button {
-                            onOpenAccessory?(accessory)
-                        } label: {
-                            AccessoryCardView(accessory: accessory)
+                        Button { onOpenAccessory?(accessory) } label: {
+                            assignedToStyleAccessoryRow(accessory: accessory)
                         }
                         .buttonStyle(.plain)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                         .listRowBackground(Color.clear)
                     }
                 }
                 ForEach(actuallyAssignedAccessories) { accessory in
-                    Button {
-                        onOpenAccessory?(accessory)
-                    } label: {
-                        AccessoryCardView(accessory: accessory)
+                    Button { onOpenAccessory?(accessory) } label: {
+                        assignedToStyleAccessoryRow(accessory: accessory)
                     }
                     .buttonStyle(.plain)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                     .listRowBackground(Color.clear)
                 }
             }
@@ -98,6 +93,53 @@ struct UserDetailView: View {
         .listStyle(.insetGrouped)
         .listSectionSpacing(.compact)
         .listSectionSeparator(.hidden)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .contentMargins(.horizontal, 0, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
+    }
+
+    /// Kaartrij in stijl van Accessory Toegewezen aan (grijs, icoon + naam); geen chevron.
+    private func assignedToStyleAssetRow(asset: Asset) -> some View {
+        HStack {
+            Image(systemName: "laptopcomputer")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(asset.decodedAssetTag)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private func assignedToStyleAccessoryRow(accessory: Accessory) -> some View {
+        HStack {
+            Image(systemName: "cube.box")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(accessory.decodedName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if !accessory.decodedCategoryName.isEmpty {
+                    Text(accessory.decodedCategoryName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
     }
 
     var body: some View {
@@ -109,7 +151,7 @@ struct UserDetailView: View {
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .padding(.horizontal)
-                .padding(.top, 6)
+                .padding(.top, 8)
                 .padding(.bottom, 2)
 
                 // Copy notification overlay direct onder tabs
@@ -136,12 +178,13 @@ struct UserDetailView: View {
                 }
 
                 if selectedTab == 0 {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 12) {
                         // --- Fixed Header ---
-                        VStack(spacing: 15) {
+                        VStack(spacing: 12) {
                             Text(L10n.string("user_info"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 2)
 
                             VStack(alignment: .leading, spacing: 15) {
                                 if let empNumber = user.employeeNumber, !empNumber.isEmpty {
@@ -163,16 +206,18 @@ struct UserDetailView: View {
                         .padding(.horizontal)
 
                         if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 15) {
                                 Text(L10n.string("assigned_assets"))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
                                 assignedAssetsSection
                             }
+                            .padding(.horizontal)
                         }
                     }
                     .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
-                    .padding(.top, 2)
+                    .padding(.top, 16)
+                    .background(Color(.systemBackground))
                 } else {
                     HistoryView(itemType: "user", itemId: user.id, apiClient: apiClient)
                 }
@@ -202,10 +247,19 @@ struct UserDetailView: View {
                 .padding(.top, 8)
             }
         }
-        .navigationTitle(HTMLDecoder.decode(user.decodedName))
+        .onAppear { isDetailViewActive = true }
+        .onDisappear { isDetailViewActive = false }
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(HTMLDecoder.decode(user.decodedName))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             if let _ = returnToTab, let onBack = onBackToPrevious {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
