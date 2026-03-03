@@ -55,6 +55,8 @@ struct ContentView: View {
     @State private var accessoriesPath = NavigationPath()
     /// True wanneer een detailview op de stack staat; tabbar blijft dan volledig zichtbaar.
     @State private var isDetailViewActive = false
+    @State private var showScanErrorAlert = false
+    @State private var scanErrorMessage: String?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -164,6 +166,15 @@ struct ContentView: View {
         }) {
             CodeScannerView(codeTypes: [.qr], completion: handleScanResult)
         }
+        .alert(L10n.string("error"), isPresented: $showScanErrorAlert) {
+            Button(L10n.string("ok"), role: .cancel) {
+                scanErrorMessage = nil
+            }
+        } message: {
+            if let msg = scanErrorMessage {
+                Text(msg)
+            }
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView(apiClient: apiClient)
                 .preferredColorScheme(
@@ -209,13 +220,16 @@ struct ContentView: View {
                     Task { await apiClient.fetchPrimaryThenBackground() }
                 } else {
                     scannedAssetId = nil
-                    apiClient.errorMessage = "Asset with ID \(id) not found."
+                    scanErrorMessage = L10n.string("asset_not_found_id", String(id))
+                    showScanErrorAlert = true
                 }
             } else {
-                apiClient.errorMessage = "Invalid QR code: no valid asset ID"
+                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
+                showScanErrorAlert = true
             }
         case .failure(let error):
-            apiClient.errorMessage = "Scan failed: \(error.localizedDescription)"
+            scanErrorMessage = String(format: L10n.string("scan_failed"), error.localizedDescription)
+            showScanErrorAlert = true
         }
     }
 
@@ -248,6 +262,9 @@ struct HardwareTab: View {
     var onOpenUser: (User) -> Void
     var onOpenLocation: (Location) -> Void
 
+    @State private var assetToDelete: Asset?
+    @State private var showDeleteConfirm = false
+
     var filteredAssets: [Asset] {
         if searchText.isEmpty { return apiClient.assets }
         return apiClient.assets.filter {
@@ -261,91 +278,7 @@ struct HardwareTab: View {
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            Group {
-                if !apiClient.isConfigured {
-                    ContentUnavailableView(
-                        L10n.string("no_data_yet"),
-                        systemImage: "link.badge.plus",
-                        description: Text(L10n.string("configure_api"))
-                    )
-                } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView(L10n.string("loading_assets"))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
-                } else {
-                    List {
-                        Section {
-                            HStack {
-                                Label("\(apiClient.assets.count)", systemImage: "laptopcomputer")
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                Text(L10n.string("assigned_count", apiClient.assets.filter { $0.assignedTo != nil }.count))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                        }
-
-                        Section {
-                            ForEach(filteredAssets) { asset in
-                                Button {
-                                    navigationPath.append(asset)
-                                } label: {
-                                    AssetCardView(asset: asset)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .listRowBackground(Color.clear)
-                            }
-                        }
-                    }
-                    .listStyle(.insetGrouped)
-                    .listSectionSpacing(.compact)
-                    .listSectionSeparator(.hidden)
-                }
-            }
-            .onAppear { isDetailViewActive = false }
-            .navigationTitle(MainTab.hardware.localizedTitle)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        showingAddAsset = true
-                    } label: {
-                        Image(systemName: "plus.circle")
-                    }
-                    .accessibilityLabel(L10n.string("add_asset"))
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingScanner = true
-                    } label: {
-                        Image(systemName: "qrcode.viewfinder")
-                    }
-                    .accessibilityLabel(L10n.string("scan_qr"))
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
-            }
-            .searchable(text: $searchText, prompt: L10n.string("search_assets"))
-            .refreshable {
-                if apiClient.isConfigured {
-                    isRefreshing = true
-                    await apiClient.fetchPrimaryThenBackground()
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    isRefreshing = false
-                }
-            }
-            .navigationDestination(for: Asset.self) { asset in
-                AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation)
-            }
+            hardwareTabContent
         }
         .onAppear {
             if apiClient.isConfigured && apiClient.assets.isEmpty && !hasLoadedInitialAssets {
@@ -369,6 +302,132 @@ struct HardwareTab: View {
         }
     }
 
+    @ViewBuilder
+    private var hardwareTabContent: some View {
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api"))
+                )
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView(L10n.string("loading_assets"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = apiClient.errorMessage {
+                ScrollView {
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
+                        .frame(minHeight: 400)
+                }
+            } else {
+                hardwareAssetList
+            }
+        }
+        .onAppear { isDetailViewActive = false }
+        .navigationTitle(MainTab.hardware.localizedTitle)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    showingAddAsset = true
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .accessibilityLabel(L10n.string("add_asset"))
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingScanner = true
+                } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                }
+                .accessibilityLabel(L10n.string("scan_qr"))
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+            }
+        }
+        .searchable(text: $searchText, prompt: L10n.string("search_assets"))
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchPrimaryThenBackground()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
+        .navigationDestination(for: Asset.self) { asset in
+            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation)
+        }
+        .alert(L10n.string("delete_asset_confirm_title"), isPresented: $showDeleteConfirm) {
+            Button(L10n.string("cancel"), role: .cancel) {
+                assetToDelete = nil
+            }
+            Button(L10n.string("delete"), role: .destructive) {
+                guard let a = assetToDelete else { return }
+                #if DEBUG
+                print("[SnipeMobile] Gebruiker bevestigde delete: asset id=\(a.id) tag=\(a.decodedAssetTag) — roep DELETE API aan")
+                #endif
+                Task {
+                    let ok = await apiClient.deleteAsset(assetId: a.id)
+                    #if DEBUG
+                    print("[SnipeMobile] deleteAsset(\(a.id)) result: \(ok)")
+                    #endif
+                }
+                assetToDelete = nil
+                showDeleteConfirm = false
+            }
+        } message: {
+            if let a = assetToDelete {
+                Text(L10n.string("delete_asset_confirm_message", a.decodedAssetTag))
+            }
+        }
+    }
+
+    private var hardwareAssetList: some View {
+        List {
+            Section {
+                HStack {
+                    Label("\(apiClient.assets.count)", systemImage: "laptopcomputer")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text(L10n.string("assigned_count", apiClient.assets.filter { $0.assignedTo != nil }.count))
+                        .foregroundStyle(.secondary)
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+            }
+            Section {
+                ForEach(filteredAssets) { asset in
+                    Button {
+                        navigationPath.append(asset)
+                    } label: {
+                        AssetCardView(asset: asset)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                    .listRowBackground(Color.clear)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            assetToDelete = asset
+                            showDeleteConfirm = true
+                        } label: {
+                            Label(L10n.string("delete"), systemImage: "trash")
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+    }
+
     private func tryPushPendingAsset() {
         guard let asset = pendingAssetToOpen else { return }
         navigationPath.append(asset)
@@ -382,7 +441,6 @@ struct HardwareTab: View {
     }
 }
 
-// MARK: - Accessories Tab
 struct AccessoriesTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
@@ -424,8 +482,11 @@ struct AccessoriesTab: View {
                 } else if apiClient.isLoading && !isRefreshing {
                     ProgressView(L10n.string("loading_accessories"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
+                } else if apiClient.errorMessage != nil {
+                    ScrollView {
+                        ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                            .frame(minHeight: 400)
+                    }
                 } else {
                     List {
                         Section {
@@ -547,8 +608,11 @@ struct UsersTab: View {
                 } else if apiClient.isLoading && !isRefreshing {
                     ProgressView(L10n.string("loading_users"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
+                } else if apiClient.errorMessage != nil {
+                    ScrollView {
+                        ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                            .frame(minHeight: 400)
+                    }
                 } else {
                     List {
                         Section {
@@ -653,8 +717,11 @@ struct LocationsTab: View {
                 } else if apiClient.isLoading && !isRefreshing {
                     ProgressView(L10n.string("loading_locations"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = apiClient.errorMessage {
-                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(error))
+                } else if apiClient.errorMessage != nil {
+                    ScrollView {
+                        ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                            .frame(minHeight: 400)
+                    }
                 } else {
                     List {
                         Section {

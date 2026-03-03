@@ -1,4 +1,5 @@
 import SwiftUI
+import CodeScanner
 
 struct AddAssetSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
@@ -25,6 +26,7 @@ struct AddAssetSheet: View {
     @State private var isSaving = false
     @State private var resultMessage = ""
     @State private var showResult = false
+    @State private var showingDellScanner = false
 
     private var canSave: Bool {
         !assetTag.trimmingCharacters(in: .whitespaces).isEmpty
@@ -71,6 +73,9 @@ struct AddAssetSheet: View {
                 Text(resultMessage)
             }
         }
+        .sheet(isPresented: $showingDellScanner) {
+            CodeScannerView(codeTypes: [.qr], completion: handleDellScanResult)
+        }
     }
 
     @ToolbarContentBuilder
@@ -90,15 +95,14 @@ struct AddAssetSheet: View {
 
     private func setupOnAppear() {
         assetTag = nextAvailableAssetTag
+        // Altijd beginnen met geen gekozen model; gebruiker moet bewust kiezen.
+        selectedModelId = 0
+        displayedFieldDefinitions = []
+        customFields = [:]
         if apiClient.models.isEmpty {
             Task {
                 await apiClient.fetchModels()
                 await apiClient.fetchFieldsets()
-                if selectedModelId == 0, let first = apiClient.models.first {
-                    selectedModelId = first.id
-                    await apiClient.fetchModelFieldDefinitions(modelId: first.id)
-                    loadCustomFieldsForModel(first.id)
-                }
             }
         }
         if apiClient.fieldsets == nil {
@@ -159,6 +163,11 @@ struct AddAssetSheet: View {
                     .foregroundStyle(.primary)
             }
             TextField(L10n.string("serial_optional"), text: $serial)
+            Button {
+                showingDellScanner = true
+            } label: {
+                Label(L10n.string("scan_dell_qr"), systemImage: "qrcode.viewfinder")
+            }
 
             // Model alfabetisch op naam
             Picker("Model", selection: $selectedModelId) {
@@ -355,6 +364,7 @@ struct AddAssetSheet: View {
             byod: byod
         )
         Task {
+            print("AddAssetSheet.saveAsset: sending createAsset with model_id=\(selectedModelId), status_id=\(selectedStatusId), asset_tag=\(assetTag), serial=\(serial)")
             let success = await apiClient.createAsset(req)
             if success {
                 await apiClient.fetchAssets()
@@ -369,5 +379,85 @@ struct AddAssetSheet: View {
                 }
             }
         }
+    }
+
+    private func handleDellScanResult(_ result: Result<ScanResult, ScanError>) {
+        showingDellScanner = false
+        switch result {
+        case .success(let scanResult):
+            print("Dell QR scan raw string: \(scanResult.string)")
+            guard let url = URL(string: scanResult.string) else {
+                print("Dell QR scan: could not create URL from string")
+                resultMessage = L10n.string("invalid_dell_qr")
+                showResult = true
+                return
+            }
+            Task {
+                await handleDellUrl(url)
+            }
+        case .failure(let error):
+            resultMessage = String(format: L10n.string("scan_failed"), error.localizedDescription)
+            showResult = true
+        }
+    }
+
+    private func handleDellUrl(_ url: URL) async {
+        // Alleen Dell-domeinen accepteren; we vullen enkel het serienummer (service tag) in.
+        guard let host = url.host, host.lowercased().contains("dell") else {
+            print("Dell QR scan: URL is not Dell host: \(url.absoluteString)")
+            await MainActor.run {
+                resultMessage = L10n.string("invalid_dell_qr")
+                showResult = true
+            }
+            return
+        }
+
+        let serviceTag = extractDellServiceTag(from: url)
+
+        await MainActor.run {
+            guard let tag = serviceTag, !tag.isEmpty else {
+                print("Dell QR scan: no service tag found in URL \(url.absoluteString)")
+                resultMessage = L10n.string("invalid_dell_qr")
+                showResult = true
+                return
+            }
+            self.serial = tag
+            // Model en andere velden blijven ongemoeid.
+        }
+    }
+
+    private func extractDellServiceTag(from url: URL) -> String? {
+        // 1) Probeer pad: .../servicetag/<TAG>/...
+        let components = url.path.components(separatedBy: "/")
+        if let idx = components.firstIndex(where: { $0.lowercased() == "servicetag" }),
+           components.indices.contains(components.index(after: idx)) {
+            let tag = components[components.index(after: idx)]
+            if !tag.isEmpty { return tag }
+        }
+        // 2) Probeer query-parameters zoals servicetag, serviceTag, ST, t, etc.
+        if let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
+            let keys = ["servicetag", "serviceTag", "st", "ST", "t", "T"]
+            for key in keys {
+                if let value = queryItems.first(where: { $0.name == key })?.value, !value.isEmpty {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
+    private func extractDellModelName(fromHTML html: String) -> String? {
+        guard let titleStart = html.range(of: "<title>")?.upperBound,
+              let titleEndSearchRange = html.range(of: "</title>", range: titleStart..<html.endIndex) else {
+            return nil
+        }
+        let title = String(html[titleStart..<titleEndSearchRange.lowerBound])
+        let loweredTitle = title.lowercased()
+        guard let dellRange = loweredTitle.range(of: "dell ") else { return nil }
+        let startIndex = title.index(title.startIndex, offsetBy: title.distance(from: loweredTitle.startIndex, to: dellRange.upperBound))
+        let remainder = title[startIndex...]
+        let endIndex = remainder.firstIndex(of: "|") ?? remainder.endIndex
+        let model = remainder[..<endIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        return model.isEmpty ? nil : model
     }
 }

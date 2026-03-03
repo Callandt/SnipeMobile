@@ -491,10 +491,10 @@ struct AssetDetailView: View {
                                 .padding(.top, 5)
                             VStack(spacing: 10) {
                                 if let purchaseCost = currentAsset.purchaseCost, !purchaseCost.isEmpty {
-                                    copyableDetailRow(label: L10n.string("purchase_cost"), value: purchaseCost)
+                                    copyableDetailRow(label: L10n.string("purchase_cost"), value: purchaseCost, copyValue: normalizeDecimalForCopy(purchaseCost))
                                 }
                                 if let bookValue = currentAsset.bookValue, !bookValue.isEmpty {
-                                    copyableDetailRow(label: L10n.string("book_value"), value: bookValue)
+                                    copyableDetailRow(label: L10n.string("book_value"), value: bookValue, copyValue: normalizeDecimalForCopy(bookValue))
                                 }
                                 if let orderNumber = currentAsset.orderNumber, !orderNumber.isEmpty {
                                     copyableDetailRow(label: L10n.string("order_number"), value: orderNumber)
@@ -530,14 +530,20 @@ struct AssetDetailView: View {
         }
     }
     
+    /// Voor aankoopprijs/boekwaarde: alleen duizendtal-punten verwijderen; komma blijft komma (1.630,86 → 1630,86).
+    private func normalizeDecimalForCopy(_ value: String) -> String {
+        value.replacingOccurrences(of: ".", with: "")
+    }
+
     @ViewBuilder
-    private func copyableDetailRow(label: String, value: String) -> some View {
+    private func copyableDetailRow(label: String, value: String, copyValue: String? = nil) -> some View {
+        let toCopy = copyValue ?? value
         HStack {
             Text(label).bold()
             Spacer()
             Text(value)
             Button(action: {
-                UIPasteboard.general.string = value
+                UIPasteboard.general.string = toCopy
                 withAnimation {
                     copyNotification = label
                     showCopyNotification = true

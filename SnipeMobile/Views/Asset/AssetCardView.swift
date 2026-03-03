@@ -18,9 +18,16 @@ struct AssetCardView: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    Text(String(format: L10n.string("tag_label"), asset.decodedAssetTag))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Text(String(format: L10n.string("tag_label"), asset.decodedAssetTag))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        if !asset.decodedSerial.isEmpty {
+                            Text("\(L10n.string("sn_label")) \(asset.decodedSerial)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     if let status = asset.statusLabel.statusMeta, !status.isEmpty {
                         Text(L10n.statusLabel(status))
                             .font(.caption)

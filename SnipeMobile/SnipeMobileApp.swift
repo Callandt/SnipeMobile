@@ -178,6 +178,8 @@ struct MainSplitView: View {
     @State private var isDetailViewActive = false
     /// Bij true: onChange(of: selectedSection) niet clearen (we komen van een link in een detail).
     @State private var skipClearSelectionOnSectionChange = false
+    @State private var showScanErrorAlert = false
+    @State private var scanErrorMessage: String?
 
     init(apiClient: SnipeITAPIClient) {
         self.apiClient = apiClient
@@ -289,6 +291,15 @@ struct MainSplitView: View {
         }
         .sheet(isPresented: $showScanner, onDismiss: scannerDismiss) {
             CodeScannerView(codeTypes: [.qr], completion: handleScanResult)
+        }
+        .alert(L10n.string("error"), isPresented: $showScanErrorAlert) {
+            Button(L10n.string("ok"), role: .cancel) {
+                scanErrorMessage = nil
+            }
+        } message: {
+            if let msg = scanErrorMessage {
+                Text(msg)
+            }
         }
         .onChange(of: scannedAssetId) { _, new in
             selectScannedAsset(id: new)
@@ -763,13 +774,16 @@ struct MainSplitView: View {
                     Task { await apiClient.fetchPrimaryThenBackground() }
                 } else {
                     scannedAssetId = nil
-                    apiClient.errorMessage = "Asset with ID \(id) not found."
+                    scanErrorMessage = L10n.string("asset_not_found_id", String(id))
+                    showScanErrorAlert = true
                 }
             } else {
-                apiClient.errorMessage = "Invalid QR code: no valid asset ID"
+                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
+                showScanErrorAlert = true
             }
         case .failure(let error):
-            apiClient.errorMessage = "Scan failed: \(error.localizedDescription)"
+            scanErrorMessage = String(format: L10n.string("scan_failed"), error.localizedDescription)
+            showScanErrorAlert = true
         }
     }
 

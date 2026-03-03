@@ -488,6 +488,36 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    /// Parses Snipe-IT validation response (Laravel-style `errors` or `messages` with field -> [strings]).
+    /// Returns (user-visible message with all validation texts, true if error is about duplicate serial or asset_tag).
+    private static func parseValidationError(json: [String: Any]?, statusCode: Int) -> (String, Bool) {
+        typealias Dict = [String: Any]
+        func allMessages(from dict: Dict?) -> [String] {
+            guard let dict = dict else { return [] }
+            var list: [String] = []
+            for (_, val) in dict {
+                if let arr = val as? [String] {
+                    list.append(contentsOf: arr.filter { !$0.isEmpty })
+                } else if let s = val as? String, !s.isEmpty {
+                    list.append(s)
+                }
+            }
+            return list
+        }
+        func hasSerialOrAssetTagError(_ dict: Dict?) -> Bool {
+            guard let dict = dict else { return false }
+            return dict["serial"] != nil || dict["asset_tag"] != nil
+        }
+        let errors = json?["errors"] as? Dict
+        let messagesDict = json?["messages"] as? Dict
+        let messagesList = allMessages(from: errors) + allMessages(from: messagesDict)
+        let combined = messagesList.isEmpty
+            ? (json?["error"] as? String ?? (statusCode == 200 ? "Asset created!" : "Create failed."))
+            : messagesList.joined(separator: "\n")
+        let isDuplicate = hasSerialOrAssetTagError(errors) || hasSerialOrAssetTagError(messagesDict)
+        return (combined, isDuplicate)
+    }
+
     // MARK: - Create Asset (POST /hardware)
     struct AssetCreateRequest: Codable {
         let name: String
@@ -520,27 +550,85 @@ class SnipeITAPIClient: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let data = try JSONEncoder().encode(body)
             request.httpBody = data
+            #if DEBUG
+            print("createAsset: POST \(url.absoluteString)")
+            #endif
             let (responseData, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Asset created!" : "Create failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200 {
-                    if let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+            guard let httpResponse = response as? HTTPURLResponse else {
+                await MainActor.run { self.lastApiMessage = "Geen geldige HTTP-response." }
+                return false
+            }
+
+            #if DEBUG
+            let bodyPreview = String(data: responseData.prefix(500), encoding: .utf8) ?? "<non-UTF8>"
+            print("createAsset: status=\(httpResponse.statusCode) bodyPreview=\(bodyPreview)")
+            #endif
+
+            var dataToParse = responseData
+            if dataToParse.count >= 3, dataToParse[0] == 0xEF, dataToParse[1] == 0xBB, dataToParse[2] == 0xBF {
+                dataToParse = Data(dataToParse.dropFirst(3))
+            }
+            var json = (try? JSONSerialization.jsonObject(with: dataToParse)) as? [String: Any]
+            if json == nil, let first = String(data: responseData.prefix(1), encoding: .utf8), first == "{" {
+                json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
+            }
+
+            // Detecteer of de server HTML (bijv. Microsoft-login) teruggeeft i.p.v. JSON (bij duplicate/redirect)
+            let contentType = (httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+            let isHtmlContentType = contentType.contains("text/html")
+            let firstBytes = String(data: responseData.prefix(800), encoding: .utf8) ?? ""
+            let firstBytesLower = firstBytes.lowercased()
+            let looksLikeHTML = isHtmlContentType
+                || firstBytesLower.contains("<!doctype")
+                || firstBytesLower.contains("<html")
+                || firstBytesLower.contains("login.microsoftonline.com")
+                || firstBytesLower.contains("microsoft")
+                || firstBytesLower.contains("aanmelden")
+
+            if json == nil && httpResponse.statusCode == 200 && looksLikeHTML {
+                let loginPageMsg = (firstBytesLower.contains("microsoft") || firstBytesLower.contains("aanmelden"))
+                    ? L10n.string("create_response_login_page")
+                    : L10n.string("create_response_not_json")
+                await MainActor.run { self.lastApiMessage = loginPageMsg }
+                return false
+            }
+
+            let (parsedMsg, isDuplicateSerialOrTag) = Self.parseValidationError(json: json, statusCode: httpResponse.statusCode)
+            let msg: String
+            if !parsedMsg.isEmpty && parsedMsg != "Create failed." && parsedMsg != "Asset created!" {
+                msg = parsedMsg
+            } else if isDuplicateSerialOrTag {
+                msg = L10n.string("serial_or_asset_tag_exists")
+            } else {
+                msg = parsedMsg
+            }
+            await MainActor.run { self.lastApiMessage = msg }
+
+            if httpResponse.statusCode == 200 {
+                let isSnipeSuccess = (json?["status"] as? String)?.lowercased() == "success"
+                let hasPayload = (json?["payload"] as? [String: Any])?["id"] != nil
+
+                if isSnipeSuccess || hasPayload {
+                    // Optioneel: payload als Asset decoderen en in cache zetten (slaat over als payload andere vorm heeft)
+                    if let json = json,
                        let payload = json["payload"],
                        let payloadData = try? JSONSerialization.data(withJSONObject: payload),
                        let newAsset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
                         await MainActor.run { self.assets.insert(newAsset, at: 0) }
+                    } else {
+                        await self.fetchAssets()
+                    }
+                    if let messages = json?["messages"] as? String, !messages.isEmpty {
+                        await MainActor.run { self.lastApiMessage = messages }
                     }
                     return true
                 }
-                return false
             }
+
             return false
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
@@ -608,6 +696,70 @@ class SnipeITAPIClient: ObservableObject {
             }
             return false
         } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    /// DELETE /api/v1/hardware/:id — verwijdert een asset in Snipe-IT. Bij 405 (proxy blokkeert DELETE) wordt opnieuw geprobeerd met POST + X-HTTP-Method-Override: DELETE.
+    func deleteAsset(assetId: Int) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            #if DEBUG
+            print("[SnipeMobile] DELETE /hardware/\(assetId) — request gestart")
+            #endif
+            var (data, response) = try await urlSession.data(for: request)
+            var httpResponse = response as? HTTPURLResponse
+
+            if httpResponse?.statusCode == 405 {
+                #if DEBUG
+                print("[SnipeMobile] DELETE /hardware/\(assetId) — 405 ontvangen, retry met POST + _method=DELETE (Laravel method spoofing)")
+                #endif
+                var postRequest = URLRequest(url: url)
+                postRequest.httpMethod = "POST"
+                postRequest.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+                postRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+                postRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                postRequest.httpBody = "_method=DELETE".data(using: .utf8)
+                (data, response) = try await urlSession.data(for: postRequest)
+                httpResponse = response as? HTTPURLResponse
+            }
+
+            guard let httpResponse = httpResponse else {
+                #if DEBUG
+                print("[SnipeMobile] DELETE /hardware/\(assetId) — geen HTTP-response")
+                #endif
+                await MainActor.run { self.lastApiMessage = "Geen geldige HTTP-response." }
+                return false
+            }
+            #if DEBUG
+            let responseStr = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
+            print("[SnipeMobile] DELETE /hardware/\(assetId) status=\(httpResponse.statusCode) response=\(responseStr.prefix(400))")
+            #endif
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let msg = (json?["messages"] as? String)
+                ?? (json?["messages"] as? [String: Any]).flatMap { $0.values.first as? String }
+                ?? json?["error"] as? String
+                ?? (httpResponse.statusCode == 200 ? "Asset verwijderd." : "Verwijderen mislukt.")
+            await MainActor.run { self.lastApiMessage = msg }
+            if httpResponse.statusCode == 200 {
+                await MainActor.run {
+                    self.assets.removeAll { $0.id == assetId }
+                }
+                #if DEBUG
+                print("[SnipeMobile] DELETE /hardware/\(assetId) — succes, uit cache verwijderd")
+                #endif
+                return true
+            }
+            return false
+        } catch {
+            #if DEBUG
+            print("[SnipeMobile] DELETE /hardware/\(assetId) error: \(error)")
+            #endif
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
             return false
         }
