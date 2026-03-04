@@ -176,11 +176,12 @@ struct AssetEditSheet: View {
                     }
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !supplierPairs.isEmpty {
-                    Picker("Supplier", selection: $selectedSupplierId) {
-                        ForEach(supplierPairs) { pair in
-                            Text(pair.name).tag(pair.id)
-                        }
-                    }
+                    AdaptivePickerRow(
+                        title: "Supplier",
+                        items: supplierPairs.map { (value: $0.id, label: $0.name) },
+                        selection: $selectedSupplierId,
+                        emptyOption: nil
+                    )
                 }
             }
             if !apiClient.assets.isEmpty {
@@ -190,11 +191,12 @@ struct AssetEditSheet: View {
                     }
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !companyPairs.isEmpty {
-                    Picker("Company", selection: $selectedCompanyId) {
-                        ForEach(companyPairs) { pair in
-                            Text(pair.name).tag(pair.id)
-                        }
-                    }
+                    AdaptivePickerRow(
+                        title: "Company",
+                        items: companyPairs.map { (value: $0.id, label: $0.name) },
+                        selection: $selectedCompanyId,
+                        emptyOption: nil
+                    )
                 }
             }
             // Status alleen tonen als asset niet uitgecheckt is en we statuslabels hebben (voorkomt Picker-crash)
@@ -203,14 +205,15 @@ struct AssetEditSheet: View {
                     displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
                 }
                 let validStatusIds = Set(apiClient.statusLabels.map(\.id))
-                Picker("Status", selection: Binding(
-                    get: { validStatusIds.contains(selectedStatusId) ? selectedStatusId : (sortedStatuses.first?.id ?? 0) },
-                    set: { selectedStatusId = $0 }
-                )) {
-                    ForEach(sortedStatuses, id: \.id) { label in
-                        Text(displayName(for: label)).tag(label.id)
-                    }
-                }
+                AdaptivePickerRow(
+                    title: "Status",
+                    items: sortedStatuses.map { (value: $0.id, label: displayName(for: $0)) },
+                    selection: Binding(
+                        get: { validStatusIds.contains(selectedStatusId) ? selectedStatusId : (sortedStatuses.first?.id ?? 0) },
+                        set: { selectedStatusId = $0 }
+                    ),
+                    emptyOption: nil
+                )
                 .onAppear {
                     if !validStatusIds.contains(selectedStatusId), let first = sortedStatuses.first?.id {
                         selectedStatusId = first
@@ -307,17 +310,18 @@ struct AssetEditSheet: View {
                 ForEach(Array(editCustomFields.keys.sorted()), id: \.self) { key in
                     let fieldDef = customFieldDefs.first(where: { $0.name == key })
                     if let fieldDef = fieldDef, fieldDef.type == "listbox", let options = fieldDef.field_values_array {
-                        Picker(key, selection: Binding(
-                            get: { editCustomFields[key] ?? "" },
-                            set: { editCustomFields[key] = $0 }
-                        )) {
-                            let sortedOptions = options.sorted {
-                                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-                            }
-                            ForEach(sortedOptions, id: \.self) { option in
-                                Text(option).tag(option)
-                            }
+                        let sortedOptions = options.sorted {
+                            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
                         }
+                        AdaptivePickerRow(
+                            title: key,
+                            items: sortedOptions.map { (value: $0, label: $0) },
+                            selection: Binding(
+                                get: { editCustomFields[key] ?? "" },
+                                set: { editCustomFields[key] = $0 }
+                            ),
+                            emptyOption: nil
+                        )
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(key)

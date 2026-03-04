@@ -27,6 +27,7 @@ struct AddAssetSheet: View {
     @State private var resultMessage = ""
     @State private var showResult = false
     @State private var showingDellScanner = false
+    @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
 
     private var canSave: Bool {
         !assetTag.trimmingCharacters(in: .whitespaces).isEmpty
@@ -163,60 +164,62 @@ struct AddAssetSheet: View {
                     .foregroundStyle(.primary)
             }
             TextField(L10n.string("serial_optional"), text: $serial)
-            Button {
-                showingDellScanner = true
-            } label: {
-                Label(L10n.string("scan_dell_qr"), systemImage: "qrcode.viewfinder")
-            }
-
-            // Model alfabetisch op naam
-            Picker("Model", selection: $selectedModelId) {
-                Text(L10n.string("choose_model")).tag(0)
-                let sortedModels = apiClient.models.sorted {
-                    HTMLDecoder.decode($0.name).localizedCaseInsensitiveCompare(HTMLDecoder.decode($1.name)) == .orderedAscending
-                }
-                ForEach(sortedModels) { model in
-                    Text(HTMLDecoder.decode(model.name)).tag(model.id)
+            if enableDellQrScan {
+                Button {
+                    showingDellScanner = true
+                } label: {
+                    Label(L10n.string("scan_dell_qr"), systemImage: "qrcode.viewfinder")
                 }
             }
 
-            // Status alfabetisch op weergavenaam
-            Picker("Status", selection: $selectedStatusId) {
-                Text(L10n.string("choose_status")).tag(0)
-                let sortedStatuses = apiClient.statusLabels.sorted {
-                    displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
-                }
-                ForEach(sortedStatuses, id: \.id) { label in
-                    Text(displayName(for: label)).tag(label.id)
-                }
+            // Model alfabetisch op naam, zoekbaar
+            let sortedModels = apiClient.models.sorted {
+                HTMLDecoder.decode($0.name).localizedCaseInsensitiveCompare(HTMLDecoder.decode($1.name)) == .orderedAscending
             }
+            AdaptivePickerRow(
+                title: L10n.string("model"),
+                items: sortedModels.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: $selectedModelId,
+                emptyOption: (0, L10n.string("choose_model"))
+            )
+
+            // Status alfabetisch, zoekbaar
+            let sortedStatuses = apiClient.statusLabels.sorted {
+                displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
+            }
+            AdaptivePickerRow(
+                title: L10n.string("status"),
+                items: sortedStatuses.map { (value: $0.id, label: displayName(for: $0)) },
+                selection: $selectedStatusId,
+                emptyOption: (0, L10n.string("choose_status"))
+            )
             if !apiClient.locations.isEmpty {
-                Picker(L10n.string("location_optional"), selection: Binding(
-                    get: { selectedLocationId ?? 0 },
-                    set: { selectedLocationId = $0 == 0 ? nil : $0 }
-                )) {
-                    Text(L10n.string("choose_location")).tag(0)
-                    let sortedLocations = apiClient.locations.sorted {
-                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                    }
-                    ForEach(sortedLocations) { loc in
-                        Text(loc.name).tag(loc.id)
-                    }
+                let sortedLocations = apiClient.locations.sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
+                AdaptivePickerRow(
+                    title: L10n.string("location_optional"),
+                    items: sortedLocations.map { (value: $0.id, label: $0.name) },
+                    selection: Binding(
+                        get: { selectedLocationId ?? 0 },
+                        set: { selectedLocationId = $0 == 0 ? nil : $0 }
+                    ),
+                    emptyOption: (0, L10n.string("choose_location"))
+                )
             }
             if !apiClient.companies.isEmpty {
-                Picker(L10n.string("company_optional"), selection: Binding(
-                    get: { selectedCompanyId ?? 0 },
-                    set: { selectedCompanyId = $0 == 0 ? nil : $0 }
-                )) {
-                    Text(L10n.string("choose_company")).tag(0)
-                    let sortedCompanies = apiClient.companies.sorted {
-                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                    }
-                    ForEach(sortedCompanies) { company in
-                        Text(company.name).tag(company.id)
-                    }
+                let sortedCompanies = apiClient.companies.sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
+                AdaptivePickerRow(
+                    title: L10n.string("company_optional"),
+                    items: sortedCompanies.map { (value: $0.id, label: $0.name) },
+                    selection: Binding(
+                        get: { selectedCompanyId ?? 0 },
+                        set: { selectedCompanyId = $0 == 0 ? nil : $0 }
+                    ),
+                    emptyOption: (0, L10n.string("choose_company"))
+                )
             }
             Toggle(L10n.string("byod"), isOn: $byod)
         }
@@ -238,18 +241,18 @@ struct AddAssetSheet: View {
             TextField(L10n.string("warranty_months_optional"), text: $warrantyMonths)
                 .keyboardType(.numberPad)
             if !suppliersFromAssets.isEmpty {
-                Picker(L10n.string("supplier_optional"), selection: Binding(
-                    get: { selectedSupplierId ?? 0 },
-                    set: { selectedSupplierId = $0 == 0 ? nil : $0 }
-                )) {
-                    Text(L10n.string("choose_supplier")).tag(0)
-                    let sortedSuppliers = suppliersFromAssets.sorted {
-                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                    }
-                    ForEach(sortedSuppliers, id: \.id) { sup in
-                        Text(sup.name).tag(sup.id)
-                    }
+                let sortedSuppliers = suppliersFromAssets.sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
+                AdaptivePickerRow(
+                    title: L10n.string("supplier_optional"),
+                    items: sortedSuppliers.map { (value: $0.id, label: $0.name) },
+                    selection: Binding(
+                        get: { selectedSupplierId ?? 0 },
+                        set: { selectedSupplierId = $0 == 0 ? nil : $0 }
+                    ),
+                    emptyOption: (0, L10n.string("choose_supplier"))
+                )
             }
         }
     }
@@ -277,18 +280,18 @@ struct AddAssetSheet: View {
                     ForEach(displayedFieldDefinitions, id: \.name) { fieldDef in
                         let key = fieldDef.name
                         if fieldDef.type == "listbox", let options = fieldDef.field_values_array, !options.isEmpty {
-                            Picker(key, selection: Binding(
-                                get: { customFields[key] ?? "" },
-                                set: { customFields[key] = $0 }
-                            )) {
-                                Text("—").tag("")
-                                let sortedOptions = options.sorted {
-                                    $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-                                }
-                                ForEach(sortedOptions, id: \.self) { option in
-                                    Text(option).tag(option)
-                                }
+                            let sortedOptions = options.sorted {
+                                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
                             }
+                            AdaptivePickerRow(
+                                title: key,
+                                items: sortedOptions.map { (value: $0, label: $0) },
+                                selection: Binding(
+                                    get: { customFields[key] ?? "" },
+                                    set: { customFields[key] = $0 }
+                                ),
+                                emptyOption: ("", "—")
+                            )
                         } else {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(key)

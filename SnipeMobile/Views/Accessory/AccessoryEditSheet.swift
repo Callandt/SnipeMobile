@@ -109,12 +109,12 @@ struct AccessoryEditSheet: View {
     private var generalSection: some View {
         Section(header: Text(L10n.string("general"))) {
             TextField(L10n.string("name"), text: $name)
-            Picker(L10n.string("category"), selection: $selectedCategoryId) {
-                Text(L10n.string("choose_category")).tag(0)
-                ForEach(apiClient.categories) { cat in
-                    Text(HTMLDecoder.decode(cat.name)).tag(cat.id)
-                }
-            }
+            AdaptivePickerRow(
+                title: L10n.string("category"),
+                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: $selectedCategoryId,
+                emptyOption: (0, L10n.string("choose_category"))
+            )
             HStack {
                 Text(L10n.string("quantity"))
                 Spacer()
@@ -133,26 +133,28 @@ struct AccessoryEditSheet: View {
             }
             TextField(L10n.string("model_number_optional"), text: $modelNumber)
             if !apiClient.locations.isEmpty {
-                Picker(L10n.string("location_optional"), selection: Binding(
-                    get: { selectedLocationId ?? 0 },
-                    set: { selectedLocationId = $0 == 0 ? nil : $0 }
-                )) {
-                    Text(L10n.string("choose_location")).tag(0)
-                    ForEach(apiClient.locations.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { loc in
-                        Text(loc.name).tag(loc.id)
-                    }
-                }
+                let sortedLocations = apiClient.locations.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                AdaptivePickerRow(
+                    title: L10n.string("location_optional"),
+                    items: sortedLocations.map { (value: $0.id, label: $0.name) },
+                    selection: Binding(
+                        get: { selectedLocationId ?? 0 },
+                        set: { selectedLocationId = $0 == 0 ? nil : $0 }
+                    ),
+                    emptyOption: (0, L10n.string("choose_location"))
+                )
             }
             if !apiClient.companies.isEmpty {
-                Picker(L10n.string("company_optional"), selection: Binding(
-                    get: { selectedCompanyId ?? 0 },
-                    set: { selectedCompanyId = $0 == 0 ? nil : $0 }
-                )) {
-                    Text(L10n.string("choose_company")).tag(0)
-                    ForEach(apiClient.companies.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { company in
-                        Text(company.name).tag(company.id)
-                    }
-                }
+                let sortedCompanies = apiClient.companies.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                AdaptivePickerRow(
+                    title: L10n.string("company_optional"),
+                    items: sortedCompanies.map { (value: $0.id, label: $0.name) },
+                    selection: Binding(
+                        get: { selectedCompanyId ?? 0 },
+                        set: { selectedCompanyId = $0 == 0 ? nil : $0 }
+                    ),
+                    emptyOption: (0, L10n.string("choose_company"))
+                )
             }
         }
     }
@@ -167,26 +169,26 @@ struct AccessoryEditSheet: View {
                 DatePicker("", selection: $purchaseDate, displayedComponents: .date)
             }
             if !apiClient.manufacturers.isEmpty {
-                Picker(L10n.string("manufacturer_optional"), selection: Binding(
-                    get: { selectedManufacturerId ?? 0 },
-                    set: { selectedManufacturerId = $0 == 0 ? nil : $0 }
-                )) {
-                    Text(L10n.string("choose_manufacturer")).tag(0)
-                    ForEach(apiClient.manufacturers, id: \.id) { m in
-                        Text(HTMLDecoder.decode(m.name)).tag(m.id)
-                    }
-                }
+                AdaptivePickerRow(
+                    title: L10n.string("manufacturer_optional"),
+                    items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                    selection: Binding(
+                        get: { selectedManufacturerId ?? 0 },
+                        set: { selectedManufacturerId = $0 == 0 ? nil : $0 }
+                    ),
+                    emptyOption: (0, L10n.string("choose_manufacturer"))
+                )
             }
             if !apiClient.suppliers.isEmpty {
-                Picker(L10n.string("supplier_optional"), selection: Binding(
-                    get: { selectedSupplierId ?? 0 },
-                    set: { selectedSupplierId = $0 == 0 ? nil : $0 }
-                )) {
-                    Text(L10n.string("choose_supplier")).tag(0)
-                    ForEach(apiClient.suppliers, id: \.id) { sup in
-                        Text(HTMLDecoder.decode(sup.name)).tag(sup.id)
-                    }
-                }
+                AdaptivePickerRow(
+                    title: L10n.string("supplier_optional"),
+                    items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                    selection: Binding(
+                        get: { selectedSupplierId ?? 0 },
+                        set: { selectedSupplierId = $0 == 0 ? nil : $0 }
+                    ),
+                    emptyOption: (0, L10n.string("choose_supplier"))
+                )
             }
         }
     }

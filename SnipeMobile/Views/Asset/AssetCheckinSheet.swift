@@ -21,21 +21,27 @@ struct AssetCheckinSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker(L10n.string("status"), selection: $selectedStatusId) {
-                        Text(L10n.string("none")).tag(nil as Int?)
-                        ForEach(apiClient.statusLabels.sorted(by: { ($0.statusMeta ?? "") < ($1.statusMeta ?? "") }), id: \.id) { status in
-                            Text(status.statusMeta ?? "").tag(Optional(status.id))
-                        }
-                    }
+                    AdaptivePickerRow(
+                        title: L10n.string("status"),
+                        items: apiClient.statusLabels.sorted(by: { ($0.statusMeta ?? "") < ($1.statusMeta ?? "") }).map { (value: $0.id, label: $0.statusMeta ?? "") },
+                        selection: Binding(
+                            get: { selectedStatusId ?? -1 },
+                            set: { selectedStatusId = $0 == -1 ? nil : $0 }
+                        ),
+                        emptyOption: (-1, L10n.string("none"))
+                    )
                     TextField(L10n.string("name"), text: $name)
                     TextField(L10n.string("notes"), text: $notes, axis: .vertical)
                         .lineLimit(3...6)
-                    Picker(L10n.string("location"), selection: $selectedLocationId) {
-                        Text(L10n.string("none")).tag(nil as Int?)
-                        ForEach(sortedLocations, id: \.id) { loc in
-                            Text(loc.name).tag(Optional(loc.id))
-                        }
-                    }
+                    AdaptivePickerRow(
+                        title: L10n.string("location"),
+                        items: sortedLocations.map { (value: $0.id, label: $0.name) },
+                        selection: Binding(
+                            get: { selectedLocationId ?? -1 },
+                            set: { selectedLocationId = $0 == -1 ? nil : $0 }
+                        ),
+                        emptyOption: (-1, L10n.string("none"))
+                    )
                 } header: {
                     Text(L10n.string("asset_details"))
                 } footer: {

@@ -57,6 +57,7 @@ struct ContentView: View {
     @State private var isDetailViewActive = false
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
+    @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -233,8 +234,9 @@ struct ContentView: View {
                 return
             }
 
-            // 2) Dell QR: URL met service tag/serial; zoek asset op serienummer
-            if let host = url.host, host.lowercased().contains("dell"),
+            // 2) Dell QR: URL met service tag/serial; zoek asset op serienummer (alleen als instelling aan)
+            if enableDellQrScan,
+               let host = url.host, host.lowercased().contains("dell"),
                let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
                 let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
                 if let asset = apiClient.assets.first(where: {

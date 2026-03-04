@@ -77,12 +77,15 @@ struct AssetCheckoutSheet: View {
 
                 Section {
                     if !deployableStatusLabels.isEmpty {
-                        Picker(L10n.string("status"), selection: $selectedStatusId) {
-                            Text(L10n.string("none")).tag(nil as Int?)
-                            ForEach(deployableStatusLabels, id: \.id) { status in
-                                Text(status.statusMeta ?? "").tag(Optional(status.id))
-                            }
-                        }
+                        AdaptivePickerRow(
+                            title: L10n.string("status"),
+                            items: deployableStatusLabels.map { (value: $0.id, label: $0.statusMeta ?? "") },
+                            selection: Binding(
+                                get: { selectedStatusId ?? -1 },
+                                set: { selectedStatusId = $0 == -1 ? nil : $0 }
+                            ),
+                            emptyOption: (-1, L10n.string("none"))
+                        )
                     }
                     TextField(L10n.string("notes"), text: $notes, axis: .vertical)
                         .lineLimit(3...6)

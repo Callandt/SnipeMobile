@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var pendingBiometricsValue: Bool? = nil
     @AppStorage("biometricsJustConfirmed") private var biometricsJustConfirmed: Bool = false
     @AppStorage("useCloudSync") private var useCloudSync: Bool = true
+    @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
 
     /// iCloud is beschikbaar als het toestel met een Apple ID is ingelogd.
     private var isICloudAvailable: Bool {
@@ -43,6 +44,9 @@ struct SettingsView: View {
                 Section(header: Text(L10n.string("icloud")), footer: Text(isICloudAvailable ? L10n.string("icloud_sync_footer") : L10n.string("icloud_unavailable"))) {
                     Toggle(L10n.string("icloud_sync_toggle"), isOn: $useCloudSync)
                         .disabled(!isICloudAvailable)
+                }
+                Section(header: Text(L10n.string("scanning")), footer: Text(L10n.string("enable_dell_qr_scan_footer"))) {
+                    Toggle(L10n.string("enable_dell_qr_scan"), isOn: $enableDellQrScan)
                 }
                 Section(header: Text(L10n.string("security"))) {
                     Toggle(L10n.string("require_biometrics"), isOn: Binding(

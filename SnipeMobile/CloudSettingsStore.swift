@@ -19,6 +19,7 @@ private enum CloudKey: String, CaseIterable {
     case appLanguage
     case settingsLanguage
     case biometricsJustConfirmed
+    case enableDellQrScan
 }
 
 private let useCloudSyncKey = "useCloudSync"
@@ -175,6 +176,9 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.biometricsJustConfirmed.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.biometricsJustConfirmed.rawValue), forKey: "biometricsJustConfirmed")
         }
+        if store.object(forKey: CloudKey.enableDellQrScan.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.enableDellQrScan.rawValue), forKey: "enableDellQrScan")
+        }
     }
 
     private func copyRelevantDefaultsToStore() {
@@ -188,6 +192,7 @@ final class CloudSettingsStore {
         if let v = defaults.string(forKey: "appLanguage") { store.set(v, forKey: CloudKey.appLanguage.rawValue) }
         if let v = defaults.string(forKey: "settingsLanguage") { store.set(v, forKey: CloudKey.settingsLanguage.rawValue) }
         store.set(defaults.bool(forKey: "biometricsJustConfirmed"), forKey: CloudKey.biometricsJustConfirmed.rawValue)
+        store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
     }
 
     @objc private func ubiquitousStoreDidChange(_ notification: Notification) {
