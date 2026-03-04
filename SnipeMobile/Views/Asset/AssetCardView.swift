@@ -18,14 +18,19 @@ struct AssetCardView: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    HStack(spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(String(format: L10n.string("tag_label"), asset.decodedAssetTag))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         if !asset.decodedSerial.isEmpty {
-                            Text("\(L10n.string("sn_label")) \(asset.decodedSerial)")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                            HStack(spacing: 4) {
+                                Text(L10n.string("sn_label"))
+                                Text(asset.decodedSerial)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         }
                     }
                     if let status = asset.statusLabel.statusMeta, !status.isEmpty {

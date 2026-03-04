@@ -1,24 +1,20 @@
 import SwiftUI
 
-struct AssetCheckoutSheet: View {
+struct AccessoryCheckoutSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
-    let asset: Asset
+    let accessory: Accessory
     @Binding var isPresented: Bool
     var onSuccess: (() -> Void)? = nil
 
-    @State private var checkoutName: String = ""
     @State private var notes: String = ""
-    @State private var expectedCheckin: Date = Date()
-    @State private var hasExpectedCheckin: Bool = false
     @State private var isSaving: Bool = false
     @State private var showResult: Bool = false
     @State private var resultMessage: String = ""
     @State private var userSearchText: String = ""
     @State private var selectedUser: User? = nil
-    @State private var selectedTab: Int = 0 // 0 = user, 1 = location
+    @State private var selectedTab: Int = 0
     @State private var locationSearchText: String = ""
     @State private var selectedLocation: Location? = nil
-    @State private var selectedStatusId: Int? = nil
 
     var body: some View {
         NavigationStack {
@@ -76,24 +72,13 @@ struct AssetCheckoutSheet: View {
                 }
 
                 Section {
-                    if !deployableStatusLabels.isEmpty {
-                        Picker(L10n.string("status"), selection: $selectedStatusId) {
-                            Text(L10n.string("none")).tag(nil as Int?)
-                            ForEach(deployableStatusLabels, id: \.id) { status in
-                                Text(status.statusMeta ?? "").tag(Optional(status.id))
-                            }
-                        }
-                    }
                     TextField(L10n.string("notes"), text: $notes, axis: .vertical)
                         .lineLimit(3...6)
-                    Toggle(L10n.string("expected_checkin"), isOn: $hasExpectedCheckin)
-                    if hasExpectedCheckin {
-                        DatePicker(L10n.string("expected_checkin_date"), selection: $expectedCheckin, displayedComponents: .date)
-                    }
                 } header: {
-                    Text(L10n.string("asset_details"))
+                    Text(L10n.string("notes"))
                 }
             }
+            .listStyle(.insetGrouped)
             .formStyle(.grouped)
             .scrollContentBackground(.visible)
             .background(Color(.systemGroupedBackground))
@@ -117,11 +102,6 @@ struct AssetCheckoutSheet: View {
             } message: {
                 Text(resultMessage)
             }
-            .onChange(of: apiClient.statusLabels.count) { _, _ in
-                if let id = selectedStatusId, !deployableStatusLabels.contains(where: { $0.id == id }) {
-                    selectedStatusId = deployableStatusLabels.first?.id
-                }
-            }
         }
     }
 
@@ -144,35 +124,17 @@ struct AssetCheckoutSheet: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    var deployableStatusLabels: [StatusLabel] {
-        apiClient.statusLabels.filter { $0.statusMeta?.lowercased() == "deployable" }
-    }
-
     func handleCheckout() {
         isSaving = true
         Task {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            var body: [String: Any] = [
-                "name": checkoutName,
-                "note": notes
-            ]
-            if hasExpectedCheckin {
-                body["expected_checkin"] = formatter.string(from: expectedCheckin)
-            }
-            if let statusId = selectedStatusId {
-                body["status_id"] = statusId
-            }
+            var body: [String: Any] = ["note": notes]
             var success = false
             if selectedTab == 0, let user = selectedUser {
-                body["assigned_user"] = user.id
-                body["checkout_to_type"] = "user"
-                success = await apiClient.checkoutAssetCustom(assetId: asset.id, body: body)
+                body["assigned_to"] = user.id
+                success = await apiClient.checkoutAccessoryCustom(accessoryId: accessory.id, body: body)
             } else if selectedTab == 1, let location = selectedLocation {
                 body["assigned_location"] = location.id
-                body["checkout_to_type"] = "location"
-                success = await apiClient.checkoutAssetCustom(assetId: asset.id, body: body)
+                success = await apiClient.checkoutAccessoryCustom(accessoryId: accessory.id, body: body)
             }
             await MainActor.run {
                 isSaving = false
@@ -184,63 +146,5 @@ struct AssetCheckoutSheet: View {
                 }
             }
         }
-    }
-
-    init(apiClient: SnipeITAPIClient, asset: Asset, isPresented: Binding<Bool>, onSuccess: (() -> Void)? = nil) {
-        self.apiClient = apiClient
-        self.asset = asset
-        self._isPresented = isPresented
-        self.onSuccess = onSuccess
-        if let firstDeployable = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
-            _selectedStatusId = State(initialValue: firstDeployable.id)
-        } else {
-            _selectedStatusId = State(initialValue: nil)
-        }
-        _checkoutName = State(initialValue: asset.name)
-    }
-}
-
-struct UserRow: View {
-    let user: User
-    let isSelected: Bool
-    let onSelect: () -> Void
-    var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(user.decodedName)
-                        .foregroundStyle(.primary)
-                    Text(user.decodedEmail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.tint)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct LocationRow: View {
-    let location: Location
-    let isSelected: Bool
-    let onSelect: () -> Void
-    var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                Text(location.name)
-                    .foregroundStyle(.primary)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.tint)
-                }
-            }
-        }
-        .buttonStyle(.plain)
     }
 }

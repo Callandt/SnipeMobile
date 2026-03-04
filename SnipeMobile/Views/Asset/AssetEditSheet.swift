@@ -64,7 +64,7 @@ struct AssetEditSheet: View {
                 notesSection
                 customFieldsSection
             }
-            .navigationTitle(L10n.string("edit_asset"))
+            .navigationTitle("")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { isPresented = false }
@@ -227,6 +227,7 @@ struct AssetEditSheet: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 TextField(L10n.string("purchase_cost"), text: $editPurchaseCost)
+                    .keyboardType(.decimalPad)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.string("order_number"))
@@ -239,6 +240,7 @@ struct AssetEditSheet: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 TextField(L10n.string("warranty_months"), text: $editWarrantyMonths)
+                    .keyboardType(.numberPad)
             }
             // Purchase Date
             HStack {

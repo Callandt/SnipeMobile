@@ -226,7 +226,7 @@ struct AddAssetSheet: View {
         Section(header: Text(L10n.string("purchase_warranty"))) {
             TextField(L10n.string("order_number_optional"), text: $orderNumber)
             TextField(L10n.string("purchase_price_optional"), text: $purchaseCost)
-                .keyboardType(.numbersAndPunctuation)
+                .keyboardType(.decimalPad)
             Toggle(L10n.string("purchase_date"), isOn: $hasPurchaseDate)
             if hasPurchaseDate {
                 DatePicker("", selection: $purchaseDate, displayedComponents: .date)
@@ -412,7 +412,7 @@ struct AddAssetSheet: View {
             return
         }
 
-        let serviceTag = extractDellServiceTag(from: url)
+        let serviceTag = SnipeITAPIClient.extractDellServiceTag(from: url)
 
         await MainActor.run {
             guard let tag = serviceTag, !tag.isEmpty else {
@@ -424,26 +424,6 @@ struct AddAssetSheet: View {
             self.serial = tag
             // Model en andere velden blijven ongemoeid.
         }
-    }
-
-    private func extractDellServiceTag(from url: URL) -> String? {
-        // 1) Probeer pad: .../servicetag/<TAG>/...
-        let components = url.path.components(separatedBy: "/")
-        if let idx = components.firstIndex(where: { $0.lowercased() == "servicetag" }),
-           components.indices.contains(components.index(after: idx)) {
-            let tag = components[components.index(after: idx)]
-            if !tag.isEmpty { return tag }
-        }
-        // 2) Probeer query-parameters zoals servicetag, serviceTag, ST, t, etc.
-        if let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
-            let keys = ["servicetag", "serviceTag", "st", "ST", "t", "T"]
-            for key in keys {
-                if let value = queryItems.first(where: { $0.name == key })?.value, !value.isEmpty {
-                    return value
-                }
-            }
-        }
-        return nil
     }
 
     private func extractDellModelName(fromHTML html: String) -> String? {

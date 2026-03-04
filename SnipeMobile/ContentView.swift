@@ -209,8 +209,15 @@ struct ContentView: View {
         showingScanner = false
         switch result {
         case .success(let scanResult):
-            if let url = URL(string: scanResult.string), let id = extractAssetId(from: url) {
-                apiClient.errorMessage = nil
+            guard let url = URL(string: scanResult.string) else {
+                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
+                showScanErrorAlert = true
+                return
+            }
+            apiClient.errorMessage = nil
+
+            // 1) Snipe-IT QR: URL met asset-ID in pad
+            if let id = extractAssetId(from: url) {
                 if let asset = apiClient.assets.first(where: { $0.id == id }) {
                     scannedAssetId = asset.id
                     selectedTab = .hardware
@@ -223,10 +230,28 @@ struct ContentView: View {
                     scanErrorMessage = L10n.string("asset_not_found_id", String(id))
                     showScanErrorAlert = true
                 }
-            } else {
-                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
-                showScanErrorAlert = true
+                return
             }
+
+            // 2) Dell QR: URL met service tag/serial; zoek asset op serienummer
+            if let host = url.host, host.lowercased().contains("dell"),
+               let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
+                let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
+                if let asset = apiClient.assets.first(where: {
+                    $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
+                }) {
+                    scannedAssetId = asset.id
+                    selectedTab = .hardware
+                } else {
+                    scannedAssetId = nil
+                    scanErrorMessage = L10n.string("asset_not_found_serial", serial)
+                    showScanErrorAlert = true
+                }
+                return
+            }
+
+            scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
+            showScanErrorAlert = true
         case .failure(let error):
             scanErrorMessage = String(format: L10n.string("scan_failed"), error.localizedDescription)
             showScanErrorAlert = true

@@ -12,6 +12,8 @@ class SnipeITAPIClient: ObservableObject {
     @Published var accessories: [Accessory] = []
     @Published var locations: [Location] = []
     @Published var companies: [Company] = []
+    @Published var manufacturers: [Manufacturer] = []
+    @Published var suppliers: [Supplier] = []
     @Published var errorMessage: String?
     @Published var lastApiMessage: String?
     @Published var isConfigured: Bool {
@@ -241,6 +243,40 @@ class SnipeITAPIClient: ObservableObject {
             }
         } catch {
             print("Error fetching companies: \(error.localizedDescription)")
+        }
+    }
+
+    func fetchManufacturers() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/manufacturers?limit=500") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await urlSession.data(for: request)
+            let response = try JSONDecoder().decode(ManufacturersResponse.self, from: data)
+            await MainActor.run {
+                self.manufacturers = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            }
+        } catch {
+            print("Error fetching manufacturers: \(error.localizedDescription)")
+        }
+    }
+
+    func fetchSuppliers() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/suppliers?limit=500") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await urlSession.data(for: request)
+            let response = try JSONDecoder().decode(SuppliersResponse.self, from: data)
+            await MainActor.run {
+                self.suppliers = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            }
+        } catch {
+            print("Error fetching suppliers: \(error.localizedDescription)")
         }
     }
 
@@ -664,7 +700,21 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     // MARK: - Create Accessory (POST /accessories)
-    func createAccessory(name: String, categoryId: Int, quantity: Int, customFields: [String: String]?) async -> Bool {
+    func createAccessory(
+        name: String,
+        categoryId: Int,
+        quantity: Int,
+        minAmt: Int?,
+        orderNumber: String?,
+        purchaseCost: String?,
+        purchaseDate: String?,
+        modelNumber: String?,
+        companyId: Int?,
+        locationId: Int?,
+        manufacturerId: Int?,
+        supplierId: Int?,
+        customFields: [String: String]?
+    ) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/accessories") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -675,6 +725,33 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
+        if let min = minAmt, min > 0 {
+            body["min_amt"] = min
+        }
+        if let v = orderNumber, !v.isEmpty {
+            body["order_number"] = v
+        }
+        if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
+            body["purchase_cost"] = normalized
+        }
+        if let v = purchaseDate, !v.isEmpty {
+            body["purchase_date"] = v
+        }
+        if let v = modelNumber, !v.isEmpty {
+            body["model_number"] = v
+        }
+        if let v = companyId, v > 0 {
+            body["company_id"] = v
+        }
+        if let v = locationId, v > 0 {
+            body["location_id"] = v
+        }
+        if let v = manufacturerId, v > 0 {
+            body["manufacturer_id"] = v
+        }
+        if let v = supplierId, v > 0 {
+            body["supplier_id"] = v
+        }
         if let cf = customFields, !cf.isEmpty {
             body["custom_fields"] = cf
         }
@@ -689,6 +766,81 @@ class SnipeITAPIClient: ObservableObject {
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200, let payload = json, let row = payload["payload"] as? [String: Any], row["id"] != nil {
                     // Eenvoudige accessory voor lijst: we herladen accessoires
+                    Task { await self.fetchAccessories() }
+                    return true
+                }
+                return false
+            }
+            return false
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    // MARK: - Update Accessory (PATCH /accessories/:id)
+    func updateAccessory(
+        accessoryId: Int,
+        name: String,
+        categoryId: Int,
+        quantity: Int,
+        minAmt: Int?,
+        orderNumber: String?,
+        purchaseCost: String?,
+        purchaseDate: String?,
+        modelNumber: String?,
+        companyId: Int?,
+        locationId: Int?,
+        manufacturerId: Int?,
+        supplierId: Int?
+    ) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "name": name,
+            "category_id": categoryId,
+            "qty": quantity
+        ]
+        if let min = minAmt {
+            body["min_amt"] = min
+        }
+        if let v = orderNumber, !v.isEmpty {
+            body["order_number"] = v
+        }
+        if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
+            body["purchase_cost"] = normalized
+        }
+        if let v = purchaseDate, !v.isEmpty {
+            body["purchase_date"] = v
+        }
+        if let v = modelNumber, !v.isEmpty {
+            body["model_number"] = v
+        }
+        if let v = companyId, v > 0 {
+            body["company_id"] = v
+        }
+        if let v = locationId, v > 0 {
+            body["location_id"] = v
+        }
+        if let v = manufacturerId, v > 0 {
+            body["manufacturer_id"] = v
+        }
+        if let v = supplierId, v > 0 {
+            body["supplier_id"] = v
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200 {
                     Task { await self.fetchAccessories() }
                     return true
                 }
@@ -1043,6 +1195,32 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    func checkoutAccessoryCustom(accessoryId: Int, body: [String: Any]) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkout") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Check-out successful." : "Check-out failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                return httpResponse.statusCode == 200
+            }
+            return false
+        } catch {
+            await MainActor.run {
+                self.lastApiMessage = "Error checking out accessory: \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
+
     func validateApiCredentials() async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "Please enter both API URL and API Key." }
         guard let url = URL(string: "\(baseURL)/api/v1/users") else { return "Invalid URL format." }
@@ -1141,5 +1319,24 @@ class SnipeITAPIClient: ObservableObject {
             print("Error fetching checked out list: \(error)")
         }
         return []
+    }
+
+    /// Haalt service tag / serienummer uit een Dell-URL (bijv. QR). Gebruik voor hoofdcanner en Create Asset.
+    static func extractDellServiceTag(from url: URL) -> String? {
+        let components = url.path.components(separatedBy: "/")
+        if let idx = components.firstIndex(where: { $0.lowercased() == "servicetag" }),
+           components.indices.contains(components.index(after: idx)) {
+            let tag = components[components.index(after: idx)]
+            if !tag.isEmpty { return tag }
+        }
+        if let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
+            let keys = ["servicetag", "serviceTag", "st", "ST", "t", "T"]
+            for key in keys {
+                if let value = queryItems.first(where: { $0.name == key })?.value, !value.isEmpty {
+                    return value
+                }
+            }
+        }
+        return nil
     }
 } 

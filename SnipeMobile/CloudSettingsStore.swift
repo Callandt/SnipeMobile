@@ -21,11 +21,40 @@ private enum CloudKey: String, CaseIterable {
     case biometricsJustConfirmed
 }
 
+private let useCloudSyncKey = "useCloudSync"
+
 final class CloudSettingsStore {
     static let shared = CloudSettingsStore()
 
     private let store = NSUbiquitousKeyValueStore.default
     private let defaults = UserDefaults.standard
+
+    /// True als iCloud-sync aanstaat (standaard aan als nog nooit gezet).
+    var useCloudSync: Bool {
+        defaults.object(forKey: useCloudSyncKey) as? Bool ?? true
+    }
+
+    /// Alleen waar als er een iCloud-account aan het toestel is gekoppeld. Voorkomt "No account" errors.
+    private var isICloudAvailable: Bool {
+        FileManager.default.ubiquityIdentityToken != nil
+    }
+
+    /// Zet iCloud-sync aan of uit en wist eventueel de waarden uit iCloud.
+    func setUseCloudSync(_ enabled: Bool) {
+        defaults.set(enabled, forKey: useCloudSyncKey)
+        guard isICloudAvailable else { return }
+        if !enabled {
+            // Verwijder gesynchroniseerde sleutels uit iCloud.
+            for key in CloudKey.allCases {
+                store.removeObject(forKey: key.rawValue)
+            }
+            _ = store.synchronize()
+        } else {
+            // Bij inschakelen: huidige lokale waarden naar iCloud pushen.
+            copyRelevantDefaultsToStore()
+            _ = store.synchronize()
+        }
+    }
 
     private init() {
         NotificationCenter.default.addObserver(
@@ -39,12 +68,14 @@ final class CloudSettingsStore {
     /// Call once at app launch to pull iCloud values into UserDefaults so existing
     /// @AppStorage / UserDefaults code sees synced data (e.g. on a new iPad).
     func mergeFromCloud() {
+        guard useCloudSync, isICloudAvailable else { return }
         _ = store.synchronize()
         mergeCloudValuesIntoUserDefaults()
     }
 
     /// Push current UserDefaults values to iCloud (e.g. after saving API config).
     func pushToCloud() {
+        guard useCloudSync, isICloudAvailable else { return }
         copyRelevantDefaultsToStore()
         _ = store.synchronize()
     }
@@ -55,53 +86,68 @@ final class CloudSettingsStore {
         defaults.set(baseURL, forKey: "baseURL")
         defaults.set(apiToken, forKey: "apiToken")
         defaults.set(isConfigured, forKey: "isConfigured")
-        store.set(baseURL, forKey: CloudKey.baseURL.rawValue)
-        store.set(apiToken, forKey: CloudKey.apiToken.rawValue)
-        store.set(isConfigured, forKey: CloudKey.isConfigured.rawValue)
-        _ = store.synchronize()
+        if useCloudSync, isICloudAvailable {
+            store.set(baseURL, forKey: CloudKey.baseURL.rawValue)
+            store.set(apiToken, forKey: CloudKey.apiToken.rawValue)
+            store.set(isConfigured, forKey: CloudKey.isConfigured.rawValue)
+            _ = store.synchronize()
+        }
     }
 
     func setHasCompletedOnboarding(_ value: Bool) {
         defaults.set(value, forKey: "hasCompletedOnboarding")
-        store.set(value, forKey: CloudKey.hasCompletedOnboarding.rawValue)
-        _ = store.synchronize()
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.hasCompletedOnboarding.rawValue)
+            _ = store.synchronize()
+        }
     }
 
     // MARK: - App settings (theme, biometrics, language) – keep in sync with UserDefaults
 
     func setAppTheme(_ value: String) {
         defaults.set(value, forKey: "appTheme")
-        store.set(value, forKey: CloudKey.appTheme.rawValue)
-        _ = store.synchronize()
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.appTheme.rawValue)
+            _ = store.synchronize()
+        }
     }
 
     func setUseBiometrics(_ value: Bool) {
         defaults.set(value, forKey: "useBiometrics")
-        store.set(value, forKey: CloudKey.useBiometrics.rawValue)
-        _ = store.synchronize()
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.useBiometrics.rawValue)
+            _ = store.synchronize()
+        }
     }
 
     func setAppLanguage(_ value: String) {
         defaults.set(value, forKey: "appLanguage")
-        store.set(value, forKey: CloudKey.appLanguage.rawValue)
-        _ = store.synchronize()
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.appLanguage.rawValue)
+            _ = store.synchronize()
+        }
     }
 
     func setSettingsLanguage(_ value: String) {
         defaults.set(value, forKey: "settingsLanguage")
-        store.set(value, forKey: CloudKey.settingsLanguage.rawValue)
-        _ = store.synchronize()
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.settingsLanguage.rawValue)
+            _ = store.synchronize()
+        }
     }
 
     func setBiometricsJustConfirmed(_ value: Bool) {
         defaults.set(value, forKey: "biometricsJustConfirmed")
-        store.set(value, forKey: CloudKey.biometricsJustConfirmed.rawValue)
-        _ = store.synchronize()
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.biometricsJustConfirmed.rawValue)
+            _ = store.synchronize()
+        }
     }
 
     // MARK: - Private
 
     private func mergeCloudValuesIntoUserDefaults() {
+        guard useCloudSync, isICloudAvailable else { return }
         if let v = store.string(forKey: CloudKey.baseURL.rawValue), !v.isEmpty {
             defaults.set(v, forKey: "baseURL")
         }
@@ -132,6 +178,7 @@ final class CloudSettingsStore {
     }
 
     private func copyRelevantDefaultsToStore() {
+        guard useCloudSync, isICloudAvailable else { return }
         if let v = defaults.string(forKey: "baseURL") { store.set(v, forKey: CloudKey.baseURL.rawValue) }
         if let v = defaults.string(forKey: "apiToken") { store.set(v, forKey: CloudKey.apiToken.rawValue) }
         store.set(defaults.bool(forKey: "isConfigured"), forKey: CloudKey.isConfigured.rawValue)
@@ -144,6 +191,7 @@ final class CloudSettingsStore {
     }
 
     @objc private func ubiquitousStoreDidChange(_ notification: Notification) {
+        guard useCloudSync, isICloudAvailable else { return }
         mergeCloudValuesIntoUserDefaults()
         // Notify so UI can refresh (e.g. apiClient.isConfigured)
         DispatchQueue.main.async {

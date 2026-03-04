@@ -13,8 +13,21 @@ struct AccessoryDetailView: View {
     @State private var checkedOutRows: [SnipeITAPIClient.AccessoryCheckedOutRow] = []
     @State private var isLoading = true
     @State private var showCheckinSheet: Bool = false
+    @State private var showCheckoutSheet: Bool = false
+    @State private var showEditSheet: Bool = false
     @State private var checkinTarget: SnipeITAPIClient.AccessoryCheckedOutRow? = nil
     @State private var checkinResult: String? = nil
+
+    /// Huidige accessoire uit apiClient (na bewerken), anders de doorgegeven accessoire.
+    private var currentAccessory: Accessory {
+        apiClient.accessories.first { $0.id == accessory.id } ?? accessory
+    }
+
+    /// Geen voorraad = uitchecken uitschakelen (greyed out).
+    private var canCheckout: Bool {
+        guard let remaining = currentAccessory.remaining else { return true }
+        return remaining > 0
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,21 +56,21 @@ struct AccessoryDetailView: View {
                         .cornerRadius(12)
                         .padding(.horizontal)
 
-                        if accessory.qty != nil || accessory.minAmt != nil || accessory.remaining != nil || accessory.checkoutsCount != nil {
+                        if currentAccessory.qty != nil || currentAccessory.minAmt != nil || currentAccessory.remaining != nil || currentAccessory.checkoutsCount != nil {
                             Text(L10n.string("stock_usage"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .center)
                             VStack(alignment: .leading, spacing: 10) {
-                                if let qty = accessory.qty {
+                                if let qty = currentAccessory.qty {
                                     HStack { Text(L10n.string("total_quantity")).foregroundColor(.secondary); Spacer(); Text("\(qty)").bold() }
                                 }
-                                if let minAmt = accessory.minAmt {
+                                if let minAmt = currentAccessory.minAmt {
                                     HStack { Text(L10n.string("minimum_amount")).foregroundColor(.secondary); Spacer(); Text("\(minAmt)").bold() }
                                 }
-                                if let remaining = accessory.remaining {
+                                if let remaining = currentAccessory.remaining {
                                     HStack { Text(L10n.string("remaining")).foregroundColor(.secondary); Spacer(); Text("\(remaining)").bold() }
                                 }
-                                if let checkouts = accessory.checkoutsCount {
+                                if let checkouts = currentAccessory.checkoutsCount {
                                     HStack { Text(L10n.string("checkouts_count")).foregroundColor(.secondary); Spacer(); Text("\(checkouts)").bold() }
                                 }
                             }
@@ -78,7 +91,7 @@ struct AccessoryDetailView: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 12) {
-                Button(action: {}) {
+                Button(action: { showEditSheet = true }) {
                     Label(L10n.string("edit"), systemImage: "pencil")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
@@ -86,7 +99,7 @@ struct AccessoryDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
-                if accessory.statusLabel?.statusMeta?.lowercased() == "deployed" {
+                if currentAccessory.statusLabel?.statusMeta?.lowercased() == "deployed" {
                     Button(action: {
                         let active = checkedOutRows.filter { $0.availableActions?.checkin == true }
                         if let first = active.first {
@@ -102,7 +115,7 @@ struct AccessoryDetailView: View {
                     .tint(.green)
                     .controlSize(.large)
                 } else {
-                    Button(action: {}) {
+                    Button(action: { showCheckoutSheet = true }) {
                         Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
@@ -110,6 +123,7 @@ struct AccessoryDetailView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.accentColor)
                     .controlSize(.large)
+                    .disabled(!canCheckout)
                 }
             }
             .padding(.horizontal, 20)
@@ -125,7 +139,7 @@ struct AccessoryDetailView: View {
         .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text(accessory.decodedName)
+                Text(currentAccessory.decodedName)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
@@ -141,7 +155,7 @@ struct AccessoryDetailView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/accessories/\(accessory.id)") {
+                if let url = URL(string: "\(apiClient.baseURL)/accessories/\(currentAccessory.id)") {
                     Link(destination: url) {
                         Image(systemName: "safari")
                     }
@@ -161,6 +175,18 @@ struct AccessoryDetailView: View {
                 checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
                 isLoading = false
             }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            AccessoryEditSheet(apiClient: apiClient, accessory: currentAccessory, isPresented: $showEditSheet, onSuccess: {
+                Task { await apiClient.fetchAccessories() }
+            })
+        }
+        .sheet(isPresented: $showCheckoutSheet) {
+            AccessoryCheckoutSheet(apiClient: apiClient, accessory: currentAccessory, isPresented: $showCheckoutSheet, onSuccess: {
+                Task {
+                    checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+                }
+            })
         }
         .sheet(isPresented: $showCheckinSheet) {
             VStack(spacing: 24) {
@@ -209,26 +235,26 @@ struct AccessoryDetailView: View {
 
     private func accessoryInfoRows() -> [AnyView] {
         var rows: [AnyView] = []
-        if !accessory.decodedName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("name"), value: accessory.decodedName)))
+        if !currentAccessory.decodedName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("name"), value: currentAccessory.decodedName)))
         }
-        if !accessory.decodedAssetTag.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("asset_tag"), value: accessory.decodedAssetTag)))
+        if !currentAccessory.decodedAssetTag.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("asset_tag"), value: currentAccessory.decodedAssetTag)))
         }
-        if let status = accessory.statusLabel?.statusMeta, !status.isEmpty {
+        if let status = currentAccessory.statusLabel?.statusMeta, !status.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("status"), value: L10n.statusLabel(status))))
         }
-        if !accessory.decodedAssignedToName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("assigned_to"), value: accessory.decodedAssignedToName)))
+        if !currentAccessory.decodedAssignedToName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("assigned_to"), value: currentAccessory.decodedAssignedToName)))
         }
-        if !accessory.decodedLocationName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("location"), value: accessory.decodedLocationName)))
+        if !currentAccessory.decodedLocationName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("location"), value: currentAccessory.decodedLocationName)))
         }
-        if !accessory.decodedManufacturerName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("manufacturer"), value: accessory.decodedManufacturerName)))
+        if !currentAccessory.decodedManufacturerName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("manufacturer"), value: currentAccessory.decodedManufacturerName)))
         }
-        if !accessory.decodedCategoryName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("category"), value: accessory.decodedCategoryName)))
+        if !currentAccessory.decodedCategoryName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("category"), value: currentAccessory.decodedCategoryName)))
         }
         return rows
     }

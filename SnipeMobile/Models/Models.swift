@@ -261,6 +261,16 @@ struct CompaniesResponse: Codable {
     let rows: [Company]
 }
 
+struct ManufacturersResponse: Codable {
+    let total: Int?
+    let rows: [Manufacturer]
+}
+
+struct SuppliersResponse: Codable {
+    let total: Int?
+    let rows: [Supplier]
+}
+
 struct CreatedBy: Codable {
     let id: Int
     let name: String
@@ -366,11 +376,17 @@ struct Accessory: Identifiable, Codable, Hashable {
     let location: Location?
     let manufacturer: Manufacturer?
     let category: Category?
+    let company: Company?
+    let supplier: Supplier?
 
     let qty: Int?
     let minAmt: Int?
     let remaining: Int?
     let checkoutsCount: Int?
+    let orderNumber: String?
+    let purchaseCost: String?
+    let purchaseDate: String?
+    let modelNumber: String?
 
     let decodedName: String
     let decodedAssetTag: String
@@ -380,7 +396,26 @@ struct Accessory: Identifiable, Codable, Hashable {
     let decodedManufacturerName: String
     let decodedCategoryName: String
 
-    init(id: Int, name: String, assetTag: String, statusLabel: StatusLabel? = nil, assignedTo: AssignedTo? = nil, location: Location? = nil, manufacturer: Manufacturer? = nil, category: Category? = nil, qty: Int? = nil, minAmt: Int? = nil, remaining: Int? = nil, checkoutsCount: Int? = nil) {
+    init(
+        id: Int,
+        name: String,
+        assetTag: String,
+        statusLabel: StatusLabel? = nil,
+        assignedTo: AssignedTo? = nil,
+        location: Location? = nil,
+        manufacturer: Manufacturer? = nil,
+        category: Category? = nil,
+        company: Company? = nil,
+        supplier: Supplier? = nil,
+        qty: Int? = nil,
+        minAmt: Int? = nil,
+        remaining: Int? = nil,
+        checkoutsCount: Int? = nil,
+        orderNumber: String? = nil,
+        purchaseCost: String? = nil,
+        purchaseDate: String? = nil,
+        modelNumber: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.assetTag = assetTag
@@ -389,10 +424,16 @@ struct Accessory: Identifiable, Codable, Hashable {
         self.location = location
         self.manufacturer = manufacturer
         self.category = category
+        self.company = company
+        self.supplier = supplier
         self.qty = qty
         self.minAmt = minAmt
         self.remaining = remaining
         self.checkoutsCount = checkoutsCount
+        self.orderNumber = orderNumber
+        self.purchaseCost = purchaseCost
+        self.purchaseDate = purchaseDate
+        self.modelNumber = modelNumber
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedAssetTag = HTMLDecoder.decode(assetTag)
         self.decodedStatusLabelName = HTMLDecoder.decode(statusLabel?.name ?? "Unknown")
@@ -409,10 +450,16 @@ struct Accessory: Identifiable, Codable, Hashable {
         case location
         case manufacturer
         case category
+        case company
+        case supplier
         case qty
         case minAmt = "min_amt"
         case remaining
         case checkoutsCount = "checkouts_count"
+        case orderNumber = "order_number"
+        case purchaseCost = "purchase_cost"
+        case purchaseDate = "purchase_date"
+        case modelNumber = "model_number"
     }
 
     static func == (lhs: Accessory, rhs: Accessory) -> Bool {
@@ -435,12 +482,37 @@ extension Accessory {
         let location = try? container.decodeIfPresent(Location.self, forKey: .location)
         let manufacturer = try? container.decodeIfPresent(Manufacturer.self, forKey: .manufacturer)
         let category = try? container.decodeIfPresent(Category.self, forKey: .category)
+        let company = try? container.decodeIfPresent(Company.self, forKey: .company)
+        let supplier = try? container.decodeIfPresent(Supplier.self, forKey: .supplier)
         let qty = try? container.decodeIfPresent(Int.self, forKey: .qty)
         let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
         let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
         let checkoutsCount = try? container.decodeIfPresent(Int.self, forKey: .checkoutsCount)
+        let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
+        let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
+        let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
+        let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
 
-        self.init(id: id, name: name, assetTag: assetTag, statusLabel: statusLabel, assignedTo: assignedTo, location: location, manufacturer: manufacturer, category: category, qty: qty, minAmt: minAmt, remaining: remaining, checkoutsCount: checkoutsCount)
+        self.init(
+            id: id,
+            name: name,
+            assetTag: assetTag,
+            statusLabel: statusLabel,
+            assignedTo: assignedTo,
+            location: location,
+            manufacturer: manufacturer,
+            category: category,
+            company: company,
+            supplier: supplier,
+            qty: qty,
+            minAmt: minAmt,
+            remaining: remaining,
+            checkoutsCount: checkoutsCount,
+            orderNumber: orderNumber,
+            purchaseCost: purchaseCost,
+            purchaseDate: purchaseDate,
+            modelNumber: modelNumber
+        )
     }
 }
 

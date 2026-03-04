@@ -19,6 +19,12 @@ struct SettingsView: View {
     @State private var didAppear = false
     @State private var pendingBiometricsValue: Bool? = nil
     @AppStorage("biometricsJustConfirmed") private var biometricsJustConfirmed: Bool = false
+    @AppStorage("useCloudSync") private var useCloudSync: Bool = true
+
+    /// iCloud is beschikbaar als het toestel met een Apple ID is ingelogd.
+    private var isICloudAvailable: Bool {
+        FileManager.default.ubiquityIdentityToken != nil
+    }
 
     var isDutch: Bool { settingsLanguage == "nl" }
     var isEnglish: Bool { settingsLanguage == "en" }
@@ -33,6 +39,10 @@ struct SettingsView: View {
                         Text(L10n.string("dark")).tag("dark")
                     }
                     .pickerStyle(SegmentedPickerStyle())
+                }
+                Section(header: Text(L10n.string("icloud")), footer: Text(isICloudAvailable ? L10n.string("icloud_sync_footer") : L10n.string("icloud_unavailable"))) {
+                    Toggle(L10n.string("icloud_sync_toggle"), isOn: $useCloudSync)
+                        .disabled(!isICloudAvailable)
                 }
                 Section(header: Text(L10n.string("security"))) {
                     Toggle(L10n.string("require_biometrics"), isOn: Binding(
@@ -99,6 +109,14 @@ struct SettingsView: View {
                 }
             }
             .onAppear {
+                // Standaard: iCloud-sync aan, behalve als er geen iCloud-account is gekoppeld.
+                if !isICloudAvailable {
+                    useCloudSync = false
+                    UserDefaults.standard.set(false, forKey: "useCloudSync")
+                } else if UserDefaults.standard.object(forKey: "useCloudSync") == nil {
+                    useCloudSync = true
+                    UserDefaults.standard.set(true, forKey: "useCloudSync")
+                }
                 baseURL = apiClient.baseURL
                 apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
             }
@@ -110,6 +128,9 @@ struct SettingsView: View {
             }
             .onChange(of: settingsLanguage) { _, newValue in
                 CloudSettingsStore.shared.setSettingsLanguage(newValue)
+            }
+            .onChange(of: useCloudSync) { _, newValue in
+                CloudSettingsStore.shared.setUseCloudSync(newValue)
             }
             .alert(isPresented: $showAlert) {
                 Alert(title: Text(alertMessage))

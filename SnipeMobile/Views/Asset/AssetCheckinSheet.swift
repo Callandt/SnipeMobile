@@ -18,153 +18,84 @@ struct AssetCheckinSheet: View {
     }
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color(.systemGroupedBackground).ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 28) {
-                        Text(L10n.string("check_in_asset"))
-                            .font(.title2).bold()
-                            .padding(.top, 24)
-                        
-                        VStack(alignment: .leading) {
-                            Text(L10n.string("asset_details"))
-                                .font(.headline)
-                                .foregroundColor(Color.primary)
-                                .padding(.horizontal, 18)
-                                .padding(.top, 12)
-                            
-                            VStack(spacing: 16) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(L10n.string("status"))
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    Picker(L10n.string("status"), selection: $selectedStatusId) {
-                                        ForEach(apiClient.statusLabels.sorted(by: { ($0.statusMeta ?? "") < ($1.statusMeta ?? "") }), id: \.id) { status in
-                                            Text(status.statusMeta ?? "").tag(Optional(status.id))
-                                        }
-                                    }
-                                    .pickerStyle(MenuPickerStyle())
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color(.secondarySystemBackground))
-                                    .cornerRadius(10)
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    TextField(L10n.string("name"), text: $name)
-                                        .padding(12)
-                                        .background(Color(.secondarySystemBackground))
-                                        .cornerRadius(12)
-                                        .foregroundColor(Color.primary)
-                                        .frame(maxWidth: .infinity)
-                                    Text(L10n.string("name_help_checkin"))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .padding(.leading, 2)
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(L10n.string("notes"))
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    TextEditor(text: $notes)
-                                        .frame(minHeight: 60)
-                                        .padding(8)
-                                        .background(Color(.secondarySystemBackground))
-                                        .cornerRadius(12)
-                                        .foregroundColor(Color.primary)
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(L10n.string("location"))
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    HStack {
-                                        Picker(selectedLocationId == nil ? L10n.string("select_location") : (apiClient.locations.first(where: { $0.id == selectedLocationId })?.name ?? L10n.string("location")), selection: $selectedLocationId) {
-                                            Text(L10n.string("none")).tag(nil as Int?)
-                                            ForEach(sortedLocations, id: \.id) { loc in
-                                                Text(loc.name).tag(Optional(loc.id))
-                                            }
-                                        }
-                                        .pickerStyle(MenuPickerStyle())
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color(.secondarySystemBackground))
-                                        .cornerRadius(10)
-                                        
-                                        if selectedLocationId != nil {
-                                            Button(action: { selectedLocationId = nil }) {
-                                                Image(systemName: "xmark.circle.fill")
-                                                    .foregroundColor(.secondary)
-                                            }
-                                            .padding(.leading, 4)
-                                            .transition(.scale.combined(with: .opacity))
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 14)
-                            
-                            Spacer(minLength: 20)
+        NavigationStack {
+            Form {
+                Section {
+                    Picker(L10n.string("status"), selection: $selectedStatusId) {
+                        Text(L10n.string("none")).tag(nil as Int?)
+                        ForEach(apiClient.statusLabels.sorted(by: { ($0.statusMeta ?? "") < ($1.statusMeta ?? "") }), id: \.id) { status in
+                            Text(status.statusMeta ?? "").tag(Optional(status.id))
                         }
-                        .background(Color(.systemBackground))
-                        .cornerRadius(20)
-                        .shadow(color: Color.black.opacity(0.07), radius: 8, x: 0, y: 4)
-                        .padding(.horizontal, 10)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            isSaving = true
-                            Task {
-                                var body: [String: Any] = [:]
-                                if let statusId = selectedStatusId { body["status_id"] = statusId }
-                                if !name.isEmpty, name != asset.name { body["name"] = name }
-                                if !notes.isEmpty { body["note"] = notes }
-                                if let locationId = selectedLocationId { body["location_id"] = locationId }
-                                let success = await apiClient.checkinAssetCustom(assetId: asset.id, body: body)
-                                isSaving = false
-                                resultMessage = apiClient.lastApiMessage ?? (success ? "Check-in successful!" : "Check-in failed.")
-                                showResult = true
-                                if success { isPresented = false }
-                            }
-                        }) {
-                            Text(L10n.string("check_in"))
-                                .font(.headline)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.green)
-                                .foregroundColor(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        .disabled(isSaving)
-                        .padding(.horizontal, 18)
-                        .padding(.bottom, 16)
                     }
-                    .padding(.top, 10)
+                    TextField(L10n.string("name"), text: $name)
+                    TextField(L10n.string("notes"), text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                    Picker(L10n.string("location"), selection: $selectedLocationId) {
+                        Text(L10n.string("none")).tag(nil as Int?)
+                        ForEach(sortedLocations, id: \.id) { loc in
+                            Text(loc.name).tag(Optional(loc.id))
+                        }
+                    }
+                } header: {
+                    Text(L10n.string("asset_details"))
+                } footer: {
+                    Text(L10n.string("name_help_checkin"))
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle(L10n.string("check_in_asset"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("cancel")) { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button(L10n.string("check_in")) { performCheckin() }
+                    }
                 }
             }
             .onAppear {
-                self.name = asset.name
-                if self.selectedStatusId == nil {
-                    if let readyToDeploy = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
-                        self.selectedStatusId = readyToDeploy.id
-                    } else if let firstDeployable = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
-                        self.selectedStatusId = firstDeployable.id
+                name = asset.name
+                let validIds = Set(apiClient.statusLabels.map(\.id))
+                if let id = selectedStatusId, !validIds.contains(id) {
+                    selectedStatusId = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" })?.id
+                } else if selectedStatusId == nil {
+                    if let ready = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
+                        selectedStatusId = ready.id
                     }
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
+            .onChange(of: apiClient.statusLabels.count) { _, _ in
+                if let id = selectedStatusId, !apiClient.statusLabels.contains(where: { $0.id == id }) {
+                    selectedStatusId = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" })?.id
                 }
             }
-            .alert(isPresented: $showResult) {
-                Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
+            .alert(L10n.string("result"), isPresented: $showResult) {
+                Button(L10n.string("ok"), role: .cancel) { }
+            } message: {
+                Text(resultMessage)
             }
         }
     }
-} 
+
+    private func performCheckin() {
+        isSaving = true
+        Task {
+            var body: [String: Any] = [:]
+            if let statusId = selectedStatusId { body["status_id"] = statusId }
+            if !name.isEmpty, name != asset.name { body["name"] = name }
+            if !notes.isEmpty { body["note"] = notes }
+            if let locationId = selectedLocationId { body["location_id"] = locationId }
+            let success = await apiClient.checkinAssetCustom(assetId: asset.id, body: body)
+            await MainActor.run {
+                isSaving = false
+                resultMessage = apiClient.lastApiMessage ?? (success ? L10n.string("checkin_success") : L10n.string("checkin_failed"))
+                showResult = true
+                if success { isPresented = false }
+            }
+        }
+    }
+}
