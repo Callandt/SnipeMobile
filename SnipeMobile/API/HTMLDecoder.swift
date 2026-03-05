@@ -1,11 +1,9 @@
-    import Foundation
+import Foundation
 
-// Helper class for decoding HTML
+/// Strips HTML tags and decodes entities (e.g. &amp;, &#039;) for display.
 class HTMLDecoder {
     static func decode(_ htmlString: String) -> String {
-        // 1. Strip HTML tags
         var result = htmlString.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
-        // 2. Decode named HTML entities
         let entities: [String: String] = [
             "&quot;": "\"",
             "&apos;": "'",
@@ -13,13 +11,11 @@ class HTMLDecoder {
             "&lt;": "<",
             "&gt;": ">",
             "&euro;": "€",
-            "&nbsp;": " ",
-            // Voeg hier meer entities toe indien nodig
+            "&nbsp;": " "
         ]
         for (entity, character) in entities {
             result = result.replacingOccurrences(of: entity, with: character)
         }
-        // 3. Decode numeric entities (zoals &#039;)
         let pattern = "&#(\\d+);"
         let regex = try? NSRegularExpression(pattern: pattern)
         let nsrange = NSRange(result.startIndex..<result.endIndex, in: result)
@@ -38,4 +34,4 @@ class HTMLDecoder {
         }
         return result
     }
-} 
+}

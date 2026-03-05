@@ -824,7 +824,6 @@ struct MainSplitView: View {
         return nil
     }
 
-    // Helper om de sidebar te togglen
     private func toggleSidebar() {
         #if targetEnvironment(macCatalyst)
         UIApplication.shared.sendAction(Selector(("toggleSidebar:")), to: nil, from: nil, for: nil)

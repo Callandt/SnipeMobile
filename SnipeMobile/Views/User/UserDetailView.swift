@@ -41,7 +41,6 @@ struct UserDetailView: View {
             }
             return nil
         }
-        // Haal de Accessory objecten op uit apiClient.accessories
         return apiClient.accessories.filter { assignedAccessoryIds.contains($0.id) }
     }
 
@@ -284,7 +283,6 @@ struct UserDetailView: View {
                 self.accessoryHistory = await apiClient.fetchActivityReport()
             }
             Task {
-                // Haal user-activity op
                 self.userActivity = await apiClient.fetchActivityForItem(itemType: "user", itemId: user.id)
             }
         }

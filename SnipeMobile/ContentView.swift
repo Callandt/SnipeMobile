@@ -822,7 +822,6 @@ struct LocationsTab: View {
     }
 }
 
-// MARK: - iOS 26 Liquid Glass: tab bar minimaliseert alleen bij scrollen in lijstviews
 struct TabBarMinimizeBehaviorModifier: ViewModifier {
     let isDetailVisible: Bool
     func body(content: Content) -> some View {

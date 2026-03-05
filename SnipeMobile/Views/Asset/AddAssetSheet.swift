@@ -367,7 +367,9 @@ struct AddAssetSheet: View {
             byod: byod
         )
         Task {
-            print("AddAssetSheet.saveAsset: sending createAsset with model_id=\(selectedModelId), status_id=\(selectedStatusId), asset_tag=\(assetTag), serial=\(serial)")
+            #if DEBUG
+            print("AddAssetSheet.saveAsset: model_id=\(selectedModelId), status_id=\(selectedStatusId)")
+            #endif
             let success = await apiClient.createAsset(req)
             if success {
                 await apiClient.fetchAssets()
@@ -388,9 +390,10 @@ struct AddAssetSheet: View {
         showingDellScanner = false
         switch result {
         case .success(let scanResult):
-            print("Dell QR scan raw string: \(scanResult.string)")
             guard let url = URL(string: scanResult.string) else {
-                print("Dell QR scan: could not create URL from string")
+                #if DEBUG
+                print("Dell QR: invalid URL string")
+                #endif
                 resultMessage = L10n.string("invalid_dell_qr")
                 showResult = true
                 return
@@ -407,7 +410,9 @@ struct AddAssetSheet: View {
     private func handleDellUrl(_ url: URL) async {
         // Alleen Dell-domeinen accepteren; we vullen enkel het serienummer (service tag) in.
         guard let host = url.host, host.lowercased().contains("dell") else {
-            print("Dell QR scan: URL is not Dell host: \(url.absoluteString)")
+            #if DEBUG
+            print("Dell QR: not a Dell host")
+            #endif
             await MainActor.run {
                 resultMessage = L10n.string("invalid_dell_qr")
                 showResult = true
@@ -419,7 +424,9 @@ struct AddAssetSheet: View {
 
         await MainActor.run {
             guard let tag = serviceTag, !tag.isEmpty else {
-                print("Dell QR scan: no service tag found in URL \(url.absoluteString)")
+                #if DEBUG
+                print("Dell QR: no service tag in URL")
+                #endif
                 resultMessage = L10n.string("invalid_dell_qr")
                 showResult = true
                 return

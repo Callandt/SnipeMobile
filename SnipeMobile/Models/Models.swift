@@ -1,6 +1,5 @@
 import Foundation
 
-// Updated Asset model
 struct Asset: Identifiable, Codable, Hashable {
     let id: Int
     let name: String
@@ -48,7 +47,6 @@ struct Asset: Identifiable, Codable, Hashable {
     let customFields: [String: CustomField]?
     let availableActions: AvailableActions?
 
-    // Pre-computed decoded properties
     let decodedName: String
     let decodedAssetTag: String
     let decodedSerial: String

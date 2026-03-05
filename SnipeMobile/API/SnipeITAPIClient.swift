@@ -34,7 +34,6 @@ class SnipeITAPIClient: ObservableObject {
     private var fetchAssetsTask: Task<Void, Never>? = nil
     private var fetchAssetsGeneration: Int = 0
 
-    /// Eigen session met 1 connectie per host om QUIC/nw_connection console-spam te verminderen.
     private let urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 1
@@ -381,7 +380,6 @@ class SnipeITAPIClient: ObservableObject {
         return allActivities
     }
 
-    /// Fetch activity for a specific item type (e.g., "asset", "accessory", "user") and item id using the filtered API endpoint
     func fetchActivityForItem(itemType: String, itemId: Int, limit: Int = 50, offset: Int = 0, order: String = "desc") async -> [Activity] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         guard let url = URL(string: "\(baseURL)/api/v1/reports/activity?limit=\(limit)&offset=\(offset)&item_type=\(itemType)&item_id=\(itemId)&order=\(order)") else {
@@ -401,7 +399,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Download een bestand via een geauthenticeerde request en sla het tijdelijk op
     func downloadFile(from url: String) async -> URL? {
         guard let fileUrl = URL(string: url), !apiToken.isEmpty else { return nil }
         var request = URLRequest(url: fileUrl)
@@ -423,7 +420,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Haal de geaccepteerde EULAs van een gebruiker op via de API
     func fetchUserEULAs(userId: Int) async -> [ActivityFile] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         guard let url = URL(string: "\(baseURL)/api/v1/users/\(userId)/eulas") else {
@@ -524,8 +520,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Parses Snipe-IT validation response (Laravel-style `errors` or `messages` with field -> [strings]).
-    /// Returns (user-visible message with all validation texts, true if error is about duplicate serial or asset_tag).
     private static func parseValidationError(json: [String: Any]?, statusCode: Int) -> (String, Bool) {
         typealias Dict = [String: Any]
         func allMessages(from dict: Dict?) -> [String] {
@@ -1009,10 +1003,6 @@ class SnipeITAPIClient: ObservableObject {
                 let fields = try decoder.decode([FieldDefinition].self, from: fieldData)
                 await MainActor.run {
                     self.fieldDefinitions = fields
-                    print("DEBUG: fetchFieldDefinitions count=\(fields.count)")
-                    for f in fields {
-                        print("DEBUG: FieldDef name=\(f.name), type=\(f.type ?? "") field_values_array=\(f.field_values_array?.joined(separator: ", ") ?? "")")
-                    }
                 }
             }
         } catch {
@@ -1138,7 +1128,6 @@ class SnipeITAPIClient: ObservableObject {
     @MainActor
     @Published var fieldsets: [Fieldset]? = nil
 
-    /// Returns custom field definitions for the given model from fieldsets (fallback when GET /models/:id/fields is empty or unavailable).
     func modelFieldDefinitionsFromFieldsets(modelId: Int) -> [FieldDefinition] {
         guard let fieldsets = fieldsets else { return [] }
         guard let fieldset = fieldsets.first(where: { fs in
@@ -1307,13 +1296,13 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let (data, _) = try await urlSession.data(for: request)
-            print("DEBUG checkedout API response: ", String(data: data, encoding: .utf8) ?? "nil")
             do {
                 let decoded = try JSONDecoder().decode(AccessoryCheckedOutResponse.self, from: data)
-                print("DEBUG decoded checkedout rows: ", decoded.rows)
                 return decoded.rows
             } catch {
-                print("DECODE ERROR: \(error)")
+                #if DEBUG
+                print("fetchAccessoryCheckedOutList decode error: \(error)")
+                #endif
             }
         } catch {
             print("Error fetching checked out list: \(error)")
@@ -1321,7 +1310,6 @@ class SnipeITAPIClient: ObservableObject {
         return []
     }
 
-    /// Haalt service tag / serienummer uit een Dell-URL (bijv. QR). Gebruik voor hoofdcanner en Create Asset.
     static func extractDellServiceTag(from url: URL) -> String? {
         let components = url.path.components(separatedBy: "/")
         if let idx = components.firstIndex(where: { $0.lowercased() == "servicetag" }),

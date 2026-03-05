@@ -256,7 +256,6 @@ struct HistoryView: View {
         }
     }
 
-    // Helper: technische veldnamen → gebruikersvriendelijke labels (via L10n)
     private func prettifyFieldLabel(_ field: String) -> String {
         let l10nKeys: [String: String] = [
             "purchase_cost": "purchase_cost",
@@ -293,7 +292,6 @@ struct HistoryView: View {
         return cleaned.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
-    // Helper voor NL actietypes (API geeft vaak Engels: "Checked out", "Check in", etc.)
     private func prettifyActionTypeNL(_ type: String) -> String {
         let lower = type.lowercased()
         if lower.contains("check") && (lower.contains("out") || lower.contains("uit")) { return "Uitgecheckt" }
