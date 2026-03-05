@@ -1,5 +1,4 @@
 import SwiftUI
-import CodeScanner
 
 struct AddAssetSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
@@ -75,7 +74,7 @@ struct AddAssetSheet: View {
             }
         }
         .sheet(isPresented: $showingDellScanner) {
-            CodeScannerView(codeTypes: [.qr], completion: handleDellScanResult)
+            ZoomableQRScannerView(completion: handleDellScanResult)
         }
     }
 

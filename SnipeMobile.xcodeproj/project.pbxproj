@@ -6,10 +6,6 @@
 	objectVersion = 90;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		E9453AF32E0D284300CBDEF3 /* CodeScanner in Frameworks */ = {isa = PBXBuildFile; productRef = E9453AF22E0D284300CBDEF3 /* CodeScanner */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
 		E9453AE32E0D263200CBDEF3 /* SnipeMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SnipeMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -26,7 +22,6 @@
 		E9453AE02E0D263200CBDEF3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				E9453AF32E0D284300CBDEF3 /* CodeScanner in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -65,9 +60,6 @@
 				E9453AE52E0D263200CBDEF3 /* SnipeMobile */,
 			);
 			name = SnipeMobile;
-			packageProductDependencies = (
-				E9453AF22E0D284300CBDEF3 /* CodeScanner */,
-			);
 			productName = SnipeMobile;
 			productReference = E9453AE32E0D263200CBDEF3 /* SnipeMobile.app */;
 			productType = "com.apple.product-type.application";
@@ -97,7 +89,6 @@
 			mainGroup = E9453ADA2E0D263200CBDEF3;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				E9453AF12E0D284300CBDEF3 /* XCRemoteSwiftPackageReference "CodeScanner" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = E9453AE42E0D263200CBDEF3 /* Products */;
@@ -257,7 +248,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = SnipeMobile/SnipeMobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = AR8XX75KK6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -297,7 +288,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = SnipeMobile/SnipeMobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = AR8XX75KK6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -349,25 +340,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		E9453AF12E0D284300CBDEF3 /* XCRemoteSwiftPackageReference "CodeScanner" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/twostraws/CodeScanner";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.5.2;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		E9453AF22E0D284300CBDEF3 /* CodeScanner */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = E9453AF12E0D284300CBDEF3 /* XCRemoteSwiftPackageReference "CodeScanner" */;
-			productName = CodeScanner;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E9453ADB2E0D263200CBDEF3 /* Project object */;
 }

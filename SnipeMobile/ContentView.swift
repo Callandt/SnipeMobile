@@ -1,6 +1,5 @@
 import SwiftUI
 import AVFoundation
-import CodeScanner
 
 // MARK: - Tab
 enum MainTab: String, CaseIterable {
@@ -165,7 +164,7 @@ struct ContentView: View {
         .sheet(isPresented: $showingScanner, onDismiss: {
             selectedTab = .hardware
         }) {
-            CodeScannerView(codeTypes: [.qr], completion: handleScanResult)
+            ZoomableQRScannerView(completion: handleScanResult)
         }
         .alert(L10n.string("error"), isPresented: $showScanErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {

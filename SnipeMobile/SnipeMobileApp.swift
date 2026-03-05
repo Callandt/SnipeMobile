@@ -8,7 +8,6 @@
 import SwiftUI
 import LocalAuthentication
 import AVFoundation
-import CodeScanner
 
 class AppSettings: ObservableObject {
     @AppStorage("appLanguage") var appLanguage: String = "en" { willSet { objectWillChange.send() } }
@@ -292,7 +291,7 @@ struct MainSplitView: View {
                 .presentationDetents([.large])
         }
         .sheet(isPresented: $showScanner, onDismiss: scannerDismiss) {
-            CodeScannerView(codeTypes: [.qr], completion: handleScanResult)
+            ZoomableQRScannerView(completion: handleScanResult)
         }
         .alert(L10n.string("error"), isPresented: $showScanErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {
