@@ -1,6 +1,6 @@
 # SnipeMobile
 
-iOS app to manage [Snipe-IT](https://snipe-it.app) assets, accessories, users, and locations. Scan QR codes, check in/out hardware, and edit data from your phone or tablet.
+iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users, and locations. Scan QR codes, check in/out hardware, and edit data from your phone or tablet.
 
 ## Requirements
 
