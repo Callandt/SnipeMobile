@@ -2,6 +2,11 @@
 
 iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users, and locations. Scan QR codes, check in/out hardware, and edit data from your phone or tablet.
 
+## Get the app
+
+- **[TestFlight (beta)](https://testflight.apple.com/join/TjDwstBE)** — join the beta with the link on your iPhone or iPad (TestFlight app required).
+- **App Store** — coming soon.
+
 ## Requirements
 
 - Xcode 16+
