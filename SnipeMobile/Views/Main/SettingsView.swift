@@ -4,7 +4,7 @@ import LocalAuthentication
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var apiClient: SnipeITAPIClient
-    /// When true, view is shown inside the tab bar (no Close button).
+    /// Shown as tab. No close button.
     var isPresentedAsTab: Bool = false
     @AppStorage("useBiometrics") private var useBiometrics: Bool = false
     @AppStorage("appTheme") private var appTheme: String = "system"
@@ -20,9 +20,7 @@ struct SettingsView: View {
     @State private var pendingBiometricsValue: Bool? = nil
     @AppStorage("biometricsJustConfirmed") private var biometricsJustConfirmed: Bool = false
     @AppStorage("useCloudSync") private var useCloudSync: Bool = true
-    @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
-
-    /// iCloud is beschikbaar als het toestel met een Apple ID is ingelogd.
+    /// Device has iCloud.
     private var isICloudAvailable: Bool {
         FileManager.default.ubiquityIdentityToken != nil
     }
@@ -45,9 +43,6 @@ struct SettingsView: View {
                     Toggle(L10n.string("icloud_sync_toggle"), isOn: $useCloudSync)
                         .disabled(!isICloudAvailable)
                 }
-                Section(header: Text(L10n.string("scanning")), footer: Text(L10n.string("enable_dell_qr_scan_footer"))) {
-                    Toggle(L10n.string("enable_dell_qr_scan"), isOn: $enableDellQrScan)
-                }
                 Section(header: Text(L10n.string("security"))) {
                     Toggle(L10n.string("require_biometrics"), isOn: Binding(
                         get: { useBiometrics },
@@ -63,6 +58,11 @@ struct SettingsView: View {
                         }
                     ))
                     .disabled(pendingBiometricsValue != nil)
+                }
+                Section(header: Text(L10n.string("settings_brand_integrations"))) {
+                    NavigationLink(value: SettingsRoute.dell) {
+                        Label(L10n.string("settings_dell"), systemImage: "desktopcomputer")
+                    }
                 }
                 Section(header: Text(L10n.string("api_settings"))) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -110,10 +110,12 @@ struct SettingsView: View {
                     SecuritySettingsView(useBiometrics: $useBiometrics)
                 case .api:
                     APISettingsView(apiClient: apiClient, baseURL: $baseURL, apiToken: $apiToken, showAlert: $showAlert, alertMessage: $alertMessage)
+                case .dell:
+                    DellSettingsView()
                 }
             }
             .onAppear {
-                // Standaard: iCloud-sync aan, behalve als er geen iCloud-account is gekoppeld.
+                // iCloud sync on by default if account present.
                 if !isICloudAvailable {
                     useCloudSync = false
                     UserDefaults.standard.set(false, forKey: "useCloudSync")
@@ -164,7 +166,38 @@ struct SettingsView: View {
     }
 }
 
-enum SettingsRoute: Hashable { case appearance, security, api }
+enum SettingsRoute: Hashable { case appearance, security, api, dell }
+
+struct DellSettingsView: View {
+    @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
+    @AppStorage("dellTechDirectClientId") private var dellTechDirectClientId: String = ""
+    @AppStorage("dellTechDirectClientSecret") private var dellTechDirectClientSecret: String = ""
+
+    var body: some View {
+        Form {
+            Section(header: Text(L10n.string("scanning")), footer: Text(L10n.string("dell_qr_scan_footer"))) {
+                Toggle(L10n.string("dell_qr_scan_toggle"), isOn: $enableDellQrScan)
+            }
+            Section(header: Text(L10n.string("dell_techdirect_api")), footer: Text(L10n.string("dell_techdirect_footer"))) {
+                TextField(L10n.string("dell_client_id"), text: $dellTechDirectClientId)
+                    .textContentType(.username)
+                    .autocapitalization(.none)
+                SecureField(L10n.string("dell_client_secret"), text: $dellTechDirectClientSecret)
+                    .textContentType(.password)
+            }
+        }
+        .navigationTitle(L10n.string("dell_settings_title"))
+        .onChange(of: enableDellQrScan) { _, newValue in
+            CloudSettingsStore.shared.setEnableDellQrScan(newValue)
+        }
+        .onChange(of: dellTechDirectClientId) { _, newValue in
+            CloudSettingsStore.shared.setDellTechDirectClientId(newValue)
+        }
+        .onChange(of: dellTechDirectClientSecret) { _, newValue in
+            CloudSettingsStore.shared.setDellTechDirectClientSecret(newValue)
+        }
+    }
+}
 
 struct AppearanceSettingsView: View {
     @Binding var appTheme: String

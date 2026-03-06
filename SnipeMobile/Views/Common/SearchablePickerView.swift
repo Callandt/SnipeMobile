@@ -1,13 +1,13 @@
 import SwiftUI
 
-// MARK: - Item type voor snelle, identificeerbare lijst
+// MARK: - Picker item
 private struct PickableItem<Value: Hashable>: Identifiable {
     let value: Value
     let label: String
     var id: Value { value }
 }
 
-// MARK: - Zoekbare picker als sheet (modern, snel, betrouwbare binding)
+// MARK: - Searchable sheet
 private struct SearchablePickerSheetContent<Value: Hashable>: View {
     let title: String
     let items: [(value: Value, label: String)]
@@ -49,7 +49,7 @@ private struct SearchablePickerSheetContent<Value: Hashable>: View {
     }
 }
 
-/// Row die bij tap een sheet opent met zoekbare lijst (geen NavigationLink; sneller en betrouwbaarder).
+/// Tap opens searchable sheet. No NavigationLink.
 struct SearchablePickerRow<Value: Hashable>: View {
     let title: String
     let items: [(value: Value, label: String)]
@@ -95,10 +95,10 @@ struct SearchablePickerRow<Value: Hashable>: View {
     }
 }
 
-// MARK: - Drempel: onder deze grootte standaard Picker, daarboven zoekbare sheet
+// MARK: - Size threshold
 private let kLargeListThreshold = 12
 
-/// Kleine lijsten: native Picker. Grote lijsten: tap opent sheet met zoekbare lijst.
+/// Small list = Picker. Large = sheet.
 struct AdaptivePickerRow<Value: Hashable>: View {
     let title: String
     let items: [(value: Value, label: String)]

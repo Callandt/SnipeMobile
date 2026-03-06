@@ -5,7 +5,7 @@ iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users,
 ## Requirements
 
 - Xcode 16+
-- iOS 26+
+- iOS 18.0+
 - A Snipe-IT instance with API access (API token required)
 
 ## Building

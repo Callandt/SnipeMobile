@@ -55,7 +55,7 @@ struct AssetDetailView: View {
     @State private var checkInOutMessage = ""
     @State private var showCheckoutSheet = false
 
-    /// Huidige asset uit apiClient (na edit/check-in/check-out), anders de doorgegegeven asset.
+    /// From apiClient or passed in.
     private var currentAsset: Asset {
         apiClient.assets.first { $0.id == asset.id } ?? asset
     }
@@ -209,7 +209,7 @@ struct AssetDetailView: View {
                 await apiClient.fetchStatusLabels()
             }
             selectedModelId = currentAsset.model?.id ?? 0
-            // Init date fields
+            // Date init
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -245,7 +245,7 @@ struct AssetDetailView: View {
                 hasEolDate = false
                 showEolDate = false
             }
-            // Alleen cijfers tonen in warranty months
+            // Digits only
             editWarrantyMonths = (currentAsset.warrantyMonths ?? "").components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
         }
         .gesture(
@@ -319,7 +319,7 @@ struct AssetDetailView: View {
         hasNextAuditDate = currentAsset.nextAuditDate?.date != nil
         hasEolDate = currentAsset.assetEolDate?.date != nil
         hasExpectedCheckin = currentAsset.expectedCheckin?.date != nil
-        // Sheet op volgende runloop tonen om SwiftUI-assert/breakpoint bij gelijktijdige state-updates te vermijden
+        // Next run loop. Avoids concurrent state assert.
         DispatchQueue.main.async {
             showEditSheet = true
         }
@@ -378,7 +378,7 @@ struct AssetDetailView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(12)
 
-                        // Assigned To Section (zelfde opmaak als Accessory detail: grijze kaart, icoon + naam + chevron)
+                        // Assigned To. Gray card.
                         if currentAsset.statusLabel.statusMeta?.lowercased() == "deployed", currentAsset.assignedTo != nil {
                             VStack(alignment: .leading, spacing: 15) {
                                 Text(L10n.string("assigned_to"))
@@ -440,7 +440,7 @@ struct AssetDetailView: View {
                             }
                             .padding(.top, 5)
                         }
-                        // --- DATUMVELDEN ---
+                        // Date fields
                         let hasAnyDate =
                             (currentAsset.purchaseDate?.formatted?.isEmpty == false) ||
                             (currentAsset.nextAuditDate?.formatted?.isEmpty == false) ||
@@ -482,7 +482,7 @@ struct AssetDetailView: View {
                             .cornerRadius(12)
                         }
 
-                        // Value Info alleen tonen als er minstens één waarde is
+                        // Value Info if any
                         let hasValueInfo = (currentAsset.purchaseCost?.isEmpty == false) || (currentAsset.bookValue?.isEmpty == false) || (currentAsset.orderNumber?.isEmpty == false)
                         if hasValueInfo {
                             Text(L10n.string("value_info"))
@@ -530,7 +530,7 @@ struct AssetDetailView: View {
         }
     }
     
-    /// Voor aankoopprijs/boekwaarde: alleen duizendtal-punten verwijderen; komma blijft komma (1.630,86 → 1630,86).
+    /// Strip thousand separators. Keep comma.
     private func normalizeDecimalForCopy(_ value: String) -> String {
         value.replacingOccurrences(of: ".", with: "")
     }

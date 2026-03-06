@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AssetCardView: View {
     let asset: Asset
-    /// Op iPad lijst: false = transparant (rij-achtergrond zichtbaar), true = eigen kaart-achtergrond.
+    /// iPad: transparent row vs card background.
     var useExplicitBackground: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 

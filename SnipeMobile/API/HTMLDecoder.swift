@@ -1,6 +1,6 @@
 import Foundation
 
-/// Strips HTML tags and decodes entities (e.g. &amp;, &#039;) for display.
+/// Strip HTML. Decode entities.
 class HTMLDecoder {
     static func decode(_ htmlString: String) -> String {
         var result = htmlString.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)

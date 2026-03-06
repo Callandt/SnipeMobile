@@ -23,17 +23,17 @@ struct UserDetailView: View {
         return assetItems + accessoryItems
     }
 
-    // Accessoires waarvan de laatste actie voor deze user een checkout is, op basis van user-activity endpoint
+    // Accessories last checked out to this user
     private var actuallyAssignedAccessories: [Accessory] {
         let isCheckout: (String) -> Bool = { action in
             let lower = action.lowercased()
             return lower.contains("check") && lower.contains("uit")
         }
-        // Verzamel alle activiteiten voor accessoires
+        // All accessory activities
         let accessoryActivities = userActivity.filter { $0.item?.type == "accessory" && $0.item?.id != nil }
-        // Groepeer per accessoire-id
+        // By accessory id
         let grouped = Dictionary(grouping: accessoryActivities, by: { $0.item!.id })
-        // Voor elke accessoire: pak de laatste actie
+        // Latest action per accessory
         let assignedAccessoryIds = grouped.compactMap { (accessoryId, activities) -> Int? in
             let last = activities.max(by: { ($0.createdAt?.datetime ?? "") < ($1.createdAt?.datetime ?? "") })
             if let last = last, isCheckout(last.actionType) {
@@ -50,7 +50,7 @@ struct UserDetailView: View {
         var id: Int {
             switch self {
             case .asset(let asset): return asset.id
-            case .accessory(let accessory): return accessory.id + 1_000_000 // voorkom id-conflict
+            case .accessory(let accessory): return accessory.id + 1_000_000 // no clash with asset ids
             }
         }
     }
@@ -98,7 +98,7 @@ struct UserDetailView: View {
         .background(Color(.systemBackground))
     }
 
-    /// Kaartrij in stijl van Accessory Toegewezen aan (grijs, icoon + naam); geen chevron.
+    /// Gray row. Icon + name.
     private func assignedToStyleAssetRow(asset: Asset) -> some View {
         HStack {
             Image(systemName: "laptopcomputer")
@@ -153,7 +153,7 @@ struct UserDetailView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 2)
 
-                // Copy notification overlay direct onder tabs
+                // Copy toast under tabs
                 if showCopyNotification, let text = copyNotification {
                     VStack {
                         Text(L10n.string("copied", text))
@@ -178,7 +178,7 @@ struct UserDetailView: View {
 
                 if selectedTab == 0 {
                     VStack(spacing: 12) {
-                        // --- Fixed Header ---
+                        // Fixed header
                         VStack(spacing: 12) {
                             Text(L10n.string("user_info"))
                                 .font(.headline)

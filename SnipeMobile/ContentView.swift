@@ -52,7 +52,7 @@ struct ContentView: View {
     @State private var usersPath = NavigationPath()
     @State private var locationsPath = NavigationPath()
     @State private var accessoriesPath = NavigationPath()
-    /// True wanneer een detailview op de stack staat; tabbar blijft dan volledig zichtbaar.
+    /// Detail on stack. Tab bar stays visible.
     @State private var isDetailViewActive = false
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
@@ -144,14 +144,11 @@ struct ContentView: View {
         .tabViewStyle(.automatic)
         #endif
         .onChange(of: selectedTab) { _, newTab in
-            // Zoeken resetten bij tabwissel
+            // Reset search
             searchText = ""
-            // Tabbar-state resetten; zichtbare view (lijst of detail) zet correcte waarde
+            // Tab state from visible view
             isDetailViewActive = false
-            // Alleen naar de lijst terugkeren als de gebruiker zelf op een tab tikt
-            // (returnToTab == nil). Bij programmatische navigatie tussen tabs
-            // (bijv. vanuit een detail naar een andere tab) laten we de path met
-            // de geopende detail-view intact.
+            // Back to list only on tab tap. Programmatic nav keeps path.
             guard returnToTab == nil else { return }
             switch newTab {
             case .hardware: hardwarePath = NavigationPath()
@@ -216,7 +213,7 @@ struct ContentView: View {
             }
             apiClient.errorMessage = nil
 
-            // 1) Snipe-IT QR: URL met asset-ID in pad
+            // Snipe-IT QR: asset ID in path
             if let id = extractAssetId(from: url) {
                 if let asset = apiClient.assets.first(where: { $0.id == id }) {
                     scannedAssetId = asset.id
@@ -233,7 +230,7 @@ struct ContentView: View {
                 return
             }
 
-            // 2) Dell QR: URL met service tag/serial; zoek asset op serienummer (alleen als instelling aan)
+            // Dell QR: service tag. Look up by serial.
             if enableDellQrScan,
                let host = url.host, host.lowercased().contains("dell"),
                let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
