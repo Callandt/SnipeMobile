@@ -3,7 +3,7 @@ import AVFoundation
 import UIKit
 
 #if os(iOS)
-/// Eigen fouttype voor QR-scannen, gemodelleerd naar CodeScanner.
+/// QR scan errors.
 enum ScanError: Error {
     case badInput
     case badOutput
@@ -11,7 +11,7 @@ enum ScanError: Error {
     case permissionDenied
 }
 
-/// Resultaat van een succesvolle scan.
+/// Successful scan result.
 struct ScanResult {
     let string: String
     let type: AVMetadataObject.ObjectType
@@ -35,7 +35,7 @@ struct ZoomableQRScannerView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: ScannerViewController, context: Context) {
-        // Geen dynamische updates nodig.
+        // No updates.
     }
 
     final class Coordinator {
@@ -68,7 +68,10 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
         configurePreview()
         configureGestures()
 
-        session.startRunning()
+        // startRunning blocks. Run off main.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.session.startRunning()
+        }
     }
 
     override func viewDidLayoutSubviews() {

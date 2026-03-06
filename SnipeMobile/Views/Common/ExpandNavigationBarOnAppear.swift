@@ -1,8 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Zorgt ervoor dat de navigation bar op een gepushte detail view weer groot (large title) wordt,
-/// ook als de vorige scherm gebar was ingeklapt door scrollen.
+/// Restore large title on pushed detail. Even if previous bar was collapsed.
 struct ExpandNavigationBarOnAppear: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -50,7 +49,7 @@ private extension UIView {
 }
 
 extension View {
-    /// Gebruik op detail views zodat de navigation bar daar weer groot (expanded) wordt na push.
+    /// Use on detail. Bar goes large again.
     func expandNavigationBarOnAppear() -> some View {
         modifier(ExpandNavigationBarOnAppear())
     }

@@ -75,7 +75,7 @@ class AppSettings: ObservableObject {
                         appSettings.appTheme == "light" ? .light :
                         appSettings.appTheme == "dark" ? .dark : nil
                     )
-                    // Blur overlay zolang biometrics actief is en nog niet geauthenticeerd
+                    // Blur until biometrics done
                     if (isLocked && appSettings.useBiometrics == true) || showPrivacyBlur {
                         ZStack {
                             StrongBlurView()
@@ -173,9 +173,9 @@ struct MainSplitView: View {
     @State private var selectedAccessoryDetailTab: Int = 0
     @State private var selectedUserDetailTab: Int = 0
     @State private var selectedLocationDetailTab: Int = 0
-    /// Voor detailviews: tabbar-state (op iPhone in ContentView gebruikt; op iPad niet gebruikt).
+    /// Tab bar state. iPhone only.
     @State private var isDetailViewActive = false
-    /// Bij true: onChange(of: selectedSection) niet clearen (we komen van een link in een detail).
+    /// From detail link. Don't clear section onChange.
     @State private var skipClearSelectionOnSectionChange = false
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
@@ -771,7 +771,7 @@ struct MainSplitView: View {
             }
             apiClient.errorMessage = nil
 
-            // 1) Snipe-IT QR: URL met asset-ID in pad
+            // Snipe-IT QR
             if let id = extractAssetId(from: url) {
                 if apiClient.assets.first(where: { $0.id == id }) != nil {
                     scannedAssetId = id
@@ -788,7 +788,7 @@ struct MainSplitView: View {
                 return
             }
 
-            // 2) Dell QR: URL met service tag/serial; zoek asset op serienummer (alleen als instelling aan)
+            // Dell QR. Look up by serial.
             if enableDellQrScan,
                let host = url.host, host.lowercased().contains("dell"),
                let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {

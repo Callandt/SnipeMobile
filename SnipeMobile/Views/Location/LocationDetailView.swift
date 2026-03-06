@@ -12,14 +12,14 @@ struct LocationDetailView: View {
     @State private var assetDetailTab: Int = 0
     @State private var userDetailTab: Int = 0
 
-    // Assets whose default or ready-to-deploy location is this one.
+    // Assets at this location.
     private var assetsAtLocation: [Asset] {
         apiClient.assets.filter {
             $0.location?.id == location.id || $0.rtdLocation?.id == location.id
         }
     }
 
-    // Users whose location is this one.
+    // Users at this location.
     private var usersAtLocation: [User] {
         apiClient.users.filter { $0.location?.id == location.id }
     }
@@ -125,7 +125,7 @@ struct LocationDetailView: View {
         }
     }
 
-    /// Kaartrij in stijl van Accessory Toegewezen aan (grijs, icoon + naam); geen chevron.
+    /// Gray row. Icon + name. No chevron.
     private func assignedToStyleUserRow(user: User) -> some View {
         HStack {
             Image(systemName: "person.circle")

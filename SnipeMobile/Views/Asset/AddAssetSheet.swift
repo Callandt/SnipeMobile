@@ -34,7 +34,7 @@ struct AddAssetSheet: View {
             && selectedStatusId != 0
     }
 
-    /// Computes the next available asset tag, zero-padded like bestaande tags (bijv. 00581).
+    /// Next asset tag. Zero padded.
     private var nextAvailableAssetTag: String {
         let tags = apiClient.assets.map { $0.assetTag.trimmingCharacters(in: .whitespaces) }
         let numbers = tags.compactMap { tag -> Int? in
@@ -95,7 +95,7 @@ struct AddAssetSheet: View {
 
     private func setupOnAppear() {
         assetTag = nextAvailableAssetTag
-        // Altijd beginnen met geen gekozen model; gebruiker moet bewust kiezen.
+        // No model preselected.
         selectedModelId = 0
         displayedFieldDefinitions = []
         customFields = [:]
@@ -111,7 +111,7 @@ struct AddAssetSheet: View {
         if apiClient.statusLabels.isEmpty {
             Task { await apiClient.fetchStatusLabels() }
         }
-        // Status blijft standaard op "Kies status" (geen auto-select)
+        // Status stays unset
         if apiClient.companies.isEmpty {
             Task { await apiClient.fetchCompanies() }
         }
@@ -171,7 +171,7 @@ struct AddAssetSheet: View {
                 }
             }
 
-            // Model alfabetisch op naam, zoekbaar
+            // Models by name
             let sortedModels = apiClient.models.sorted {
                 HTMLDecoder.decode($0.name).localizedCaseInsensitiveCompare(HTMLDecoder.decode($1.name)) == .orderedAscending
             }
@@ -182,7 +182,7 @@ struct AddAssetSheet: View {
                 emptyOption: (0, L10n.string("choose_model"))
             )
 
-            // Status alfabetisch, zoekbaar
+            // Status list
             let sortedStatuses = apiClient.statusLabels.sorted {
                 displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
             }
@@ -407,7 +407,7 @@ struct AddAssetSheet: View {
     }
 
     private func handleDellUrl(_ url: URL) async {
-        // Alleen Dell-domeinen accepteren; we vullen enkel het serienummer (service tag) in.
+        // Dell URLs only. Fill serial.
         guard let host = url.host, host.lowercased().contains("dell") else {
             #if DEBUG
             print("Dell QR: not a Dell host")
@@ -431,7 +431,28 @@ struct AddAssetSheet: View {
                 return
             }
             self.serial = tag
-            // Model en andere velden blijven ongemoeid.
+        }
+
+        // TechDirect: ship date + warranty if configured
+        let clientId = UserDefaults.standard.string(forKey: "dellTechDirectClientId")?.trimmingCharacters(in: .whitespaces) ?? ""
+        let clientSecret = UserDefaults.standard.string(forKey: "dellTechDirectClientSecret") ?? ""
+        if !clientId.isEmpty, !clientSecret.isEmpty, let tag = serviceTag, !tag.isEmpty {
+            do {
+                let info = try await DellTechDirectClient.fetchWarrantyInfo(serviceTag: tag, clientId: clientId, clientSecret: clientSecret)
+                await MainActor.run {
+                    if let ship = info.shipDate {
+                        hasPurchaseDate = true
+                        purchaseDate = ship
+                    }
+                    if let months = info.warrantyMonths, months > 0 {
+                        warrantyMonths = "\(months)"
+                    }
+                }
+            } catch {
+                #if DEBUG
+                print("Dell TechDirect: \(error)")
+                #endif
+            }
         }
     }
 

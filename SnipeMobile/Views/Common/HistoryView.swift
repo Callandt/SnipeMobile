@@ -53,7 +53,7 @@ struct HistoryView: View {
         }
     }
 
-    // MARK: - Tijdlijn layout
+    // MARK: - Timeline
     private var timelineContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(viewModel.history.enumerated()), id: \.element.id) { index, activity in
@@ -63,7 +63,7 @@ struct HistoryView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 24)
         .background(
-            // Doorlopende verticale lijn links van de knopen
+            // Vertical line
             GeometryReader { geo in
                 let lineX = 20.0 + 6.0
                 Path { path in
@@ -78,7 +78,7 @@ struct HistoryView: View {
     @ViewBuilder
     private func timelineItem(activity: Activity, isLast: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            // Knoop op de lijn
+            // Dot
             Circle()
                 .fill(timelineColor(for: activity))
                 .frame(width: 12, height: 12)
@@ -89,7 +89,7 @@ struct HistoryView: View {
                 .shadow(color: timelineColor(for: activity).opacity(0.4), radius: 3, x: 0, y: 1)
                 .padding(.top, 6)
 
-            // Kaart inhoud
+            // Card
             historyCard(activity: activity)
                 .padding(.leading, 16)
                 .padding(.bottom, 24)
@@ -109,7 +109,7 @@ struct HistoryView: View {
     @ViewBuilder
     private func historyCard(activity: Activity) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Badge + datum op één lijn
+            // Badge and date
             HStack(alignment: .center, spacing: 10) {
                 Text(L10n.isDutch ? prettifyActionTypeNL(activity.actionType) : activity.actionType.capitalized)
                     .font(.caption.weight(.semibold))
@@ -124,7 +124,7 @@ struct HistoryView: View {
                     .foregroundColor(.secondary)
             }
 
-            // Hoofdtekst
+            // Body
             Group {
                 if !activity.decodedNote.isEmpty {
                     Text(activity.decodedNote)
@@ -149,7 +149,7 @@ struct HistoryView: View {
                 }
             }
 
-            // Meta-wijzigingen als chips
+            // Meta chips
             if let meta = activity.log_meta, !meta.isEmpty {
                 FlowLayout(spacing: 6) {
                     ForEach(Array(meta.keys).sorted(), id: \.self) { key in
@@ -178,7 +178,7 @@ struct HistoryView: View {
                 }
             }
 
-            // Onderste rij: gebruiker + ontvanger + PDF
+            // User, target, PDF
             HStack(spacing: 14) {
                 if let user = activity.admin ?? activity.created_by {
                     HStack(spacing: 4) {
@@ -226,7 +226,7 @@ struct HistoryView: View {
         )
     }
 
-    // Eenvoudige flow layout voor chips (wrap naar volgende regel)
+    // Flow layout for chips
     private struct FlowLayout: Layout {
         var spacing: CGFloat = 8
         func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -277,18 +277,18 @@ struct HistoryView: View {
         if let key = l10nKeys[field] {
             return L10n.string(key)
         }
-        // Custom fields: verwijder alle whitespace/underscores aan het begin én vóór 'snipeit' (case-insensitive), gevolgd door spaties/underscores/tabs aan het begin en een nummer aan het einde
+        // Strip snipeit prefix and trailing _number
         var cleaned = field.trimmingCharacters(in: .whitespacesAndNewlines)
         if let regex = try? NSRegularExpression(pattern: "^[\\s_]*snipeit[\\s_]*", options: [.caseInsensitive]) {
             let range = NSRange(location: 0, length: cleaned.utf16.count)
             cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
         }
-        // Verwijder trailing _<nummer>
+        // Trailing _digits
         if let regex = try? NSRegularExpression(pattern: "_[0-9]+$", options: []) {
             let range = NSRange(location: 0, length: cleaned.utf16.count)
             cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
         }
-        // underscores vervangen door spaties, hoofdletter aan begin
+        // Underscores to spaces. Capitalize.
         return cleaned.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
@@ -302,7 +302,7 @@ struct HistoryView: View {
         return type.capitalized
     }
 
-    // SafariView wrapper voor PDF
+    // PDF in Safari
     struct SafariView: UIViewControllerRepresentable {
         let url: URL
         func makeUIViewController(context: Context) -> some UIViewController {

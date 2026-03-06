@@ -2,13 +2,12 @@
 //  CloudSettingsStore.swift
 //  SnipeMobile
 //
-//  Syncs API settings and onboarding state to iCloud so new devices (e.g. iPad)
-//  get the same config and skip the welcome/API setup. Data is encrypted by Apple.
+//  iCloud sync for API config and onboarding. New devices get same setup.
 //
 
 import Foundation
 
-/// Keys we sync to iCloud Key-Value storage (encrypted by Apple).
+/// iCloud KV keys we sync.
 private enum CloudKey: String, CaseIterable {
     case baseURL
     case apiToken
@@ -20,6 +19,8 @@ private enum CloudKey: String, CaseIterable {
     case settingsLanguage
     case biometricsJustConfirmed
     case enableDellQrScan
+    case dellTechDirectClientId
+    case dellTechDirectClientSecret
 }
 
 private let useCloudSyncKey = "useCloudSync"
@@ -30,28 +31,28 @@ final class CloudSettingsStore {
     private let store = NSUbiquitousKeyValueStore.default
     private let defaults = UserDefaults.standard
 
-    /// True als iCloud-sync aanstaat (standaard aan als nog nooit gezet).
+    /// iCloud sync on. Default true.
     var useCloudSync: Bool {
         defaults.object(forKey: useCloudSyncKey) as? Bool ?? true
     }
 
-    /// Alleen waar als er een iCloud-account aan het toestel is gekoppeld. Voorkomt "No account" errors.
+    /// Has iCloud account. Avoids no-account errors.
     private var isICloudAvailable: Bool {
         FileManager.default.ubiquityIdentityToken != nil
     }
 
-    /// Zet iCloud-sync aan of uit en wist eventueel de waarden uit iCloud.
+    /// Toggle iCloud sync. Off clears synced keys.
     func setUseCloudSync(_ enabled: Bool) {
         defaults.set(enabled, forKey: useCloudSyncKey)
         guard isICloudAvailable else { return }
         if !enabled {
-            // Verwijder gesynchroniseerde sleutels uit iCloud.
+            // Clear iCloud keys.
             for key in CloudKey.allCases {
                 store.removeObject(forKey: key.rawValue)
             }
             _ = store.synchronize()
         } else {
-            // Bij inschakelen: huidige lokale waarden naar iCloud pushen.
+            // Push local values to iCloud.
             copyRelevantDefaultsToStore()
             _ = store.synchronize()
         }
@@ -66,22 +67,21 @@ final class CloudSettingsStore {
         )
     }
 
-    /// Call once at app launch to pull iCloud values into UserDefaults so existing
-    /// @AppStorage / UserDefaults code sees synced data (e.g. on a new iPad).
+    /// Pull iCloud into UserDefaults at launch. New device gets synced config.
     func mergeFromCloud() {
         guard useCloudSync, isICloudAvailable else { return }
         _ = store.synchronize()
         mergeCloudValuesIntoUserDefaults()
     }
 
-    /// Push current UserDefaults values to iCloud (e.g. after saving API config).
+    /// Push UserDefaults to iCloud. Call after saving API config.
     func pushToCloud() {
         guard useCloudSync, isICloudAvailable else { return }
         copyRelevantDefaultsToStore()
         _ = store.synchronize()
     }
 
-    // MARK: - API configuration (used by SnipeITAPIClient and onboarding)
+    // MARK: - API config
 
     func writeAPIConfiguration(baseURL: String, apiToken: String, isConfigured: Bool) {
         defaults.set(baseURL, forKey: "baseURL")
@@ -103,7 +103,7 @@ final class CloudSettingsStore {
         }
     }
 
-    // MARK: - App settings (theme, biometrics, language) – keep in sync with UserDefaults
+    // MARK: - App settings
 
     func setAppTheme(_ value: String) {
         defaults.set(value, forKey: "appTheme")
@@ -145,6 +145,32 @@ final class CloudSettingsStore {
         }
     }
 
+    func setEnableDellQrScan(_ value: Bool) {
+        defaults.set(value, forKey: "enableDellQrScan")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.enableDellQrScan.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
+    func setDellTechDirectClientId(_ value: String) {
+        defaults.set(value, forKey: "dellTechDirectClientId")
+        if useCloudSync, isICloudAvailable {
+            if value.isEmpty { store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue) }
+            else { store.set(value, forKey: CloudKey.dellTechDirectClientId.rawValue) }
+            _ = store.synchronize()
+        }
+    }
+
+    func setDellTechDirectClientSecret(_ value: String) {
+        defaults.set(value, forKey: "dellTechDirectClientSecret")
+        if useCloudSync, isICloudAvailable {
+            if value.isEmpty { store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue) }
+            else { store.set(value, forKey: CloudKey.dellTechDirectClientSecret.rawValue) }
+            _ = store.synchronize()
+        }
+    }
+
     // MARK: - Private
 
     private func mergeCloudValuesIntoUserDefaults() {
@@ -179,6 +205,12 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.enableDellQrScan.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.enableDellQrScan.rawValue), forKey: "enableDellQrScan")
         }
+        if let v = store.string(forKey: CloudKey.dellTechDirectClientId.rawValue) {
+            defaults.set(v, forKey: "dellTechDirectClientId")
+        }
+        if let v = store.string(forKey: CloudKey.dellTechDirectClientSecret.rawValue) {
+            defaults.set(v, forKey: "dellTechDirectClientSecret")
+        }
     }
 
     private func copyRelevantDefaultsToStore() {
@@ -193,12 +225,14 @@ final class CloudSettingsStore {
         if let v = defaults.string(forKey: "settingsLanguage") { store.set(v, forKey: CloudKey.settingsLanguage.rawValue) }
         store.set(defaults.bool(forKey: "biometricsJustConfirmed"), forKey: CloudKey.biometricsJustConfirmed.rawValue)
         store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
+        if let v = defaults.string(forKey: "dellTechDirectClientId") { store.set(v, forKey: CloudKey.dellTechDirectClientId.rawValue) }
+        if let v = defaults.string(forKey: "dellTechDirectClientSecret") { store.set(v, forKey: CloudKey.dellTechDirectClientSecret.rawValue) }
     }
 
     @objc private func ubiquitousStoreDidChange(_ notification: Notification) {
         guard useCloudSync, isICloudAvailable else { return }
         mergeCloudValuesIntoUserDefaults()
-        // Notify so UI can refresh (e.g. apiClient.isConfigured)
+        // UI refresh.
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .cloudSettingsDidChange, object: nil)
         }

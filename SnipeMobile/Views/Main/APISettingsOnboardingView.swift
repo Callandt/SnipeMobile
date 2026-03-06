@@ -35,7 +35,7 @@ struct APISettingsOnboardingView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 4)
 
-                        // Toevoegen van de link naar de Snipe-IT API key uitleg
+                        // API key docs link
                         Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
                             Text(L10n.string("how_api_key"))
                                 .font(.footnote)

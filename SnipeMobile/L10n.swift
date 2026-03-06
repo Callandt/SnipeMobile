@@ -2,13 +2,13 @@
 //  L10n.swift
 //  SnipeMobile
 //
-//  Toont Nederlands op Nederlands ingestelde apparaten, anders Engels.
+//  Dutch or English by device language.
 //
 
 import SwiftUI
 
 enum L10n {
-    /// Gebruikt de eerste voorkeurstaal van de gebruiker (Instellingen → Taal & regio → Volgorde van talen).
+    /// First preferred language.
     private static var languageCode: String {
         let preferred = Locale.preferredLanguages.first ?? ""
         let code = String(preferred.prefix(2)).lowercased()
@@ -32,7 +32,7 @@ enum L10n {
         return String(format: template, arg)
     }
 
-    /// Vertaalt Snipe-IT status_meta (deployed, deployable, etc.) naar de app-taal.
+    /// status_meta to localized label.
     static func statusLabel(_ statusMeta: String) -> String {
         let key = "status_\(statusMeta.trimmingCharacters(in: .whitespaces).lowercased())"
         let out = string(key)
@@ -182,6 +182,15 @@ enum L10n {
         "search_locations": "Search locations",
         "search": "Search",
         "scanning": "Scanning",
+        "settings_brand_integrations": "Brand integrations",
+        "settings_dell": "Dell",
+        "dell_settings_title": "Dell",
+        "dell_qr_scan_toggle": "Allow Dell QR scan",
+        "dell_qr_scan_footer": "Scan Dell service tag QR codes to fill serial when adding hardware.",
+        "dell_techdirect_api": "Dell TechDirect API",
+        "dell_techdirect_footer": "When set, scanning a Dell QR while creating an asset will auto-fill purchase date (ship date) and warranty months from Dell. You can request API access via Dell TechDirect at https://techdirect.dell.com/Portal/ManageAPI.aspx.",
+        "dell_client_id": "API Key",
+        "dell_client_secret": "API Secret",
         "add_accessory": "Add accessory",
         "months": "months",
         "expected_checkin_date": "Expected Checkin Date",
@@ -381,6 +390,15 @@ enum L10n {
         "search_locations": "Zoek locaties",
         "search": "Zoeken",
         "scanning": "Scannen",
+        "settings_brand_integrations": "Merkintegraties",
+        "settings_dell": "Dell",
+        "dell_settings_title": "Dell",
+        "dell_qr_scan_toggle": "Dell QR-scan toestaan",
+        "dell_qr_scan_footer": "Scan Dell service-tag QR-codes om serienummer in te vullen bij nieuw asset.",
+        "dell_techdirect_api": "Dell TechDirect API",
+        "dell_techdirect_footer": "Wanneer ingevuld, worden bij het aanmaken van een asset na het scannen van een Dell QR-code automatisch de aankoopdatum (verzenddatum) en het aantal garantie-maanden ingevuld. Je kunt API-toegang aanvragen via Dell TechDirect op https://techdirect.dell.com/Portal/ManageAPI.aspx.",
+        "dell_client_id": "API Key",
+        "dell_client_secret": "API Secret",
         "add_accessory": "Accessoire toevoegen",
         "months": "maanden",
         "expected_checkin_date": "Verwacht incheckdatum",

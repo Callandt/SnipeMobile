@@ -369,7 +369,7 @@ class SnipeITAPIClient: ObservableObject {
                 let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
                 allActivities.append(contentsOf: response.rows)
                 if response.rows.count < limit {
-                    break // laatste batch
+                    break
                 }
                 offset += limit
             } catch {
@@ -442,7 +442,7 @@ class SnipeITAPIClient: ObservableObject {
                     return nil
                 }
             }
-            // Fallback: probeer te decoderen als array van ActivityFile
+            // Fallback array of ActivityFile
             if let files = try? JSONDecoder().decode([ActivityFile].self, from: data) {
                 return files
             }
@@ -474,7 +474,7 @@ class SnipeITAPIClient: ObservableObject {
         let eol_date: String?
     }
 
-    // MARK: - Models (voor Create Asset)
+    // MARK: - Models
     struct ModelRow: Codable, Identifiable {
         let id: Int
         let name: String
@@ -499,7 +499,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    // MARK: - Fieldsets (model -> custom fields)
+    // MARK: - Fieldsets
     func fetchFieldsets() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
         guard let url = URL(string: "\(baseURL)/api/v1/fieldsets") else { return }
@@ -548,7 +548,7 @@ class SnipeITAPIClient: ObservableObject {
         return (combined, isDuplicate)
     }
 
-    // MARK: - Create Asset (POST /hardware)
+    // MARK: - Create Asset
     struct AssetCreateRequest: Codable {
         let name: String
         let asset_tag: String
@@ -607,7 +607,7 @@ class SnipeITAPIClient: ObservableObject {
                 json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
             }
 
-            // Detecteer of de server HTML (bijv. Microsoft-login) teruggeeft i.p.v. JSON (bij duplicate/redirect)
+            // HTML instead of JSON? Login page or redirect.
             let contentType = (httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
             let isHtmlContentType = contentType.contains("text/html")
             let firstBytes = String(data: responseData.prefix(800), encoding: .utf8) ?? ""
@@ -643,7 +643,7 @@ class SnipeITAPIClient: ObservableObject {
                 let hasPayload = (json?["payload"] as? [String: Any])?["id"] != nil
 
                 if isSnipeSuccess || hasPayload {
-                    // Optioneel: payload als Asset decoderen en in cache zetten (slaat over als payload andere vorm heeft)
+                    // Decode payload into cache if possible
                     if let json = json,
                        let payload = json["payload"],
                        let payloadData = try? JSONSerialization.data(withJSONObject: payload),
@@ -666,7 +666,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    // MARK: - Categories (voor Create Accessory)
+    // MARK: - Categories
     struct CategoryRow: Codable, Identifiable {
         let id: Int
         let name: String
@@ -693,7 +693,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    // MARK: - Create Accessory (POST /accessories)
+    // MARK: - Create Accessory
     func createAccessory(
         name: String,
         categoryId: Int,
@@ -759,7 +759,7 @@ class SnipeITAPIClient: ObservableObject {
                     ?? (httpResponse.statusCode == 200 ? "Accessory created!" : "Create failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200, let payload = json, let row = payload["payload"] as? [String: Any], row["id"] != nil {
-                    // Eenvoudige accessory voor lijst: we herladen accessoires
+                    // Reload accessories
                     Task { await self.fetchAccessories() }
                     return true
                 }
@@ -772,7 +772,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    // MARK: - Update Accessory (PATCH /accessories/:id)
+    // MARK: - Update Accessory
     func updateAccessory(
         accessoryId: Int,
         name: String,
@@ -847,7 +847,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// DELETE /api/v1/hardware/:id — verwijdert een asset in Snipe-IT. Bij 405 (proxy blokkeert DELETE) wordt opnieuw geprobeerd met POST + X-HTTP-Method-Override: DELETE.
+    /// DELETE asset. 405 → retry with method override.
     func deleteAsset(assetId: Int) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
         var request = URLRequest(url: url)
@@ -856,7 +856,7 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             #if DEBUG
-            print("[SnipeMobile] DELETE /hardware/\(assetId) — request gestart")
+            print("[SnipeMobile] DELETE /hardware/\(assetId) — request started")
             #endif
             var (data, response) = try await urlSession.data(for: request)
             var httpResponse = response as? HTTPURLResponse
@@ -970,7 +970,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    // MARK: - Field Definitions
+    // MARK: - Field defs
     struct FieldDefinition: Codable, Identifiable, Equatable {
         let id: Int
         let name: String
@@ -1080,7 +1080,7 @@ class SnipeITAPIClient: ObservableObject {
         let name: String
         let fields: FieldsetFields
         let models: FieldsetModels?
-        /// Some Snipe IT versions return "models" as a direct array.
+        /// Some Snipe versions: models as array.
         let modelsDirect: [FieldsetModelRow]?
         struct FieldsetFields: Codable {
             let rows: [FieldsetField]
@@ -1122,7 +1122,7 @@ class SnipeITAPIClient: ObservableObject {
         let name: String
         let type: String
         let field_values_array: [String]?
-        // Voeg hier andere properties toe indien nodig
+        // Extend as needed
     }
 
     @MainActor

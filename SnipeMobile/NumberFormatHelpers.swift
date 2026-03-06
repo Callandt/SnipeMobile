@@ -2,18 +2,14 @@
 //  NumberFormatHelpers.swift
 //  SnipeMobile
 //
-//  Parses user input in any locale and outputs a string for the API (decimal point, no thousands).
-//  European format (1.830,86) is always supported and yields "1830.86".
+//  Locale number → API string. EU format supported.
 //
 
 import Foundation
 
 enum NumberFormatHelpers {
 
-    /// Parses a number string (e.g. European "1.830,86" or US "1,830.86") and returns a string
-    /// for the API: decimal point, no thousands (e.g. "1830.86").
-    /// European: dot = thousands separator, comma = decimal → "1.830,86" → "1830.86".
-    /// Returns nil if the string is empty or not a valid number.
+    /// Parse number to API string. Decimal point. No thousands.
     static func normalizeDecimalForAPI(_ value: String?) -> String? {
         guard let s = value?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else {
             return nil
@@ -22,7 +18,7 @@ enum NumberFormatHelpers {
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "\u{00A0}", with: "")
             .replacingOccurrences(of: "'", with: "")
-        // Eerst expliciet Europees formaat proberen: laatste komma = decimaal, punten = duizendtallen
+        // Try EU: comma decimal, dot thousands
         if let eu = tryEuropeanFormat(cleaned) {
             return eu
         }
@@ -42,7 +38,7 @@ enum NumberFormatHelpers {
         return formatter.string(from: NSNumber(value: number))
     }
 
-    /// European format: punt = duizendtallen, komma = decimaal. "1.830,86" → "1830.86".
+    /// EU: dot thousands, comma decimal.
     private static func tryEuropeanFormat(_ s: String) -> String? {
         guard let lastComma = s.lastIndex(of: ",") else { return nil }
         let beforeComma = s[..<lastComma]
@@ -55,7 +51,7 @@ enum NumberFormatHelpers {
         return combined
     }
 
-    /// Fallback: treat last . or , as decimal separator, the other as thousands.
+    /// Fallback: last . or , is decimal.
     private static func tryParseWithoutLocale(_ s: String) -> String? {
         let lastDot = s.lastIndex(of: ".")
         let lastComma = s.lastIndex(of: ",")

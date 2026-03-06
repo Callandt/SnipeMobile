@@ -45,12 +45,12 @@ struct AssetEditSheet: View {
     @State private var showResult = false
     @State private var resultMessage = ""
 
-    /// Asset is uitgecheckt (toegewezen aan gebruiker of locatie); status is dan niet bewerkbaar.
+    /// Checked out. Status read only.
     private var isAssetCheckedOut: Bool {
         asset.assignedTo != nil || asset.location != nil
     }
 
-    /// Weergavenaam voor statuslabel: Snipe-IT vult soms alleen `name`, soms `status_meta`.
+    /// Status label. name or status_meta.
     private func displayName(for label: StatusLabel) -> String {
         let meta = label.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return meta.isEmpty ? label.name : meta
@@ -74,7 +74,7 @@ struct AssetEditSheet: View {
                         ProgressView()
                     } else {
                         Button(L10n.string("save")) {
-                            // Check for archive status while assigned
+                            // Block archive if assigned
                             let archiveStatus = apiClient.statusLabels.first { $0.name.lowercased() == "archived" }?.id
                             let isArchiving = selectedStatusId == archiveStatus
                             let isAssigned = (asset.assignedTo != nil) || (asset.location != nil)
@@ -199,7 +199,7 @@ struct AssetEditSheet: View {
                     )
                 }
             }
-            // Status alleen tonen als asset niet uitgecheckt is en we statuslabels hebben (voorkomt Picker-crash)
+            // Status only when not checked out. Avoids Picker crash.
             if !isAssetCheckedOut, !apiClient.statusLabels.isEmpty {
                 let sortedStatuses = apiClient.statusLabels.sorted {
                     displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
@@ -245,7 +245,7 @@ struct AssetEditSheet: View {
                 TextField(L10n.string("warranty_months"), text: $editWarrantyMonths)
                     .keyboardType(.numberPad)
             }
-            // Purchase Date
+            // Purchase
             HStack {
                 Toggle(L10n.string("set_purchase_date"), isOn: $hasPurchaseDate)
                     .font(.caption)
@@ -254,7 +254,7 @@ struct AssetEditSheet: View {
                         .labelsHidden()
                 }
             }
-            // EOL Date (moved after Purchase Date)
+            // EOL date
             HStack {
                 Toggle(L10n.string("set_eol_date"), isOn: $hasEolDate)
                     .font(.caption)
@@ -263,7 +263,7 @@ struct AssetEditSheet: View {
                         .labelsHidden()
                 }
             }
-            // Next Audit Date
+            // Next audit
             HStack {
                 Toggle(L10n.string("set_next_audit"), isOn: $hasNextAuditDate)
                     .font(.caption)

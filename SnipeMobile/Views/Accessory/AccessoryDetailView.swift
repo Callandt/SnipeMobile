@@ -18,12 +18,12 @@ struct AccessoryDetailView: View {
     @State private var checkinTarget: SnipeITAPIClient.AccessoryCheckedOutRow? = nil
     @State private var checkinResult: String? = nil
 
-    /// Huidige accessoire uit apiClient (na bewerken), anders de doorgegeven accessoire.
+    /// From apiClient or passed in.
     private var currentAccessory: Accessory {
         apiClient.accessories.first { $0.id == accessory.id } ?? accessory
     }
 
-    /// Geen voorraad = uitchecken uitschakelen (greyed out).
+    /// No stock. Checkout disabled.
     private var canCheckout: Bool {
         guard let remaining = currentAccessory.remaining else { return true }
         return remaining > 0
@@ -80,7 +80,7 @@ struct AccessoryDetailView: View {
                             .padding(.horizontal)
                         }
 
-                        // --- Assigned Users/Locations via checkedout API ---
+                        // Assigned via checkedout API
                         checkedOutSection
                         Spacer()
                     }
@@ -259,7 +259,7 @@ struct AccessoryDetailView: View {
         return rows
     }
 
-    // --- Assigned To: zelfde opmaak als Hardware (grijze kaarten, Bewerken/Check in-out stijl) ---
+    // Assigned To. Same as Hardware.
     var checkedOutSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text(L10n.string("assigned_to"))
@@ -359,7 +359,7 @@ struct AccessoryDetailView: View {
         .padding(.horizontal)
     }
 
-    // --- Nieuwe checkin functie ---
+    // Check-in flow
     private func checkinAccessory(checkedoutId: Int?) async -> Bool {
         guard let checkedoutId = checkedoutId else { return false }
         guard let url = URL(string: "\(apiClient.baseURL)/api/v1/accessories/\(accessory.id)/checkin") else { return false }
@@ -372,7 +372,7 @@ struct AccessoryDetailView: View {
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                // Refresh checkedout list na checkin
+                // Refresh list
                 checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
                 return true
             }
