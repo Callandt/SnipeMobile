@@ -4,6 +4,8 @@ struct AssetCardView: View {
     let asset: Asset
     /// iPad: transparent row vs card background.
     var useExplicitBackground: Bool = true
+    /// Used in the audit subtab to show the next audit date on the card.
+    var showNextAuditDate: Bool = false
     @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
@@ -35,6 +37,14 @@ struct AssetCardView: View {
                     }
                     if let status = asset.statusLabel.statusMeta, !status.isEmpty {
                         Text(L10n.statusLabel(status))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if showNextAuditDate,
+                       let nextAudit = asset.nextAuditDate?.formatted,
+                       !nextAudit.isEmpty {
+                        Text("\(L10n.string("next_audit_date")): \(nextAudit)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

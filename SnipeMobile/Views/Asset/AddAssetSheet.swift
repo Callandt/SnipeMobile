@@ -194,11 +194,11 @@ struct AddAssetSheet: View {
             )
             if !apiClient.locations.isEmpty {
                 let sortedLocations = apiClient.locations.sorted {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
                 }
                 AdaptivePickerRow(
                     title: L10n.string("location_optional"),
-                    items: sortedLocations.map { (value: $0.id, label: $0.name) },
+                    items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                     selection: Binding(
                         get: { selectedLocationId ?? 0 },
                         set: { selectedLocationId = $0 == 0 ? nil : $0 }

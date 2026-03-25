@@ -142,9 +142,9 @@ struct AssetCheckoutSheet: View {
         apiClient.locations
             .filter {
                 locationSearchText.isEmpty ||
-                $0.name.localizedCaseInsensitiveContains(locationSearchText)
+                $0.decodedName.localizedCaseInsensitiveContains(locationSearchText)
             }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
     }
 
     var deployableStatusLabels: [StatusLabel] {
@@ -235,7 +235,7 @@ struct LocationRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack {
-                Text(location.name)
+                Text(location.decodedName)
                     .foregroundStyle(.primary)
                 Spacer()
                 if isSelected {

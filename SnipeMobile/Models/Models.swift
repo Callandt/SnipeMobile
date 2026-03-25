@@ -226,6 +226,10 @@ struct AssignedTo: Codable {
 struct Location: Codable, Identifiable, Hashable {
     let id: Int
     let name: String
+
+    /// Some API fields contain HTML entities (e.g. `&#039;` for `'`).
+    /// Use this everywhere we display the location name.
+    var decodedName: String { HTMLDecoder.decode(name) }
 }
 
 struct DateInfo: Codable {

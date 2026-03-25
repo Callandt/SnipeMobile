@@ -135,6 +135,68 @@ class SnipeITAPIClient: ObservableObject {
         await fetchAssetsTask?.value
     }
 
+    func fetchHardwareByTag(assetTag: String) async -> Asset? {
+        let trimmed = assetTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !baseURL.isEmpty, !apiToken.isEmpty, !trimmed.isEmpty else { return nil }
+
+        let pathEscaped = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        let queryEscaped = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+
+        let candidates: [URL] = [
+            URL(string: "\(baseURL)/api/v1/hardware/bytag/\(pathEscaped)") ,
+            URL(string: "\(baseURL)/api/v1/hardware/bytag?asset_tag=\(queryEscaped)"),
+            URL(string: "\(baseURL)/api/v1/hardware/bytag?assetTag=\(queryEscaped)")
+        ]
+            .compactMap { $0 }
+
+        for url in candidates {
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+            do {
+                let (data, response) = try await urlSession.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else { continue }
+
+                // Most common cases:
+                // - response is an Asset-like object
+                // - response is wrapped with { payload: {...} }
+                // - response is wrapped with { rows: [ {...} ] }
+                if let asset = try? JSONDecoder().decode(Asset.self, from: data) {
+                    return asset
+                }
+
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    continue
+                }
+
+                if let payload = json["payload"] as? [String: Any] {
+                    let payloadData = try? JSONSerialization.data(withJSONObject: payload)
+                    if let payloadData,
+                       let asset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
+                        return asset
+                    }
+                }
+
+                if let rows = json["rows"] as? [[String: Any]],
+                   let first = rows.first {
+                    let rowData = try? JSONSerialization.data(withJSONObject: first)
+                    if let rowData,
+                       let asset = try? JSONDecoder().decode(Asset.self, from: rowData) {
+                        return asset
+                    }
+                }
+            } catch {
+                // Try next candidate URL.
+                continue
+            }
+        }
+
+        return nil
+    }
+
     func fetchUsers() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
             await MainActor.run { errorMessage = "Configure the API settings first." }
@@ -221,7 +283,7 @@ class SnipeITAPIClient: ObservableObject {
             let (data, _) = try await urlSession.data(for: request)
             let response = try JSONDecoder().decode(LocationsResponse.self, from: data)
             await MainActor.run {
-                self.locations = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+                self.locations = response.rows.sorted { $0.decodedName.lowercased() < $1.decodedName.lowercased() }
             }
         } catch {
             print("Error fetching locations: \(error.localizedDescription)")
@@ -453,7 +515,24 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     // MARK: - Asset Update
-    struct AssetUpdateRequest: Codable {
+    struct AssetUpdateRequest: Encodable {
+        /// Codable wrapper to encode an explicit JSON `null`.
+        /// When `String?` is `nil`, the key is typically omitted, so the server keeps the old value.
+        enum NullableString: Encodable {
+            case value(String)
+            case null
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.singleValueContainer()
+                switch self {
+                case .value(let value):
+                    try container.encode(value)
+                case .null:
+                    try container.encodeNil()
+                }
+            }
+        }
+
         let name: String?
         let asset_tag: String?
         let serial: String?
@@ -469,7 +548,7 @@ class SnipeITAPIClient: ObservableObject {
         let book_value: String?
         let custom_fields: [String: String]?
         let purchase_date: String?
-        let next_audit_date: String?
+        let next_audit_date: NullableString?
         let expected_checkin: String?
         let eol_date: String?
     }

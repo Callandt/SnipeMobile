@@ -97,7 +97,7 @@ struct LocationDetailView: View {
         .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text(HTMLDecoder.decode(location.name))
+                Text(location.decodedName)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)

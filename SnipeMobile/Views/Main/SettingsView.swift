@@ -20,9 +20,21 @@ struct SettingsView: View {
     @State private var pendingBiometricsValue: Bool? = nil
     @AppStorage("biometricsJustConfirmed") private var biometricsJustConfirmed: Bool = false
     @AppStorage("useCloudSync") private var useCloudSync: Bool = true
+    @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
+    @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
+    @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0
+    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = true
+    @State private var notificationTime: Date = Date()
     /// Device has iCloud.
     private var isICloudAvailable: Bool {
         FileManager.default.ubiquityIdentityToken != nil
+    }
+
+    private func ensureAssetsLoadedIfNeeded() async {
+        guard apiClient.isConfigured else { return }
+        if apiClient.assets.isEmpty {
+            await apiClient.fetchPrimaryThenBackground()
+        }
     }
 
     var isDutch: Bool { settingsLanguage == "nl" }
@@ -59,10 +71,21 @@ struct SettingsView: View {
                     ))
                     .disabled(pendingBiometricsValue != nil)
                 }
-                Section(header: Text(L10n.string("settings_brand_integrations"))) {
-                    NavigationLink(value: SettingsRoute.dell) {
-                        Label(L10n.string("settings_dell"), systemImage: "desktopcomputer")
-                    }
+                Section(header: Text(L10n.string("audit_settings_title"))) {
+                    Toggle(L10n.string("audit_subtab_toggle"), isOn: $enableAuditSubtab)
+
+                    Toggle(
+                        L10n.string("audit_notifications_toggle"),
+                        isOn: $auditNotificationsEnabled
+                    )
+                    .disabled(!enableAuditSubtab)
+
+                    DatePicker(
+                        L10n.string("audit_notification_time"),
+                        selection: $notificationTime,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .disabled(!enableAuditSubtab || !auditNotificationsEnabled)
                 }
                 Section(header: Text(L10n.string("api_settings"))) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -83,6 +106,12 @@ struct SettingsView: View {
                         .textContentType(.URL)
                     SecureField("API Key", text: $apiToken)
                         .textContentType(.password)
+                }
+
+                Section(header: Text(L10n.string("settings_brand_integrations"))) {
+                    NavigationLink(value: SettingsRoute.dell) {
+                        Label(L10n.string("settings_dell"), systemImage: "desktopcomputer")
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -125,6 +154,14 @@ struct SettingsView: View {
                 }
                 baseURL = apiClient.baseURL
                 apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
+
+                let cal = Calendar.current
+                notificationTime = cal.date(
+                    bySettingHour: auditNotificationHour,
+                    minute: auditNotificationMinute,
+                    second: 0,
+                    of: Date()
+                ) ?? Date()
             }
             .onChange(of: appTheme) { _, newValue in
                 CloudSettingsStore.shared.setAppTheme(newValue)
@@ -137,6 +174,65 @@ struct SettingsView: View {
             }
             .onChange(of: useCloudSync) { _, newValue in
                 CloudSettingsStore.shared.setUseCloudSync(newValue)
+            }
+            .onChange(of: enableAuditSubtab) { _, newValue in
+                // Notifications only make sense when the Audit subtab is visible.
+                if !newValue, auditNotificationsEnabled {
+                    auditNotificationsEnabled = false
+                    Task {
+                        await AuditNotificationManager.shared.updateSchedule(
+                            enabled: false,
+                            hour: auditNotificationHour,
+                            minute: auditNotificationMinute,
+                            assets: apiClient.assets
+                        )
+                    }
+                }
+            }
+            .onChange(of: notificationTime) { _, newValue in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+                auditNotificationHour = comps.hour ?? 9
+                auditNotificationMinute = comps.minute ?? 0
+            }
+            .onChange(of: auditNotificationsEnabled) { _, _ in
+                // block notifications if the subtab is off
+                if !enableAuditSubtab, auditNotificationsEnabled {
+                    auditNotificationsEnabled = false
+                    return
+                }
+                Task {
+                    await ensureAssetsLoadedIfNeeded()
+                    await AuditNotificationManager.shared.updateSchedule(
+                        enabled: auditNotificationsEnabled,
+                        hour: auditNotificationHour,
+                        minute: auditNotificationMinute,
+                        assets: apiClient.assets
+                    )
+                }
+            }
+            .onChange(of: auditNotificationHour) { _, _ in
+                guard auditNotificationsEnabled else { return }
+                Task {
+                    await ensureAssetsLoadedIfNeeded()
+                    await AuditNotificationManager.shared.updateSchedule(
+                        enabled: true,
+                        hour: auditNotificationHour,
+                        minute: auditNotificationMinute,
+                        assets: apiClient.assets
+                    )
+                }
+            }
+            .onChange(of: auditNotificationMinute) { _, _ in
+                guard auditNotificationsEnabled else { return }
+                Task {
+                    await ensureAssetsLoadedIfNeeded()
+                    await AuditNotificationManager.shared.updateSchedule(
+                        enabled: true,
+                        hour: auditNotificationHour,
+                        minute: auditNotificationMinute,
+                        assets: apiClient.assets
+                    )
+                }
             }
             .alert(isPresented: $showAlert) {
                 Alert(title: Text(alertMessage))
