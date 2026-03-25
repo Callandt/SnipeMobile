@@ -7,6 +7,9 @@ struct IdNamePair: Identifiable, Hashable {
 
 struct AssetEditSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
+    @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
+    @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
+    @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0
     let asset: Asset
     @Binding var isPresented: Bool
     @Binding var editName: String
@@ -88,7 +91,10 @@ struct AssetEditSheet: View {
                                 formatter.dateFormat = "yyyy-MM-dd"
                                 formatter.timeZone = TimeZone(secondsFromGMT: 0)
                                 let purchaseDateString = hasPurchaseDate ? formatter.string(from: editPurchaseDate) : nil
-                                let nextAuditDateString = hasNextAuditDate ? formatter.string(from: editNextAuditDate) : nil
+                                let nextAuditDateRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                                    hasNextAuditDate
+                                    ? .value(formatter.string(from: editNextAuditDate))
+                                    : .null
                                 let expectedCheckinString = hasExpectedCheckin ? formatter.string(from: editExpectedCheckin) : nil
                                 let eolDateString = hasEolDate ? formatter.string(from: editEolDate) : nil
                                 let trim: (String) -> String? = { s in
@@ -111,13 +117,21 @@ struct AssetEditSheet: View {
                                     book_value: NumberFormatHelpers.normalizeDecimalForAPI(editBookValue) ?? "",
                                     custom_fields: editCustomFields,
                                     purchase_date: purchaseDateString,
-                                    next_audit_date: nextAuditDateString,
+                                    next_audit_date: nextAuditDateRequest,
                                     expected_checkin: expectedCheckinString,
                                     eol_date: eolDateString
                                 )
                                 let success = await apiClient.updateAsset(assetId: asset.id, update: update)
                                 if success {
                                     await apiClient.fetchAssets()
+                                    if auditNotificationsEnabled {
+                                        await AuditNotificationManager.shared.updateSchedule(
+                                            enabled: true,
+                                            hour: auditNotificationHour,
+                                            minute: auditNotificationMinute,
+                                            assets: apiClient.assets
+                                        )
+                                    }
                                 }
                                 isSaving = false
                                 if success {

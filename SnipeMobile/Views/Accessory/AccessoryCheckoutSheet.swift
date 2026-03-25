@@ -119,9 +119,9 @@ struct AccessoryCheckoutSheet: View {
         apiClient.locations
             .filter {
                 locationSearchText.isEmpty ||
-                $0.name.localizedCaseInsensitiveContains(locationSearchText)
+                $0.decodedName.localizedCaseInsensitiveContains(locationSearchText)
             }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
     }
 
     func handleCheckout() {

@@ -8,6 +8,11 @@
 import SwiftUI
 import LocalAuthentication
 import AVFoundation
+import StoreKit
+import UIKit
+import UserNotifications
+
+private let pendingAuditIntentDefaultsKey = "pendingAuditIntent"
 
 class AppSettings: ObservableObject {
     @AppStorage("appLanguage") var appLanguage: String = "en" { willSet { objectWillChange.send() } }
@@ -17,12 +22,152 @@ class AppSettings: ObservableObject {
     var isEnglish: Bool { appLanguage == "en" }
 }
 
+enum AuditNotificationIntent: String {
+    case openDueToday
+}
+
+extension Notification.Name {
+    static let auditNotificationTapped = Notification.Name("auditNotificationTapped")
+}
+
+@MainActor
+final class AuditNotificationRouter: ObservableObject {
+    struct PendingRequest: Identifiable {
+        let id = UUID()
+        let intent: AuditNotificationIntent
+    }
+
+    @Published var pendingRequest: PendingRequest?
+
+    func set(intent: AuditNotificationIntent) {
+        pendingRequest = PendingRequest(intent: intent)
+    }
+
+    func consume() {
+        pendingRequest = nil
+    }
+}
+
+final class AuditNotificationManager {
+    static let shared = AuditNotificationManager()
+
+    private let identifier = "audit-daily-notification"
+
+    private init() {}
+
+    func requestAuthorizationIfNeeded() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings: UNNotificationSettings = await withCheckedContinuation { continuation in
+            center.getNotificationSettings { notificationSettings in
+                continuation.resume(returning: notificationSettings)
+            }
+        }
+
+        if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+            return true
+        }
+
+        let granted: Bool = await withCheckedContinuation { continuation in
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { ok, _ in
+                continuation.resume(returning: ok)
+            }
+        }
+
+        return granted
+    }
+
+    func updateSchedule(
+        enabled: Bool,
+        hour: Int,
+        minute: Int,
+        assets: [Asset]
+    ) async {
+        let center = UNUserNotificationCenter.current()
+
+        if !enabled {
+            center.removePendingNotificationRequests(withIdentifiers: [identifier])
+            center.removeDeliveredNotifications(withIdentifiers: [identifier])
+            return
+        }
+
+        guard await requestAuthorizationIfNeeded() else { return }
+
+        let dueTodayCount = assets.filter { AuditDateClassifier.isDueToday($0, now: Date()) }.count
+
+        let content = UNMutableNotificationContent()
+        content.title = L10n.string("audit_notification_title")
+        content.body = String(format: L10n.string("audit_notification_body"), dueTodayCount)
+        content.sound = .default
+        content.userInfo = [
+            "auditIntent": AuditNotificationIntent.openDueToday.rawValue
+        ]
+
+        var comps = DateComponents()
+        comps.hour = max(0, min(hour, 23))
+        comps.minute = max(0, min(minute, 59))
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+
+        do {
+            try await center.add(request)
+        } catch {
+            // No crash; notification scheduling can fail if disabled by OS settings.
+        }
+    }
+}
+
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show banners even while the app is in the foreground.
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+
+        guard
+            let intentStr = response.notification.request.content.userInfo["auditIntent"] as? String,
+            let intent = AuditNotificationIntent(rawValue: intentStr)
+        else { return }
+
+        // Persist fallback for cold-start: NotificationCenter event can fire
+        // before SwiftUI `onReceive` observers are attached.
+        UserDefaults.standard.set(intent.rawValue, forKey: pendingAuditIntentDefaultsKey)
+
+        NotificationCenter.default.post(
+            name: .auditNotificationTapped,
+            object: nil,
+            userInfo: ["intent": intent]
+        )
+    }
+}
+
 @main struct SnipeMobileApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         CloudSettingsStore.shared.mergeFromCloud()
     }
     @StateObject private var apiClient = SnipeITAPIClient()
     @StateObject private var appSettings = AppSettings()
+    @StateObject private var auditNotificationRouter = AuditNotificationRouter()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @State private var showAPISettings: Bool = false
     @State private var isLocked = false
@@ -37,6 +182,7 @@ class AppSettings: ObservableObject {
     @State private var justAuthenticated = false
     @State private var showPrivacyBlur = false
     @AppStorage("biometricsJustConfirmed") var biometricsJustConfirmed: Bool = false
+    @State private var didRequestReviewThisLaunch = false
 
     var body: some Scene {
         WindowGroup {
@@ -71,6 +217,7 @@ class AppSettings: ObservableObject {
                         }
                     }
                     .environmentObject(appSettings)
+                    .environmentObject(auditNotificationRouter)
                     .preferredColorScheme(
                         appSettings.appTheme == "light" ? .light :
                         appSettings.appTheme == "dark" ? .dark : nil
@@ -96,6 +243,14 @@ class AppSettings: ObservableObject {
                 }
             }
             .onAppear {
+                // Cold boot fallback: if notification tap happened before observers
+                // attached, recover the pending intent from UserDefaults.
+                if let raw = UserDefaults.standard.string(forKey: pendingAuditIntentDefaultsKey),
+                   let intent = AuditNotificationIntent(rawValue: raw) {
+                    auditNotificationRouter.set(intent: intent)
+                    UserDefaults.standard.removeObject(forKey: pendingAuditIntentDefaultsKey)
+                }
+
                 if hasCompletedOnboarding && appSettings.useBiometrics == true && !isLocked && !justAuthenticated {
                     isLocked = true
                     authenticateBiometric()
@@ -106,6 +261,12 @@ class AppSettings: ObservableObject {
                     isLocked = true
                     authenticateBiometric()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .auditNotificationTapped)) { note in
+                guard hasCompletedOnboarding else { return }
+                guard let intent = note.userInfo?["intent"] as? AuditNotificationIntent else { return }
+                UserDefaults.standard.removeObject(forKey: pendingAuditIntentDefaultsKey)
+                auditNotificationRouter.set(intent: intent)
             }
             .onChange(of: appSettings.useBiometrics) {
                 if biometricsJustConfirmed {
@@ -123,8 +284,22 @@ class AppSettings: ObservableObject {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 showPrivacyBlur = false
+                guard hasCompletedOnboarding, !didRequestReviewThisLaunch else { return }
+                didRequestReviewThisLaunch = true
+                requestAppStoreReview()
             }
         }
+    }
+
+    private func requestAppStoreReview() {
+        // iOS 18+: AppStore.requestReview(in:)
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })
+
+        guard let scene else { return }
+
+        AppStore.requestReview(in: scene)
     }
 
     private func authenticateBiometric() {
@@ -157,6 +332,7 @@ class AppSettings: ObservableObject {
 struct MainSplitView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @EnvironmentObject private var appSettings: AppSettings
+    @EnvironmentObject private var auditNotificationRouter: AuditNotificationRouter
     @State private var selectedSection: MainTab = .hardware
     @State private var selectedAsset: Asset?
     @State private var selectedAccessory: Accessory?
@@ -169,6 +345,11 @@ struct MainSplitView: View {
     @State private var scannedAssetId: Int?
     @State private var isRefreshing = false
     @State private var searchText: String = ""
+    @State private var awaitingAuditNavigationResolution = false
+	    @State private var auditNotificationNavResolved = false
+    @State private var auditListFilter: AuditListFilter = .all
+    @State private var hardwareSubtab: HardwareAuditSubtab = .all
+    @State private var showTodayOnlyOverride = false
     @State private var selectedAssetDetailTab: Int = 0
     @State private var selectedAccessoryDetailTab: Int = 0
     @State private var selectedUserDetailTab: Int = 0
@@ -180,6 +361,20 @@ struct MainSplitView: View {
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
+    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = true
+    @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
+    @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
+    @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0
+    private let dueSoonDays: Int = 7
+
+    // Audit completion sheet (iPad list quick action).
+    @State private var showAuditCompletionSheet = false
+    @State private var auditCompletionAsset: Asset?
+    @State private var auditCompletionNextAuditDate: Date = Date()
+    @State private var isSavingAuditCompletion = false
+    @State private var showAuditCompletionErrorAlert = false
+    @State private var auditCompletionErrorMessage = ""
+    @State private var isOverdueExpanded = false
 
     init(apiClient: SnipeITAPIClient) {
         self.apiClient = apiClient
@@ -217,7 +412,57 @@ struct MainSplitView: View {
     var filteredLocations: [Location] {
         if searchText.isEmpty { return apiClient.locations }
         return apiClient.locations.filter {
-            $0.name.lowercased().contains(searchText.lowercased())
+            $0.decodedName.lowercased().contains(searchText.lowercased())
+        }
+    }
+
+    private var auditNow: Date { Date() }
+
+    private var dueTodayAssets: [Asset] {
+        let now = auditNow
+        return AuditDateClassifier.sortByNextAuditDateThenTag(
+            filteredAssets.filter { AuditDateClassifier.isDueToday($0, now: now) }
+        )
+    }
+
+    private var dueSoonAssets: [Asset] {
+        let now = auditNow
+        return AuditDateClassifier.sortByNextAuditDateThenTag(
+            filteredAssets.filter { AuditDateClassifier.isDueSoon($0, now: now, dueSoonDays: dueSoonDays) }
+        )
+    }
+
+    private var overdueAssets: [Asset] {
+        let now = auditNow
+        return AuditDateClassifier.sortByNextAuditDateThenTag(
+            filteredAssets.filter { AuditDateClassifier.isOverdue($0, now: now) }
+        )
+    }
+
+    private func tryResolveAndOpenAuditTarget() {
+        guard !auditNotificationNavResolved else { return }
+
+        // For this notification, switch to the Audit subtab and show full results
+        // (not just the "due today" view).
+        auditListFilter = .all
+        showTodayOnlyOverride = false
+        hardwareSubtab = enableAuditSubtab ? .audit : .all
+        auditNotificationNavResolved = true
+
+        // Ensure we land on the hardware list (not an asset detail).
+        searchText = ""
+        let needsSectionChange = selectedSection != .hardware
+        skipClearSelectionOnSectionChange = needsSectionChange
+        selectedSection = .hardware
+        selectedAssetDetailTab = 0
+        selectedAsset = nil
+
+        // Wait for the `selectedSection`/`assets.count` updates to land, then proceed.
+        DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                awaitingAuditNavigationResolution = false
+                auditNotificationRouter.consume()
+            }
         }
     }
 
@@ -257,10 +502,15 @@ struct MainSplitView: View {
             ipadDetailContent
         }
         .navigationSplitViewStyle(.balanced)
-        .onChange(of: selectedSection) { _, _ in
+        .onChange(of: selectedSection) { _, newSection in
             if skipClearSelectionOnSectionChange {
                 skipClearSelectionOnSectionChange = false
                 return
+            }
+            if newSection != .hardware {
+                showTodayOnlyOverride = false
+                auditListFilter = .all
+                hardwareSubtab = .all
             }
             selectedAsset = nil
             selectedAccessory = nil
@@ -291,7 +541,42 @@ struct MainSplitView: View {
                 .presentationDetents([.large])
         }
         .sheet(isPresented: $showScanner, onDismiss: scannerDismiss) {
-            ZoomableQRScannerView(completion: handleScanResult)
+            ZoomableQRScannerView(
+                completion: handleScanResult,
+                supportedTypes: [.qr, .dataMatrix, .code39, .code128, .ean13, .upce]
+            )
+        }
+        .sheet(isPresented: $showAuditCompletionSheet) {
+            NavigationStack {
+                Form {
+                    Section {
+                        Text(L10n.string("audit_completed_sheet_message"))
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    Section {
+                        DatePicker(
+                            L10n.string("next_audit_date"),
+                            selection: $auditCompletionNextAuditDate,
+                            displayedComponents: .date
+                        )
+                    }
+                }
+                .navigationTitle(L10n.string("audit_completed_sheet_title"))
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(L10n.string("cancel"), role: .cancel) {
+                            showAuditCompletionSheet = false
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(L10n.string("save")) {
+                            Task { await saveAuditCompletionForIpad() }
+                        }
+                        .disabled(isSavingAuditCompletion)
+                    }
+                }
+            }
         }
         .alert(L10n.string("error"), isPresented: $showScanErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {
@@ -302,10 +587,34 @@ struct MainSplitView: View {
                 Text(msg)
             }
         }
+        .alert(L10n.string("error"), isPresented: $showAuditCompletionErrorAlert) {
+            Button(L10n.string("ok"), role: .cancel) {
+                auditCompletionErrorMessage = ""
+            }
+        } message: {
+            Text(auditCompletionErrorMessage)
+        }
+        .onAppear {
+            // Cold boot: `pendingRequest` kan al gezet zijn vóórdat `onChange` afvuurt.
+            if auditNotificationRouter.pendingRequest != nil, !auditNotificationNavResolved {
+                awaitingAuditNavigationResolution = true
+                auditNotificationNavResolved = false
+                tryResolveAndOpenAuditTarget()
+            }
+        }
+        .onChange(of: auditNotificationRouter.pendingRequest?.id) { _, _ in
+            guard auditNotificationRouter.pendingRequest != nil else { return }
+            awaitingAuditNavigationResolution = true
+            auditNotificationNavResolved = false
+            tryResolveAndOpenAuditTarget()
+        }
         .onChange(of: scannedAssetId) { _, new in
             selectScannedAsset(id: new)
         }
         .onChange(of: apiClient.assets.count) { _, _ in
+            if awaitingAuditNavigationResolution {
+                tryResolveAndOpenAuditTarget()
+            }
             selectScannedAsset(id: scannedAssetId)
         }
     }
@@ -333,6 +642,57 @@ struct MainSplitView: View {
         selectedSection = .hardware
         selectedAsset = asset
         selectedAssetDetailTab = 0
+    }
+
+    private func saveAuditCompletionForIpad() async {
+        guard !isSavingAuditCompletion, let assetId = auditCompletionAsset?.id else { return }
+        isSavingAuditCompletion = true
+        defer { isSavingAuditCompletion = false }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let nextAuditStr = formatter.string(from: auditCompletionNextAuditDate)
+
+        let update = SnipeITAPIClient.AssetUpdateRequest(
+            name: nil,
+            asset_tag: nil,
+            serial: nil,
+            model_id: nil,
+            status_id: nil,
+            category_id: nil,
+            manufacturer_id: nil,
+            supplier_id: nil,
+            notes: nil,
+            order_number: nil,
+            location_id: nil,
+            purchase_cost: nil,
+            book_value: nil,
+            custom_fields: nil,
+            purchase_date: nil,
+            next_audit_date: .value(nextAuditStr),
+            expected_checkin: nil,
+            eol_date: nil
+        )
+
+        let ok = await apiClient.updateAsset(assetId: assetId, update: update)
+        if ok {
+            showAuditCompletionSheet = false
+            auditCompletionAsset = nil
+            await apiClient.fetchPrimaryThenBackground()
+
+            if auditNotificationsEnabled {
+                await AuditNotificationManager.shared.updateSchedule(
+                    enabled: true,
+                    hour: auditNotificationHour,
+                    minute: auditNotificationMinute,
+                    assets: apiClient.assets
+                )
+            }
+        } else {
+            auditCompletionErrorMessage = apiClient.lastApiMessage ?? (apiClient.errorMessage ?? L10n.string("error"))
+            showAuditCompletionErrorAlert = true
+        }
     }
 
     private var ipadSidebar: some View {
@@ -600,42 +960,198 @@ struct MainSplitView: View {
         }
     }
 
-    private var ipadAssetList: some View {
-        List {
-            ForEach(filteredAssets) { asset in
-                let isSelected = selectedAsset?.id == asset.id
+    @ViewBuilder
+    private func ipadAssetRow(_ asset: Asset) -> some View {
+        let isSelected = selectedAsset?.id == asset.id
+        let canMarkAuditCompleted = enableAuditSubtab && hardwareSubtab == .audit && (AuditDateClassifier.isDueToday(asset, now: Date()) || AuditDateClassifier.isOverdue(asset, now: Date()))
+
+        Button {
+            selectedAsset = asset
+        } label: {
+            AssetCardView(
+                asset: asset,
+                useExplicitBackground: true,
+                showNextAuditDate: enableAuditSubtab && hardwareSubtab == .audit
+            )
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .foregroundStyle(.primary)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if canMarkAuditCompleted {
                 Button {
-                    selectedAsset = asset
+                    auditCompletionAsset = asset
+                    auditCompletionNextAuditDate = Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date()
+                    showAuditCompletionSheet = true
                 } label: {
-                    AssetCardView(asset: asset, useExplicitBackground: true)
-                        .overlay {
-                            if isSelected {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    Label(L10n.string("audit_completed_action"), systemImage: "checkmark.seal")
+                }
+                .tint(.purple)
+            }
+        }
+    }
+
+    private var ipadAssetList: some View {
+        VStack(spacing: 0) {
+            if enableAuditSubtab {
+                Picker(selection: $hardwareSubtab, label: Text("Hardware")) {
+                    Text(L10n.string("tab_hardware")).tag(HardwareAuditSubtab.all)
+                    Text(L10n.string("audit")).tag(HardwareAuditSubtab.audit)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 2)
+                .padding(.bottom, 0)
+                .onChange(of: hardwareSubtab) { _, newValue in
+                    if newValue == .all {
+                        showTodayOnlyOverride = false
+                        auditListFilter = .all
+                    }
+                }
+            }
+
+            List {
+                // Audit subtab: vandaag + komende audits.
+                if enableAuditSubtab, hardwareSubtab == .audit {
+                    switch auditListFilter {
+                    case .dueToday:
+                        if !dueTodayAssets.isEmpty {
+                            Section(header: Text(L10n.string("audit_due_today_header", dueTodayAssets.count))) {
+                                ForEach(dueTodayAssets) { asset in
+                                    ipadAssetRow(asset)
+                                }
+                            }
+                        } else {
+                            Section {
+                                Text(L10n.string("no_assets"))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 16)
                             }
                         }
+
+                    case .dueSoon:
+                        if !dueSoonAssets.isEmpty {
+                            Section(
+                                header: VStack(alignment: .leading, spacing: 2) {
+                                    Text(L10n.string("audit_due_soon_header", dueSoonAssets.count))
+                                    Text(L10n.string("audit_due_soon_within_days", dueSoonDays))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            ) {
+                                ForEach(dueSoonAssets) { asset in
+                                    ipadAssetRow(asset)
+                                }
+                            }
+                        } else {
+                            Section {
+                                Text(L10n.string("no_assets"))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 16)
+                            }
+                        }
+
+                    case .all:
+                        if !overdueAssets.isEmpty {
+                            Section(
+                                header: Button {
+                                    isOverdueExpanded.toggle()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: isOverdueExpanded ? "chevron.down" : "chevron.right")
+                                            .foregroundStyle(.secondary)
+                                        Text(L10n.string("audit_overdue_header", overdueAssets.count))
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            ) {
+                                if isOverdueExpanded {
+                                    ForEach(overdueAssets) { asset in
+                                        ipadAssetRow(asset)
+                                    }
+                                }
+                            }
+                        }
+                        if !dueTodayAssets.isEmpty {
+                            Section(header: Text(L10n.string("audit_due_today_header", dueTodayAssets.count))) {
+                                ForEach(dueTodayAssets) { asset in
+                                    ipadAssetRow(asset)
+                                }
+                            }
+                        }
+                        if !dueSoonAssets.isEmpty {
+                            Section(
+                                header: VStack(alignment: .leading, spacing: 2) {
+                                    Text(L10n.string("audit_due_soon_header", dueSoonAssets.count))
+                                    Text(L10n.string("audit_due_soon_within_days", dueSoonDays))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            ) {
+                                ForEach(dueSoonAssets) { asset in
+                                    ipadAssetRow(asset)
+                                }
+                            }
+                        }
+                        if dueTodayAssets.isEmpty && dueSoonAssets.isEmpty && overdueAssets.isEmpty {
+                            Section {
+                                Text(L10n.string("no_assets"))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 16)
+                            }
+                        }
+                    }
+                } else {
+                    let assetsToShow = showTodayOnlyOverride ? dueTodayAssets : filteredAssets
+                    if assetsToShow.isEmpty {
+                        Section {
+                            Text(L10n.string("no_assets"))
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 16)
+                        }
+                    } else {
+                        ForEach(assetsToShow) { asset in
+                            ipadAssetRow(asset)
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
             }
-        }
-        .listStyle(.insetGrouped)
-        .listSectionSpacing(.compact)
-        .listSectionSeparator(.hidden)
-        .overlay {
-            if filteredAssets.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
-                ContentUnavailableView(L10n.string("no_hardware"), systemImage: "laptopcomputer")
+            .listStyle(.insetGrouped)
+            .listSectionSpacing(0)
+            .listSectionSeparator(.hidden)
+            .overlay {
+                let isRelevantAssetsEmpty: Bool = {
+                    if enableAuditSubtab && hardwareSubtab == .audit {
+                        switch auditListFilter {
+                        case .dueToday: return dueTodayAssets.isEmpty
+                        case .dueSoon: return dueSoonAssets.isEmpty
+                        case .all: return dueTodayAssets.isEmpty && dueSoonAssets.isEmpty && overdueAssets.isEmpty
+                        }
+                    } else {
+                        return (showTodayOnlyOverride ? dueTodayAssets.isEmpty : filteredAssets.isEmpty)
+                    }
+                }()
+
+                if isRelevantAssetsEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                    ContentUnavailableView(L10n.string("no_hardware"), systemImage: "laptopcomputer")
+                }
             }
-        }
-        .refreshable {
-            if apiClient.isConfigured {
-                isRefreshing = true
-                await apiClient.fetchPrimaryThenBackground()
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                isRefreshing = false
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    await apiClient.fetchPrimaryThenBackground()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
             }
         }
     }
@@ -764,50 +1280,146 @@ struct MainSplitView: View {
         showScanner = false
         switch result {
         case .success(let scanResult):
-            guard let url = URL(string: scanResult.string) else {
-                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
-                showScanErrorAlert = true
-                return
-            }
             apiClient.errorMessage = nil
+            let scannedValue = scanResult.string.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Snipe-IT QR
-            if let id = extractAssetId(from: url) {
-                if apiClient.assets.first(where: { $0.id == id }) != nil {
-                    scannedAssetId = id
-                    selectedSection = .hardware
-                } else if apiClient.assets.isEmpty {
-                    scannedAssetId = id
-                    selectedSection = .hardware
-                    Task { await apiClient.fetchPrimaryThenBackground() }
-                } else {
-                    scannedAssetId = nil
-                    scanErrorMessage = L10n.string("asset_not_found_id", String(id))
-                    showScanErrorAlert = true
-                }
-                return
+            func findAsset(for value: String) -> Asset? {
+                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                guard !normalized.isEmpty else { return nil }
+
+                return apiClient.assets.first(where: { asset in
+                    asset.decodedAssetTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized ||
+                    asset.decodedSerial.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized ||
+                    (asset.altBarcode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "") == normalized
+                })
             }
 
-            // Dell QR. Look up by serial.
-            if enableDellQrScan,
-               let host = url.host, host.lowercased().contains("dell"),
-               let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
-                let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
-                if let asset = apiClient.assets.first(where: {
-                    $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
-                }) {
+            func extractAssetTagFromByTagURL(from url: URL) -> String? {
+                guard url.path.lowercased().contains("/hardware/bytag") else { return nil }
+                guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+                let item = components.queryItems?.first(where: { name in
+                    name.name == "assetTag" || name.name == "asset_tag"
+                })
+                return item?.value
+            }
+
+            @MainActor
+            func openHardwareForScannedValueByTag(_ value: String) async {
+                let asset = await apiClient.fetchHardwareByTag(assetTag: value)
+                if let asset {
+                    // Ensure navigation can find the asset in `apiClient.assets`.
+                    if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
+                        apiClient.assets[idx] = asset
+                    } else {
+                        apiClient.assets.append(asset)
+                    }
                     scannedAssetId = asset.id
                     selectedSection = .hardware
                 } else {
                     scannedAssetId = nil
-                    scanErrorMessage = L10n.string("asset_not_found_serial", serial)
+                    scanErrorMessage = L10n.string("asset_not_found_scanned_value", value)
                     showScanErrorAlert = true
                 }
+            }
+
+            // Try QR handling first when the scanned payload parses as a URL.
+            if let url = URL(string: scannedValue) {
+                // Snipe-IT QR
+                if let id = extractAssetId(from: url) {
+                    if let asset = apiClient.assets.first(where: { $0.id == id }) {
+                        scannedAssetId = asset.id
+                        selectedSection = .hardware
+                    } else if apiClient.assets.isEmpty {
+                        scannedAssetId = id
+                        selectedSection = .hardware
+                        Task { await apiClient.fetchPrimaryThenBackground() }
+                    } else {
+                        // Fallback: treat extracted numeric segment as `asset_tag`.
+                        // Only do this for non-QR scans.
+                        if scanResult.type != .qr {
+                            Task { await openHardwareForScannedValueByTag(String(id)) }
+                        } else {
+                            scannedAssetId = nil
+                            scanErrorMessage = L10n.string("asset_not_found_id", String(id))
+                            showScanErrorAlert = true
+                        }
+                    }
+                    return
+                }
+
+                // Dell QR. Look up by serial.
+                if enableDellQrScan,
+                   let host = url.host, host.lowercased().contains("dell"),
+                   let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
+                    let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
+
+                    if let asset = apiClient.assets.first(where: {
+                        $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
+                    }) {
+                        scannedAssetId = asset.id
+                        selectedSection = .hardware
+                    } else if apiClient.assets.isEmpty {
+                        Task {
+                            await apiClient.fetchPrimaryThenBackground()
+                            await MainActor.run {
+                                if let asset = findAsset(for: normalized) {
+                                    scannedAssetId = asset.id
+                                    selectedSection = .hardware
+                                } else {
+                                    scannedAssetId = nil
+                                    scanErrorMessage = L10n.string("asset_not_found_serial", serial)
+                                    showScanErrorAlert = true
+                                }
+                            }
+                        }
+                    } else {
+                        scannedAssetId = nil
+                        scanErrorMessage = L10n.string("asset_not_found_serial", serial)
+                        showScanErrorAlert = true
+                    }
+                    return
+                }
+
+                // bytag URL: https://.../hardware/bytag?assetTag=XYZ
+                if let assetTag = extractAssetTagFromByTagURL(from: url) {
+                    Task {
+                        let asset = await apiClient.fetchHardwareByTag(assetTag: assetTag)
+                        await MainActor.run {
+                            if let asset {
+                                // Ensure navigation can find the asset in `apiClient.assets`.
+                                if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
+                                    apiClient.assets[idx] = asset
+                                } else {
+                                    apiClient.assets.append(asset)
+                                }
+                                scannedAssetId = asset.id
+                                selectedSection = .hardware
+                            } else {
+                                scannedAssetId = nil
+                                scanErrorMessage = L10n.string("asset_not_found_scanned_value", assetTag)
+                                showScanErrorAlert = true
+                            }
+                        }
+                    }
+                    return
+                }
+
+                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
+                showScanErrorAlert = true
                 return
             }
 
-            scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
-            showScanErrorAlert = true
+            // 1D barcode: match raw value against assetTag/serial/altBarcode.
+            if let asset = findAsset(for: scannedValue) {
+                scannedAssetId = asset.id
+                selectedSection = .hardware
+                return
+            } else {
+                Task {
+                    await openHardwareForScannedValueByTag(scannedValue)
+                }
+                return
+            }
         case .failure(let error):
             scanErrorMessage = String(format: L10n.string("scan_failed"), error.localizedDescription)
             showScanErrorAlert = true

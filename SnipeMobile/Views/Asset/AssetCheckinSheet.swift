@@ -14,7 +14,7 @@ struct AssetCheckinSheet: View {
     @State private var selectedLocationId: Int? = nil
 
     var sortedLocations: [Location] {
-        apiClient.locations.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        apiClient.locations.sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
     }
 
     var body: some View {
@@ -35,7 +35,7 @@ struct AssetCheckinSheet: View {
                         .lineLimit(3...6)
                     AdaptivePickerRow(
                         title: L10n.string("location"),
-                        items: sortedLocations.map { (value: $0.id, label: $0.name) },
+                        items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                         selection: Binding(
                             get: { selectedLocationId ?? -1 },
                             set: { selectedLocationId = $0 == -1 ? nil : $0 }

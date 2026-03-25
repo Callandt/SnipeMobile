@@ -23,6 +23,15 @@ struct ZoomableQRScannerView: UIViewControllerRepresentable {
     typealias ScanCompletion = (Result<ScanResult, ScanError>) -> Void
 
     let completion: ScanCompletion
+    let supportedTypes: [AVMetadataObject.ObjectType]
+
+    init(
+        completion: @escaping ScanCompletion,
+        supportedTypes: [AVMetadataObject.ObjectType] = [.qr]
+    ) {
+        self.completion = completion
+        self.supportedTypes = supportedTypes
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(completion: completion)
@@ -31,6 +40,7 @@ struct ZoomableQRScannerView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> ScannerViewController {
         let controller = ScannerViewController()
         controller.completion = context.coordinator.handle(result:)
+        controller.supportedTypes = supportedTypes
         return controller
     }
 
@@ -53,6 +63,7 @@ struct ZoomableQRScannerView: UIViewControllerRepresentable {
 
 final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var completion: ((Result<ScanResult, ScanError>) -> Void)?
+    var supportedTypes: [AVMetadataObject.ObjectType] = [.qr]
 
     private let session = AVCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer!
@@ -107,11 +118,27 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
             session.addOutput(metadataOutput)
             metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
 
-            if metadataOutput.availableMetadataObjectTypes.contains(.qr) {
-                metadataOutput.metadataObjectTypes = [.qr]
-            } else {
+            let availableTypes = metadataOutput.availableMetadataObjectTypes
+            let desiredTypes: [AVMetadataObject.ObjectType] = self.supportedTypes.isEmpty
+                ? [.qr]
+                : self.supportedTypes
+            let filteredSupportedTypes = desiredTypes.filter { availableTypes.contains($0) }
+
+            #if DEBUG
+            print("[Scanner] available types: \(availableTypes)")
+            print("[Scanner] desired types: \(desiredTypes)")
+            print("[Scanner] filtered types: \(filteredSupportedTypes)")
+            #endif
+
+            // If none of the desired types are available, fall back to *all* metadata types this device supports.
+            // This prevents "not scanning" issues caused by overly strict symbology filtering.
+            let typesToUse = !filteredSupportedTypes.isEmpty ? filteredSupportedTypes : availableTypes
+            guard !typesToUse.isEmpty else {
                 completion?(.failure(.badOutput))
+                return
             }
+
+            metadataOutput.metadataObjectTypes = typesToUse
         } else {
             completion?(.failure(.badOutput))
             return

@@ -11,7 +11,7 @@ struct LocationCardView: View {
                 .font(.title2)
                 .foregroundStyle(.tertiary)
                 .frame(width: 36, height: 36)
-            Text(location.name)
+            Text(location.decodedName)
                 .font(.headline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)
