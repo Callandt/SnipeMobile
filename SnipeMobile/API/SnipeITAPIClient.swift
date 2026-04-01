@@ -548,8 +548,8 @@ class SnipeITAPIClient: ObservableObject {
         let notes: String?
         let order_number: String?
         let location_id: Int?
-        let purchase_cost: String?
-        let book_value: String?
+        let purchase_cost: NullableString?
+        let book_value: NullableString?
         let custom_fields: [String: CustomFieldValue]?
         let purchase_date: String?
         let next_audit_date: NullableString?
@@ -665,7 +665,16 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let data = try JSONEncoder().encode(body)
+            let encoded = try JSONEncoder().encode(body)
+            var bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
+            if let customFields = body.custom_fields {
+                // Compatibiliteit: sommige Snipe-IT versies verwachten custom velden
+                // als top-level _snipeit_* keys.
+                for (dbKey, value) in customFields {
+                    bodyObject[dbKey] = value
+                }
+            }
+            let data = try JSONSerialization.data(withJSONObject: bodyObject)
             request.httpBody = data
             #if DEBUG
             print("createAsset: POST \(url.absoluteString)")
@@ -1068,12 +1077,20 @@ class SnipeITAPIClient: ObservableObject {
         let name: String
         let type: String?
         let field_values_array: [String]?
+        let db_column_name: String?
+        let db_column: String?
+        let db_field: String?
+        let field: String?
         
         enum CodingKeys: String, CodingKey {
             case id
             case name
             case type
             case field_values_array
+            case db_column_name
+            case db_column
+            case db_field
+            case field
         }
     }
 
@@ -1226,7 +1243,16 @@ class SnipeITAPIClient: ObservableObject {
             fs.modelIds.contains(modelId)
         }) else { return [] }
         return fieldset.fields.rows.map { f in
-            FieldDefinition(id: f.id, name: f.name, type: f.type, field_values_array: f.field_values_array)
+            FieldDefinition(
+                id: f.id,
+                name: f.name,
+                type: f.type,
+                field_values_array: f.field_values_array,
+                db_column_name: nil,
+                db_column: nil,
+                db_field: nil,
+                field: nil
+            )
         }
     }
 

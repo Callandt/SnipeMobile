@@ -341,6 +341,14 @@ struct AddAssetSheet: View {
         let nameToSend = nameValue
         let purchaseDateStr = hasPurchaseDate ? formatter.string(from: purchaseDate) : nil
         let eolDateStr = hasEolDate ? formatter.string(from: eolDate) : nil
+        let mappedCustomFields: [String: String] = Dictionary(
+            uniqueKeysWithValues: customFields.compactMap { key, rawValue in
+                let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { return nil }
+                let apiKey = resolveCustomFieldAPIKey(forDisplayName: key)
+                return (apiKey, value)
+            }
+        )
         let req = SnipeITAPIClient.AssetCreateRequest(
             name: nameToSend,
             asset_tag: assetTag.trimmingCharacters(in: .whitespaces),
@@ -352,7 +360,7 @@ struct AddAssetSheet: View {
             order_number: orderNumber.isEmpty ? nil : orderNumber.trimmingCharacters(in: .whitespaces),
             purchase_cost: NumberFormatHelpers.normalizeDecimalForAPI(purchaseCost.trimmingCharacters(in: .whitespaces)),
             book_value: nil,
-            custom_fields: customFields.isEmpty ? nil : customFields,
+            custom_fields: mappedCustomFields.isEmpty ? nil : mappedCustomFields,
             purchase_date: purchaseDateStr,
             next_audit_date: nil,
             expected_checkin: nil,
@@ -383,6 +391,23 @@ struct AddAssetSheet: View {
                 }
             }
         }
+    }
+
+    private func resolveCustomFieldAPIKey(forDisplayName displayName: String) -> String {
+        guard let def = displayedFieldDefinitions.first(where: { $0.name == displayName }) else {
+            return displayName
+        }
+        if let key = def.field, !key.isEmpty { return key }
+        if let key = def.db_field, !key.isEmpty { return key }
+        if let key = def.db_column_name, !key.isEmpty { return key }
+        if let key = def.db_column, !key.isEmpty { return key }
+        let folded = def.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current).lowercased()
+        let slugScalars = folded.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "_" }
+        let slugRaw = String(slugScalars)
+        let slug = slugRaw
+            .replacingOccurrences(of: "_+", with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        return "_snipeit_\(slug)_\(def.id)"
     }
 
     private func handleDellScanResult(_ result: Result<ScanResult, ScanError>) {

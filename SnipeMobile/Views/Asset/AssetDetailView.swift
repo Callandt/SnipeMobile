@@ -274,7 +274,8 @@ struct AssetDetailView: View {
         editNotes = currentAsset.notes ?? ""
         editOrderNumber = currentAsset.orderNumber ?? ""
         editPurchaseCost = currentAsset.purchaseCost ?? ""
-        editBookValue = currentAsset.bookValue ?? ""
+        let hasPurchaseCost = (currentAsset.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+        editBookValue = hasPurchaseCost ? (currentAsset.bookValue ?? "") : ""
         editCustomFields = [:]
         if let customFields = currentAsset.customFields {
             for (key, field) in customFields {
@@ -483,7 +484,8 @@ struct AssetDetailView: View {
                         }
 
                         // Value Info if any
-                        let hasValueInfo = (currentAsset.purchaseCost?.isEmpty == false) || (currentAsset.bookValue?.isEmpty == false) || (currentAsset.orderNumber?.isEmpty == false)
+                        let hasPurchaseCost = (currentAsset.purchaseCost?.isEmpty == false)
+                        let hasValueInfo = hasPurchaseCost || (currentAsset.orderNumber?.isEmpty == false)
                         if hasValueInfo {
                             Text(L10n.string("value_info"))
                                 .font(.headline)
@@ -493,7 +495,7 @@ struct AssetDetailView: View {
                                 if let purchaseCost = currentAsset.purchaseCost, !purchaseCost.isEmpty {
                                     copyableDetailRow(label: L10n.string("purchase_cost"), value: purchaseCost, copyValue: normalizeDecimalForCopy(purchaseCost))
                                 }
-                                if let bookValue = currentAsset.bookValue, !bookValue.isEmpty {
+                                if hasPurchaseCost, let bookValue = currentAsset.bookValue, !bookValue.isEmpty {
                                     copyableDetailRow(label: L10n.string("book_value"), value: bookValue, copyValue: normalizeDecimalForCopy(bookValue))
                                 }
                                 if let orderNumber = currentAsset.orderNumber, !orderNumber.isEmpty {

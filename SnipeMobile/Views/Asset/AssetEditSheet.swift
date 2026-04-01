@@ -101,6 +101,18 @@ struct AssetEditSheet: View {
                                     let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
                                     return t.isEmpty ? nil : t
                                 }
+                                let normalizedPurchaseCost = NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost)
+                                let normalizedBookValue = NumberFormatHelpers.normalizeDecimalForAPI(editBookValue)
+                                let originalBookValue = NumberFormatHelpers.normalizeDecimalForAPI(asset.bookValue)
+                                let purchaseCostRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                                    normalizedPurchaseCost.map { .value($0) } ?? .null
+                                // Als aankoopprijs leeg is en boekwaarde niet gewijzigd werd in de UI,
+                                // wis boekwaarde expliciet zodat "legacy" restwaarden niet blijven hangen.
+                                let shouldClearUnchangedBookValue = normalizedPurchaseCost == nil && normalizedBookValue == originalBookValue
+                                let bookValueRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                                    shouldClearUnchangedBookValue
+                                    ? .null
+                                    : (normalizedBookValue.map { .value($0) } ?? .null)
                                 // Snipe-IT verwacht voor custom_fields meestal de interne veldsleutel
                                 // (bijv. "_snipeit_xxx_1"), niet altijd de zichtbare labelnaam.
                                 let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
@@ -110,7 +122,7 @@ struct AssetEditSheet: View {
                                     }
                                 )
                                 let update = SnipeITAPIClient.AssetUpdateRequest(
-                                    name: trim(editName) ?? asset.name,
+                                    name: trim(editName),
                                     asset_tag: trim(editAssetTag) ?? asset.assetTag,
                                     serial: trim(editSerial) ?? "",
                                     model_id: selectedModelId,
@@ -121,8 +133,8 @@ struct AssetEditSheet: View {
                                     notes: trim(editNotes) ?? "",
                                     order_number: trim(editOrderNumber) ?? "",
                                     location_id: asset.location?.id,
-                                    purchase_cost: NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost) ?? "",
-                                    book_value: NumberFormatHelpers.normalizeDecimalForAPI(editBookValue) ?? "",
+                                    purchase_cost: purchaseCostRequest,
+                                    book_value: bookValueRequest,
                                     custom_fields: customFieldsPayload,
                                     purchase_date: purchaseDateString,
                                     next_audit_date: nextAuditDateRequest,
