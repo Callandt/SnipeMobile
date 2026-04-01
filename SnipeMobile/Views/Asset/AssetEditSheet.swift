@@ -101,6 +101,14 @@ struct AssetEditSheet: View {
                                     let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
                                     return t.isEmpty ? nil : t
                                 }
+                                // Snipe-IT verwacht voor custom_fields meestal de interne veldsleutel
+                                // (bijv. "_snipeit_xxx_1"), niet altijd de zichtbare labelnaam.
+                                let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
+                                    uniqueKeysWithValues: editCustomFields.map { key, value in
+                                        let apiKey = asset.customFields?[key]?.field ?? key
+                                        return (apiKey, .init(value: value))
+                                    }
+                                )
                                 let update = SnipeITAPIClient.AssetUpdateRequest(
                                     name: trim(editName) ?? asset.name,
                                     asset_tag: trim(editAssetTag) ?? asset.assetTag,
@@ -115,7 +123,7 @@ struct AssetEditSheet: View {
                                     location_id: asset.location?.id,
                                     purchase_cost: NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost) ?? "",
                                     book_value: NumberFormatHelpers.normalizeDecimalForAPI(editBookValue) ?? "",
-                                    custom_fields: editCustomFields,
+                                    custom_fields: customFieldsPayload,
                                     purchase_date: purchaseDateString,
                                     next_audit_date: nextAuditDateRequest,
                                     expected_checkin: expectedCheckinString,
@@ -194,7 +202,7 @@ struct AssetEditSheet: View {
                         title: "Supplier",
                         items: supplierPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedSupplierId,
-                        emptyOption: nil
+                        emptyOption: (0, "—")
                     )
                 }
             }
@@ -209,7 +217,7 @@ struct AssetEditSheet: View {
                         title: "Company",
                         items: companyPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedCompanyId,
-                        emptyOption: nil
+                        emptyOption: (0, "—")
                     )
                 }
             }
@@ -334,7 +342,7 @@ struct AssetEditSheet: View {
                                 get: { editCustomFields[key] ?? "" },
                                 set: { editCustomFields[key] = $0 }
                             ),
-                            emptyOption: nil
+                            emptyOption: ("", "—")
                         )
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
