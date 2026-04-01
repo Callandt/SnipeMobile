@@ -516,6 +516,10 @@ class SnipeITAPIClient: ObservableObject {
 
     // MARK: - Asset Update
     struct AssetUpdateRequest: Encodable {
+        struct CustomFieldValue: Encodable {
+            let value: String
+        }
+
         /// Codable wrapper to encode an explicit JSON `null`.
         /// When `String?` is `nil`, the key is typically omitted, so the server keeps the old value.
         enum NullableString: Encodable {
@@ -546,7 +550,7 @@ class SnipeITAPIClient: ObservableObject {
         let location_id: Int?
         let purchase_cost: String?
         let book_value: String?
-        let custom_fields: [String: String]?
+        let custom_fields: [String: CustomFieldValue]?
         let purchase_date: String?
         let next_audit_date: NullableString?
         let expected_checkin: String?
@@ -997,7 +1001,16 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
-            let body = try JSONEncoder().encode(update)
+            let encodedBody = try JSONEncoder().encode(update)
+            var bodyObject = (try JSONSerialization.jsonObject(with: encodedBody) as? [String: Any]) ?? [:]
+            if let customFields = update.custom_fields {
+                // Compatibiliteit: sommige Snipe-IT versies verwachten custom velden als
+                // top-level _snipeit_* keys, naast/ipv custom_fields.
+                for (dbKey, wrappedValue) in customFields {
+                    bodyObject[dbKey] = wrappedValue.value
+                }
+            }
+            let body = try JSONSerialization.data(withJSONObject: bodyObject)
             request.httpBody = body
             #if DEBUG
             if let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {

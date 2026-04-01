@@ -18,6 +18,64 @@
             endingLineNumber = "44"
             landmarkName = "AssetEditSheet"
             landmarkType = "14">
+            <Locations>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - 724aa15b824215a9"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.showWarrantyExpires.getter : Swift.Bool"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "44"
+                  endingLineNumber = "44">
+               </Location>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - d8ec5826222d95"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.showWarrantyExpires.setter : Swift.Bool"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "44"
+                  endingLineNumber = "44">
+               </Location>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - cc0b9748a43d525e"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.showWarrantyExpires.modify : Swift.Bool"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "44"
+                  endingLineNumber = "44">
+               </Location>
+               <Location
+                  uuid = "C5231FF7-D57C-409A-ABB9-F478B537DFB4 - fc4c3b96c963bf01"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SnipeMobile.AssetEditSheet.$showWarrantyExpires.getter : SwiftUI.Binding&lt;Swift.Bool&gt;"
+                  moduleName = "SnipeMobile.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/callandt/Xcode/SnipeMobile/SnipeMobile/Views/Asset/AssetEditSheet.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "44"
+                  endingLineNumber = "44">
+               </Location>
+            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>
