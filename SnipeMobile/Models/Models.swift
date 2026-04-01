@@ -143,7 +143,7 @@ extension Asset {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let id = try container.decode(Int.self, forKey: .id)
-        let name = try container.decode(String.self, forKey: .name)
+        let name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? ""
         let assetTag = try container.decode(String.self, forKey: .assetTag)
         let serial = try? container.decodeIfPresent(String.self, forKey: .serial)
         let model = try? container.decodeIfPresent(Model.self, forKey: .model)
