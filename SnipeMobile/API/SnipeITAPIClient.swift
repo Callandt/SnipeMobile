@@ -402,6 +402,9 @@ class SnipeITAPIClient: ObservableObject {
                     ?? json?["error"] as? String
                     ?? (httpResponse.statusCode == 200 ? "Check-out successful!" : "Check-out failed.")
                 await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200 {
+                    await mergeAssetFromResponseJSON(json)
+                }
                 return httpResponse.statusCode == 200
             }
             return false
@@ -1292,6 +1295,9 @@ class SnipeITAPIClient: ObservableObject {
                     ?? json?["error"] as? String
                     ?? (httpResponse.statusCode == 200 ? "Check-in successful!" : "Check-in failed.")
                 await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200 {
+                    await mergeAssetFromResponseJSON(json)
+                }
                 return httpResponse.statusCode == 200
             }
             return false
@@ -1326,6 +1332,35 @@ class SnipeITAPIClient: ObservableObject {
                 self.lastApiMessage = "Error checking out accessory: \(error.localizedDescription)"
             }
             return false
+        }
+    }
+
+    private func mergeAssetFromResponseJSON(_ json: [String: Any]?) async {
+        guard let json else { return }
+
+        func decodeAsset(from object: Any) -> Asset? {
+            guard JSONSerialization.isValidJSONObject(object),
+                  let data = try? JSONSerialization.data(withJSONObject: object) else {
+                return nil
+            }
+            return try? JSONDecoder().decode(Asset.self, from: data)
+        }
+
+        let candidates: [Any?] = [
+            json["payload"],
+            (json["payload"] as? [String: Any])?["asset"]
+        ]
+
+        for candidate in candidates {
+            guard let candidate else { continue }
+            if let updatedAsset = decodeAsset(from: candidate) {
+                if let idx = assets.firstIndex(where: { $0.id == updatedAsset.id }) {
+                    assets[idx] = updatedAsset
+                } else {
+                    assets.insert(updatedAsset, at: 0)
+                }
+                return
+            }
         }
     }
 
