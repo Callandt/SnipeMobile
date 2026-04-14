@@ -70,6 +70,77 @@ struct AssetDetailView: View {
         return apiClient.locations.first { $0.id == id }
     }
 
+    private var computedWarrantyExpires: String? {
+        guard
+            let purchaseDateString = currentAsset.purchaseDate?.date,
+            let warrantyMonthsRaw = currentAsset.warrantyMonths,
+            let warrantyMonths = Int(warrantyMonthsRaw.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()),
+            warrantyMonths > 0
+        else {
+            return nil
+        }
+
+        let inputFormatter = DateFormatter()
+        inputFormatter.dateFormat = "yyyy-MM-dd"
+        inputFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let purchaseDate = inputFormatter.date(from: purchaseDateString) else { return nil }
+
+        guard let expiresDate = Calendar.current.date(byAdding: .month, value: warrantyMonths, to: purchaseDate) else {
+            return nil
+        }
+
+        let outputFormatter = DateFormatter()
+        outputFormatter.dateStyle = .medium
+        outputFormatter.timeStyle = .none
+        return outputFormatter.string(from: expiresDate)
+    }
+
+    private func displayDate(_ dateInfo: DateInfo?) -> String? {
+        guard let dateInfo = dateInfo else { return nil }
+        let sourceValue = (dateInfo.date?.isEmpty == false ? dateInfo.date : dateInfo.formatted) ?? ""
+        guard !sourceValue.isEmpty else { return nil }
+
+        let dateFormats = [
+            "yyyy-MM-dd",
+            "yyyy-MM-dd HH:mm",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+            "yyyy-MM-dd'T'HH:mm:ssZ"
+        ]
+
+        let inputFormatter = DateFormatter()
+        inputFormatter.locale = Locale(identifier: "en_US_POSIX")
+        inputFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+
+        var parsedDate: Date?
+        var includesTime = false
+        for format in dateFormats {
+            inputFormatter.dateFormat = format
+            if let date = inputFormatter.date(from: sourceValue) {
+                parsedDate = date
+                includesTime = format.contains("H")
+                break
+            }
+        }
+
+        guard let parsedDate = parsedDate else {
+            return dateInfo.formatted ?? sourceValue
+        }
+
+        let outputFormatter = DateFormatter()
+        outputFormatter.dateStyle = .medium
+        outputFormatter.timeStyle = .none
+        let datePart = outputFormatter.string(from: parsedDate)
+
+        guard includesTime else { return datePart }
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateStyle = .none
+        timeFormatter.timeStyle = .short
+        let timePart = timeFormatter.string(from: parsedDate)
+        return "\(datePart) \(L10n.string("date_time_connector")) \(timePart)"
+    }
+
     private var editSheet: some View {
         AssetEditSheet(
             apiClient: apiClient,
@@ -368,6 +439,9 @@ struct AssetDetailView: View {
                             if !currentAsset.decodedManufacturerName.isEmpty {
                                 copyableDetailRow(label: L10n.string("manufacturer"), value: currentAsset.decodedManufacturerName)
                             }
+                            if !currentAsset.decodedSupplierName.isEmpty {
+                                copyableDetailRow(label: L10n.string("supplier_optional"), value: currentAsset.decodedSupplierName)
+                            }
                             if let statusMeta = currentAsset.statusLabel.statusMeta, !statusMeta.isEmpty {
                                 copyableDetailRow(label: L10n.string("status"), value: L10n.statusLabel(statusMeta))
                             }
@@ -447,6 +521,7 @@ struct AssetDetailView: View {
                             (currentAsset.nextAuditDate?.formatted?.isEmpty == false) ||
                             (currentAsset.expectedCheckin?.formatted?.isEmpty == false) ||
                             (currentAsset.assetEolDate?.formatted?.isEmpty == false) ||
+                            (computedWarrantyExpires?.isEmpty == false) ||
                             (currentAsset.lastAuditDate?.formatted?.isEmpty == false) ||
                             (currentAsset.lastCheckout?.formatted?.isEmpty == false) ||
                             (currentAsset.lastCheckin?.formatted?.isEmpty == false)
@@ -456,7 +531,7 @@ struct AssetDetailView: View {
                                 .foregroundColor(.primary)
                                 .padding(.top, 5)
                             VStack(spacing: 10) {
-                                if let v = currentAsset.purchaseDate?.formatted, !v.isEmpty {
+                                if let v = displayDate(currentAsset.purchaseDate), !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("purchase_date"), value: v)
                                 }
                                 if let v = currentAsset.nextAuditDate?.formatted, !v.isEmpty {
@@ -465,13 +540,16 @@ struct AssetDetailView: View {
                                 if let v = currentAsset.expectedCheckin?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("expected_checkin"), value: v)
                                 }
-                                if let v = currentAsset.assetEolDate?.formatted, !v.isEmpty {
+                                if let v = computedWarrantyExpires, !v.isEmpty {
+                                    copyableDetailRow(label: L10n.string("warranty_expires"), value: v)
+                                }
+                                if let v = displayDate(currentAsset.assetEolDate), !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("eol_date"), value: v)
                                 }
                                 if let v = currentAsset.lastAuditDate?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("last_audit_date"), value: v)
                                 }
-                                if let v = currentAsset.lastCheckout?.formatted, !v.isEmpty {
+                                if let v = displayDate(currentAsset.lastCheckout), !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("last_checkout"), value: v)
                                 }
                                 if let v = currentAsset.lastCheckin?.formatted, !v.isEmpty {
@@ -616,7 +694,7 @@ struct AssetDetailView: View {
                 }
             }
             if !apiClient.assets.isEmpty {
-                Picker("Supplier", selection: Binding(
+                Picker(L10n.string("supplier_optional"), selection: Binding(
                     get: { currentAsset.supplier?.id ?? 0 },
                     set: { _ in /* supplier change not yet implemented */ }
                 )) {
@@ -628,7 +706,7 @@ struct AssetDetailView: View {
                 }
             }
             if !apiClient.assets.isEmpty {
-                Picker("Company", selection: Binding(
+                Picker(L10n.string("company_optional"), selection: Binding(
                     get: { currentAsset.company?.id ?? 0 },
                     set: { _ in /* company change not yet implemented */ }
                 )) {

@@ -672,7 +672,8 @@ struct MainSplitView: View {
             purchase_date: nil,
             next_audit_date: .value(nextAuditStr),
             expected_checkin: nil,
-            eol_date: nil
+            eol_date: nil,
+            warranty_months: nil
         )
 
         let ok = await apiClient.updateAsset(assetId: assetId, update: update)

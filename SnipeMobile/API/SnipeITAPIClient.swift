@@ -555,6 +555,7 @@ class SnipeITAPIClient: ObservableObject {
         let next_audit_date: NullableString?
         let expected_checkin: String?
         let eol_date: String?
+        let warranty_months: NullableString?
     }
 
     // MARK: - Models

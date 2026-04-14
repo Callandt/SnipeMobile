@@ -101,6 +101,10 @@ struct AssetEditSheet: View {
                                     let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
                                     return t.isEmpty ? nil : t
                                 }
+                                let warrantyMonthsRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? = {
+                                    let digitsOnly = editWarrantyMonths.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                                    return digitsOnly.isEmpty ? .null : .value(digitsOnly)
+                                }()
                                 let normalizedPurchaseCost = NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost)
                                 let normalizedBookValue = NumberFormatHelpers.normalizeDecimalForAPI(editBookValue)
                                 let originalBookValue = NumberFormatHelpers.normalizeDecimalForAPI(asset.bookValue)
@@ -139,7 +143,8 @@ struct AssetEditSheet: View {
                                     purchase_date: purchaseDateString,
                                     next_audit_date: nextAuditDateRequest,
                                     expected_checkin: expectedCheckinString,
-                                    eol_date: eolDateString
+                                    eol_date: eolDateString,
+                                    warranty_months: warrantyMonthsRequest
                                 )
                                 let success = await apiClient.updateAsset(assetId: asset.id, update: update)
                                 if success {
@@ -211,7 +216,7 @@ struct AssetEditSheet: View {
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !supplierPairs.isEmpty {
                     AdaptivePickerRow(
-                        title: "Supplier",
+                        title: L10n.string("supplier_optional"),
                         items: supplierPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedSupplierId,
                         emptyOption: (0, "—")
@@ -226,7 +231,7 @@ struct AssetEditSheet: View {
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !companyPairs.isEmpty {
                     AdaptivePickerRow(
-                        title: "Company",
+                        title: L10n.string("company_optional"),
                         items: companyPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedCompanyId,
                         emptyOption: (0, "—")
