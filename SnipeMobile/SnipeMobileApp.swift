@@ -183,6 +183,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     @State private var showPrivacyBlur = false
     @AppStorage("biometricsJustConfirmed") var biometricsJustConfirmed: Bool = false
     @State private var didRequestReviewThisLaunch = false
+    @State private var didCountLaunchThisSession = false
+    @AppStorage("reviewPromptLaunchCount") private var reviewPromptLaunchCount: Int = 0
+    @AppStorage("reviewPromptLastRequestedAt") private var reviewPromptLastRequestedAt: Double = 0
+    @AppStorage("reviewPromptLastRequestedVersion") private var reviewPromptLastRequestedVersion: String = ""
 
     var body: some Scene {
         WindowGroup {
@@ -255,6 +259,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                     isLocked = true
                     authenticateBiometric()
                 }
+
+                // Count app launches once per process, after onboarding completion.
+                if hasCompletedOnboarding && !didCountLaunchThisSession {
+                    reviewPromptLaunchCount += 1
+                    didCountLaunchThisSession = true
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 if hasCompletedOnboarding && appSettings.useBiometrics == true && !isLocked && !justAuthenticated {
@@ -285,10 +295,32 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 showPrivacyBlur = false
                 guard hasCompletedOnboarding, !didRequestReviewThisLaunch else { return }
-                didRequestReviewThisLaunch = true
-                requestAppStoreReview()
+                maybeRequestAppStoreReviewIfEligible()
             }
         }
+    }
+
+    private var currentAppVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    }
+
+    private func maybeRequestAppStoreReviewIfEligible() {
+        let minimumLaunches = 12
+        let cooldownDays = 180
+
+        guard reviewPromptLaunchCount >= minimumLaunches else { return }
+        guard reviewPromptLastRequestedVersion != currentAppVersion else { return }
+
+        if reviewPromptLastRequestedAt > 0 {
+            let lastPromptDate = Date(timeIntervalSince1970: reviewPromptLastRequestedAt)
+            let daysSinceLastPrompt = Calendar.current.dateComponents([.day], from: lastPromptDate, to: Date()).day ?? 0
+            guard daysSinceLastPrompt >= cooldownDays else { return }
+        }
+
+        didRequestReviewThisLaunch = true
+        reviewPromptLastRequestedAt = Date().timeIntervalSince1970
+        reviewPromptLastRequestedVersion = currentAppVersion
+        requestAppStoreReview()
     }
 
     private func requestAppStoreReview() {
