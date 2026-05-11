@@ -309,6 +309,7 @@ struct User: Identifiable, Codable, Hashable {
     let name: String
     let first_name: String
     let email: String?
+    let image: String?
     let location: Location?
     let employeeNumber: String?
     let jobtitle: String?
@@ -320,11 +321,23 @@ struct User: Identifiable, Codable, Hashable {
     let decodedEmployeeNumber: String
     let decodedJobtitle: String
 
-    init(id: Int, name: String, first_name: String, email: String? = nil, location: Location? = nil, employeeNumber: String? = nil, jobtitle: String? = nil) {
+    private static func normalizeUserImage(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let lower = trimmed.lowercased()
+        if lower.hasSuffix("/uploads/default.png") || lower.hasSuffix("/uploads/default.jpg") {
+            return nil
+        }
+        return trimmed
+    }
+
+    init(id: Int, name: String, first_name: String, email: String? = nil, image: String? = nil, location: Location? = nil, employeeNumber: String? = nil, jobtitle: String? = nil) {
         self.id = id
         self.name = name
         self.first_name = first_name
         self.email = email
+        self.image = Self.normalizeUserImage(image)
         self.location = location
         self.employeeNumber = employeeNumber
         self.jobtitle = jobtitle
@@ -338,7 +351,7 @@ struct User: Identifiable, Codable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, first_name, email, location, jobtitle
+        case id, name, first_name, email, image, avatar, location, jobtitle
         case employeeNumber = "employee_num"
     }
     
@@ -348,11 +361,25 @@ struct User: Identifiable, Codable, Hashable {
         let name = try container.decode(String.self, forKey: .name)
         let first_name = try container.decode(String.self, forKey: .first_name)
         let email = try? container.decodeIfPresent(String.self, forKey: .email)
+        let image = (try? container.decodeIfPresent(String.self, forKey: .image))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .avatar))
         let location = try? container.decodeIfPresent(Location.self, forKey: .location)
         let employeeNumber = try? container.decodeIfPresent(String.self, forKey: .employeeNumber)
         let jobtitle = try? container.decodeIfPresent(String.self, forKey: .jobtitle)
 
-        self.init(id: id, name: name, first_name: first_name, email: email, location: location, employeeNumber: employeeNumber, jobtitle: jobtitle)
+        self.init(id: id, name: name, first_name: first_name, email: email, image: image, location: location, employeeNumber: employeeNumber, jobtitle: jobtitle)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(first_name, forKey: .first_name)
+        try container.encodeIfPresent(email, forKey: .email)
+        try container.encodeIfPresent(image, forKey: .image)
+        try container.encodeIfPresent(location, forKey: .location)
+        try container.encodeIfPresent(employeeNumber, forKey: .employeeNumber)
+        try container.encodeIfPresent(jobtitle, forKey: .jobtitle)
     }
 
     static func == (lhs: User, rhs: User) -> Bool {
@@ -389,6 +416,7 @@ struct Accessory: Identifiable, Codable, Hashable {
     let purchaseCost: String?
     let purchaseDate: String?
     let modelNumber: String?
+    let image: String?
 
     let decodedName: String
     let decodedAssetTag: String
@@ -416,7 +444,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         orderNumber: String? = nil,
         purchaseCost: String? = nil,
         purchaseDate: String? = nil,
-        modelNumber: String? = nil
+        modelNumber: String? = nil,
+        image: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -436,6 +465,7 @@ struct Accessory: Identifiable, Codable, Hashable {
         self.purchaseCost = purchaseCost
         self.purchaseDate = purchaseDate
         self.modelNumber = modelNumber
+        self.image = image
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedAssetTag = HTMLDecoder.decode(assetTag)
         self.decodedStatusLabelName = HTMLDecoder.decode(statusLabel?.name ?? "Unknown")
@@ -462,6 +492,7 @@ struct Accessory: Identifiable, Codable, Hashable {
         case purchaseCost = "purchase_cost"
         case purchaseDate = "purchase_date"
         case modelNumber = "model_number"
+        case image
     }
 
     static func == (lhs: Accessory, rhs: Accessory) -> Bool {
@@ -494,6 +525,7 @@ extension Accessory {
         let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
         let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
         let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
+        let image = try? container.decodeIfPresent(String.self, forKey: .image)
 
         self.init(
             id: id,
@@ -513,7 +545,8 @@ extension Accessory {
             orderNumber: orderNumber,
             purchaseCost: purchaseCost,
             purchaseDate: purchaseDate,
-            modelNumber: modelNumber
+            modelNumber: modelNumber,
+            image: image
         )
     }
 }

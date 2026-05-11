@@ -17,10 +17,26 @@ struct AccessoryDetailView: View {
     @State private var showEditSheet: Bool = false
     @State private var checkinTarget: SnipeITAPIClient.AccessoryCheckedOutRow? = nil
     @State private var checkinResult: String? = nil
+    @State private var detailImageURL: String? = nil
 
     /// From apiClient or passed in.
     private var currentAccessory: Accessory {
         apiClient.accessories.first { $0.id == accessory.id } ?? accessory
+    }
+
+    private var resolvedImageURL: URL? {
+        let rawValue = (detailImageURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            ? detailImageURL!
+            : (currentAccessory.image?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        guard !rawValue.isEmpty else { return nil }
+
+        if let absolute = URL(string: rawValue), absolute.scheme != nil {
+            return absolute
+        }
+        if rawValue.hasPrefix("/") {
+            return URL(string: "\(apiClient.baseURL)\(rawValue)")
+        }
+        return nil
     }
 
     /// No stock. Checkout disabled.
@@ -43,6 +59,38 @@ struct AccessoryDetailView: View {
             if selectedTab == 0 {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        if let imageURL = resolvedImageURL {
+                            VStack(spacing: 10) {
+                                Text(L10n.string("image"))
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                AsyncImage(url: imageURL) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(maxHeight: 220)
+                                            .frame(maxWidth: .infinity)
+                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    case .failure(_):
+                                        Image(systemName: "photo")
+                                            .font(.system(size: 36))
+                                            .foregroundStyle(.secondary)
+                                            .frame(maxWidth: .infinity, minHeight: 140)
+                                    case .empty:
+                                        ProgressView()
+                                            .frame(maxWidth: .infinity, minHeight: 140)
+                                    @unknown default:
+                                        EmptyView()
+                                    }
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
                         Text(L10n.string("accessory_info"))
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -166,6 +214,11 @@ struct AccessoryDetailView: View {
             Task {
                 isLoading = true
                 checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+                if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id),
+                   let image = fullAccessory.image,
+                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    detailImageURL = image
+                }
                 isLoading = false
             }
         }
@@ -173,6 +226,13 @@ struct AccessoryDetailView: View {
             Task {
                 isLoading = true
                 checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+                if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id),
+                   let image = fullAccessory.image,
+                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    detailImageURL = image
+                } else {
+                    detailImageURL = nil
+                }
                 isLoading = false
             }
         }
@@ -365,7 +425,7 @@ struct AccessoryDetailView: View {
         guard let url = URL(string: "\(apiClient.baseURL)/api/v1/accessories/\(accessory.id)/checkin") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(UserDefaults.standard.string(forKey: "apiToken") ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(KeychainSecretStore.string(for: .apiToken))", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = ["checkedout_id": checkedoutId]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)

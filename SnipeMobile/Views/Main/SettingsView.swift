@@ -121,7 +121,7 @@ struct SettingsView: View {
                 if !isPresentedAsTab {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button(L10n.string("close")) {
-                            let storedToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
+                            let storedToken = KeychainSecretStore.string(for: .apiToken)
                             if apiCredentialsChanged(storedURL: apiClient.baseURL, storedToken: storedToken) {
                                 apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
                             }
@@ -153,7 +153,7 @@ struct SettingsView: View {
                     UserDefaults.standard.set(true, forKey: "useCloudSync")
                 }
                 baseURL = apiClient.baseURL
-                apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
+                apiToken = KeychainSecretStore.string(for: .apiToken)
 
                 let cal = Calendar.current
                 notificationTime = cal.date(
@@ -266,8 +266,8 @@ enum SettingsRoute: Hashable { case appearance, security, api, dell }
 
 struct DellSettingsView: View {
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
-    @AppStorage("dellTechDirectClientId") private var dellTechDirectClientId: String = ""
-    @AppStorage("dellTechDirectClientSecret") private var dellTechDirectClientSecret: String = ""
+    @State private var dellTechDirectClientId: String = ""
+    @State private var dellTechDirectClientSecret: String = ""
 
     var body: some View {
         Form {
@@ -283,6 +283,10 @@ struct DellSettingsView: View {
             }
         }
         .navigationTitle(L10n.string("dell_settings_title"))
+        .onAppear {
+            dellTechDirectClientId = KeychainSecretStore.string(for: .dellTechDirectClientId)
+            dellTechDirectClientSecret = KeychainSecretStore.string(for: .dellTechDirectClientSecret)
+        }
         .onChange(of: enableDellQrScan) { _, newValue in
             CloudSettingsStore.shared.setEnableDellQrScan(newValue)
         }
@@ -343,7 +347,7 @@ struct APISettingsView: View {
         .navigationTitle(L10n.string("api_settings"))
         .onAppear {
             baseURL = apiClient.baseURL
-            apiToken = UserDefaults.standard.string(forKey: "apiToken") ?? ""
+            apiToken = KeychainSecretStore.string(for: .apiToken)
         }
     }
 } 

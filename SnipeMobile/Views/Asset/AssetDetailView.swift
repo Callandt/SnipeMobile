@@ -54,10 +54,26 @@ struct AssetDetailView: View {
     @State private var checkInOutSuccess = false
     @State private var checkInOutMessage = ""
     @State private var showCheckoutSheet = false
+    @State private var detailImageURL: String? = nil
 
     /// From apiClient or passed in.
     private var currentAsset: Asset {
         apiClient.assets.first { $0.id == asset.id } ?? asset
+    }
+
+    private var resolvedImageURL: URL? {
+        let rawValue = (detailImageURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            ? detailImageURL!
+            : (currentAsset.image?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        guard !rawValue.isEmpty else { return nil }
+
+        if let absolute = URL(string: rawValue), absolute.scheme != nil {
+            return absolute
+        }
+        if rawValue.hasPrefix("/") {
+            return URL(string: "\(apiClient.baseURL)\(rawValue)")
+        }
+        return nil
     }
 
     private var assignedUser: User? {
@@ -96,6 +112,10 @@ struct AssetDetailView: View {
     }
 
     private func displayDate(_ dateInfo: DateInfo?) -> String? {
+        displayDate(dateInfo, includeTimeWhenAvailable: true)
+    }
+
+    private func displayDate(_ dateInfo: DateInfo?, includeTimeWhenAvailable: Bool) -> String? {
         guard let dateInfo = dateInfo else { return nil }
         let sourceValue = (dateInfo.date?.isEmpty == false ? dateInfo.date : dateInfo.formatted) ?? ""
         guard !sourceValue.isEmpty else { return nil }
@@ -132,7 +152,7 @@ struct AssetDetailView: View {
         outputFormatter.timeStyle = .none
         let datePart = outputFormatter.string(from: parsedDate)
 
-        guard includesTime else { return datePart }
+        guard includesTime, includeTimeWhenAvailable else { return datePart }
 
         let timeFormatter = DateFormatter()
         timeFormatter.dateStyle = .none
@@ -278,6 +298,11 @@ struct AssetDetailView: View {
             Task {
                 await apiClient.fetchFieldDefinitions()
                 await apiClient.fetchStatusLabels()
+                if let fullAsset = await apiClient.fetchHardwareDetails(assetId: currentAsset.id),
+                   let image = fullAsset.image,
+                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    detailImageURL = image
+                }
             }
             selectedModelId = currentAsset.model?.id ?? 0
             // Date init
@@ -423,6 +448,37 @@ struct AssetDetailView: View {
                 
                 ScrollView {
                     VStack(spacing: 15) {
+                        if let imageURL = resolvedImageURL {
+                            VStack(spacing: 10) {
+                                Text(L10n.string("image"))
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                AsyncImage(url: imageURL) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(maxHeight: 220)
+                                            .frame(maxWidth: .infinity)
+                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    case .failure(_):
+                                        Image(systemName: "photo")
+                                            .font(.system(size: 36))
+                                            .foregroundStyle(.secondary)
+                                            .frame(maxWidth: .infinity, minHeight: 140)
+                                    case .empty:
+                                        ProgressView()
+                                            .frame(maxWidth: .infinity, minHeight: 140)
+                                    @unknown default:
+                                        EmptyView()
+                                    }
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                        }
                         Text(L10n.string("device_info"))
                             .font(.headline)
                             .foregroundColor(.primary)
@@ -549,7 +605,7 @@ struct AssetDetailView: View {
                                 if let v = currentAsset.lastAuditDate?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("last_audit_date"), value: v)
                                 }
-                                if let v = displayDate(currentAsset.lastCheckout), !v.isEmpty {
+                                if let v = displayDate(currentAsset.lastCheckout, includeTimeWhenAvailable: false), !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("last_checkout"), value: v)
                                 }
                                 if let v = currentAsset.lastCheckin?.formatted, !v.isEmpty {

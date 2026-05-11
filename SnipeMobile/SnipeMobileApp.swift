@@ -163,6 +163,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
+        KeychainSecretStore.migrateLegacyUserDefaultsSecretsIfNeeded()
         CloudSettingsStore.shared.mergeFromCloud()
     }
     @StateObject private var apiClient = SnipeITAPIClient()
