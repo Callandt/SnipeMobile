@@ -85,11 +85,12 @@ final class CloudSettingsStore {
 
     func writeAPIConfiguration(baseURL: String, apiToken: String, isConfigured: Bool) {
         defaults.set(baseURL, forKey: "baseURL")
-        defaults.set(apiToken, forKey: "apiToken")
+        KeychainSecretStore.set(apiToken, for: .apiToken)
+        defaults.removeObject(forKey: "apiToken")
         defaults.set(isConfigured, forKey: "isConfigured")
         if useCloudSync, isICloudAvailable {
             store.set(baseURL, forKey: CloudKey.baseURL.rawValue)
-            store.set(apiToken, forKey: CloudKey.apiToken.rawValue)
+            store.removeObject(forKey: CloudKey.apiToken.rawValue)
             store.set(isConfigured, forKey: CloudKey.isConfigured.rawValue)
             _ = store.synchronize()
         }
@@ -154,19 +155,19 @@ final class CloudSettingsStore {
     }
 
     func setDellTechDirectClientId(_ value: String) {
-        defaults.set(value, forKey: "dellTechDirectClientId")
+        KeychainSecretStore.set(value, for: .dellTechDirectClientId)
+        defaults.removeObject(forKey: "dellTechDirectClientId")
         if useCloudSync, isICloudAvailable {
-            if value.isEmpty { store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue) }
-            else { store.set(value, forKey: CloudKey.dellTechDirectClientId.rawValue) }
+            store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue)
             _ = store.synchronize()
         }
     }
 
     func setDellTechDirectClientSecret(_ value: String) {
-        defaults.set(value, forKey: "dellTechDirectClientSecret")
+        KeychainSecretStore.set(value, for: .dellTechDirectClientSecret)
+        defaults.removeObject(forKey: "dellTechDirectClientSecret")
         if useCloudSync, isICloudAvailable {
-            if value.isEmpty { store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue) }
-            else { store.set(value, forKey: CloudKey.dellTechDirectClientSecret.rawValue) }
+            store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue)
             _ = store.synchronize()
         }
     }
@@ -179,7 +180,9 @@ final class CloudSettingsStore {
             defaults.set(v, forKey: "baseURL")
         }
         if let v = store.string(forKey: CloudKey.apiToken.rawValue), !v.isEmpty {
-            defaults.set(v, forKey: "apiToken")
+            KeychainSecretStore.set(v, for: .apiToken)
+            defaults.removeObject(forKey: "apiToken")
+            store.removeObject(forKey: CloudKey.apiToken.rawValue)
         }
         if store.object(forKey: CloudKey.isConfigured.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.isConfigured.rawValue), forKey: "isConfigured")
@@ -206,17 +209,21 @@ final class CloudSettingsStore {
             defaults.set(store.bool(forKey: CloudKey.enableDellQrScan.rawValue), forKey: "enableDellQrScan")
         }
         if let v = store.string(forKey: CloudKey.dellTechDirectClientId.rawValue) {
-            defaults.set(v, forKey: "dellTechDirectClientId")
+            KeychainSecretStore.set(v, for: .dellTechDirectClientId)
+            defaults.removeObject(forKey: "dellTechDirectClientId")
+            store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue)
         }
         if let v = store.string(forKey: CloudKey.dellTechDirectClientSecret.rawValue) {
-            defaults.set(v, forKey: "dellTechDirectClientSecret")
+            KeychainSecretStore.set(v, for: .dellTechDirectClientSecret)
+            defaults.removeObject(forKey: "dellTechDirectClientSecret")
+            store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue)
         }
     }
 
     private func copyRelevantDefaultsToStore() {
         guard useCloudSync, isICloudAvailable else { return }
         if let v = defaults.string(forKey: "baseURL") { store.set(v, forKey: CloudKey.baseURL.rawValue) }
-        if let v = defaults.string(forKey: "apiToken") { store.set(v, forKey: CloudKey.apiToken.rawValue) }
+        store.removeObject(forKey: CloudKey.apiToken.rawValue)
         store.set(defaults.bool(forKey: "isConfigured"), forKey: CloudKey.isConfigured.rawValue)
         store.set(defaults.bool(forKey: "hasCompletedOnboarding"), forKey: CloudKey.hasCompletedOnboarding.rawValue)
         if let v = defaults.string(forKey: "appTheme") { store.set(v, forKey: CloudKey.appTheme.rawValue) }
@@ -225,8 +232,8 @@ final class CloudSettingsStore {
         if let v = defaults.string(forKey: "settingsLanguage") { store.set(v, forKey: CloudKey.settingsLanguage.rawValue) }
         store.set(defaults.bool(forKey: "biometricsJustConfirmed"), forKey: CloudKey.biometricsJustConfirmed.rawValue)
         store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
-        if let v = defaults.string(forKey: "dellTechDirectClientId") { store.set(v, forKey: CloudKey.dellTechDirectClientId.rawValue) }
-        if let v = defaults.string(forKey: "dellTechDirectClientSecret") { store.set(v, forKey: CloudKey.dellTechDirectClientSecret.rawValue) }
+        store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue)
+        store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue)
     }
 
     @objc private func ubiquitousStoreDidChange(_ notification: Notification) {

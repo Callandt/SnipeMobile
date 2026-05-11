@@ -459,8 +459,8 @@ struct AddAssetSheet: View {
         }
 
         // TechDirect: ship date + warranty if configured
-        let clientId = UserDefaults.standard.string(forKey: "dellTechDirectClientId")?.trimmingCharacters(in: .whitespaces) ?? ""
-        let clientSecret = UserDefaults.standard.string(forKey: "dellTechDirectClientSecret") ?? ""
+        let clientId = KeychainSecretStore.string(for: .dellTechDirectClientId).trimmingCharacters(in: .whitespaces)
+        let clientSecret = KeychainSecretStore.string(for: .dellTechDirectClientSecret)
         if !clientId.isEmpty, !clientSecret.isEmpty, let tag = serviceTag, !tag.isEmpty {
             do {
                 let info = try await DellTechDirectClient.fetchWarrantyInfo(serviceTag: tag, clientId: clientId, clientSecret: clientSecret)

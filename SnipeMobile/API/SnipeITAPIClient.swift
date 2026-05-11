@@ -28,7 +28,7 @@ class SnipeITAPIClient: ObservableObject {
         normalizeBaseURL(UserDefaults.standard.string(forKey: "baseURL") ?? "")
     }
     private var apiToken: String {
-        UserDefaults.standard.string(forKey: "apiToken") ?? ""
+        KeychainSecretStore.string(for: .apiToken)
     }
 
     private var fetchAssetsTask: Task<Void, Never>? = nil
@@ -58,7 +58,8 @@ class SnipeITAPIClient: ObservableObject {
     func saveConfiguration(baseURL: String, apiToken: String) {
         let normalizedBaseURL = normalizeBaseURL(baseURL)
         UserDefaults.standard.set(normalizedBaseURL, forKey: "baseURL")
-        UserDefaults.standard.set(apiToken, forKey: "apiToken")
+        KeychainSecretStore.set(apiToken, for: .apiToken)
+        UserDefaults.standard.removeObject(forKey: "apiToken")
         self.isConfigured = true
         CloudSettingsStore.shared.writeAPIConfiguration(baseURL: normalizedBaseURL, apiToken: apiToken, isConfigured: true)
 
@@ -197,6 +198,40 @@ class SnipeITAPIClient: ObservableObject {
         return nil
     }
 
+    func fetchHardwareDetails(assetId: Int) async -> Asset? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else { return nil }
+
+            if let asset = try? JSONDecoder().decode(Asset.self, from: data) {
+                return asset
+            }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+
+            if let payload = json["payload"] as? [String: Any],
+               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+               let asset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
+                return asset
+            }
+
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
     func fetchUsers() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
             await MainActor.run { errorMessage = "Configure the API settings first." }
@@ -226,6 +261,40 @@ class SnipeITAPIClient: ObservableObject {
                 print("Error details: \(error)")
                 #endif
             }
+        }
+    }
+
+    func fetchUserDetails(userId: Int) async -> User? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/users/\(userId)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else { return nil }
+
+            if let user = try? JSONDecoder().decode(User.self, from: data) {
+                return user
+            }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+
+            if let payload = json["payload"] as? [String: Any],
+               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+               let user = try? JSONDecoder().decode(User.self, from: payloadData) {
+                return user
+            }
+
+            return nil
+        } catch {
+            return nil
         }
     }
 
@@ -1462,6 +1531,40 @@ class SnipeITAPIClient: ObservableObject {
             print("Error fetching checked out list: \(error)")
         }
         return []
+    }
+
+    func fetchAccessoryDetails(accessoryId: Int) async -> Accessory? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else { return nil }
+
+            if let accessory = try? JSONDecoder().decode(Accessory.self, from: data) {
+                return accessory
+            }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+
+            if let payload = json["payload"] as? [String: Any],
+               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+               let accessory = try? JSONDecoder().decode(Accessory.self, from: payloadData) {
+                return accessory
+            }
+
+            return nil
+        } catch {
+            return nil
+        }
     }
 
     static func extractDellServiceTag(from url: URL) -> String? {
