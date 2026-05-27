@@ -24,6 +24,9 @@ class SnipeITAPIClient: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var statusLabels: [StatusLabel] = []
 
+    /// Progress of an ongoing paginated fetch. `total` is -1 if unknown.
+    @Published var loadingProgress: (current: Int, total: Int)? = nil
+
     var baseURL: String {
         normalizeBaseURL(UserDefaults.standard.string(forKey: "baseURL") ?? "")
     }
@@ -33,6 +36,100 @@ class SnipeITAPIClient: ObservableObject {
 
     private var fetchAssetsTask: Task<Void, Never>? = nil
     private var fetchAssetsGeneration: Int = 0
+
+    // MARK: - Pagination
+
+    // Server hard-caps responses at MAX_RESULTS (default 500).
+    private static let apiPageSize: Int = 500
+    // Small gap between page requests; well under the 120 req/min throttle.
+    private static let pageDelayNanos: UInt64 = 60_000_000
+
+    private struct PagedRows<T: Decodable>: Decodable {
+        let total: Int?
+        let rows: [T]?
+    }
+
+    /// Fetches all pages from a Snipe-IT list endpoint. Returns nil on error or cancellation.
+    private func fetchAllPaginated<T: Decodable>(
+        path: String,
+        as type: T.Type,
+        extraQueryItems: [URLQueryItem] = [],
+        reportProgress: Bool = false,
+        isCancelled: @escaping () -> Bool = { false }
+    ) async throws -> [T]? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+
+        var collected: [T] = []
+        var offset = 0
+        let limit = Self.apiPageSize
+        var serverTotal: Int? = nil
+
+        if reportProgress {
+            await MainActor.run { self.loadingProgress = (current: 0, total: -1) }
+        }
+
+        defer {
+            if reportProgress {
+                Task { @MainActor in self.loadingProgress = nil }
+            }
+        }
+
+        while true {
+            if isCancelled() { return nil }
+
+            var components = URLComponents(string: "\(baseURL)\(path)")
+            var query: [URLQueryItem] = [
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "offset", value: String(offset))
+            ]
+            query.append(contentsOf: extraQueryItems)
+            components?.queryItems = query
+
+            guard let url = components?.url else { return nil }
+
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+            let (data, response) = try await urlSession.data(for: request)
+
+            if let http = response as? HTTPURLResponse {
+                if http.statusCode == 429 {
+                    // Throttled: back off and retry the same page.
+                    try await Task.sleep(nanoseconds: 1_500_000_000)
+                    continue
+                }
+                guard (200...299).contains(http.statusCode) else {
+                    #if DEBUG
+                    let preview = String(data: data.prefix(300), encoding: .utf8) ?? "<non-UTF8>"
+                    print("[SnipeMobile] paginated GET \(path) status=\(http.statusCode) body=\(preview)")
+                    #endif
+                    return nil
+                }
+            }
+
+            let page = try JSONDecoder().decode(PagedRows<T>.self, from: data)
+            let rows = page.rows ?? []
+            collected.append(contentsOf: rows)
+
+            if let total = page.total { serverTotal = total }
+
+            if reportProgress {
+                let progress = (current: collected.count, total: serverTotal ?? -1)
+                await MainActor.run { self.loadingProgress = progress }
+            }
+
+            if rows.count < limit { break }
+            if let total = serverTotal, collected.count >= total { break }
+            if rows.isEmpty { break }
+
+            offset += limit
+            try? await Task.sleep(nanoseconds: Self.pageDelayNanos)
+        }
+
+        return collected
+    }
 
     private let urlSession: URLSession = {
         let config = URLSessionConfiguration.default
@@ -107,22 +204,20 @@ class SnipeITAPIClient: ObservableObject {
                 return
             }
 
-            guard let url = URL(string: "\(baseURL)/api/v1/hardware?limit=500") else {
-                await MainActor.run { errorMessage = "Invalid URL" }
-                return
-            }
-
-            var request = URLRequest(url: url)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-
             do {
-                let (data, _) = try await urlSession.data(for: request)
-                let response = try JSONDecoder().decode(AssetResponse.self, from: data)
+                let result = try await fetchAllPaginated(
+                    path: "/api/v1/hardware",
+                    as: Asset.self,
+                    reportProgress: true,
+                    isCancelled: { [weak self] in
+                        guard let self = self else { return true }
+                        return myGen != self.fetchAssetsGeneration
+                    }
+                )
+                guard let assets = result else { return }
                 await MainActor.run {
                     if myGen == self.fetchAssetsGeneration {
-                        self.assets = response.rows
+                        self.assets = assets
                     }
                 }
             } catch {
@@ -238,21 +333,13 @@ class SnipeITAPIClient: ObservableObject {
             return
         }
 
-        guard let url = URL(string: "\(baseURL)/api/v1/users") else {
-            await MainActor.run { errorMessage = "Invalid URL" }
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(UserResponse.self, from: data)
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/users",
+                as: User.self
+            ) else { return }
             await MainActor.run {
-                self.users = response.rows.sorted { $0.name < $1.name }
+                self.users = rows.sorted { $0.name < $1.name }
             }
         } catch {
             await MainActor.run {
@@ -304,21 +391,13 @@ class SnipeITAPIClient: ObservableObject {
             return
         }
 
-        guard let url = URL(string: "\(baseURL)/api/v1/accessories") else {
-            await MainActor.run { errorMessage = "Invalid URL" }
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(AccessoriesResponse.self, from: data)
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/accessories",
+                as: Accessory.self
+            ) else { return }
             await MainActor.run {
-                self.accessories = response.rows
+                self.accessories = rows
             }
         } catch {
             await MainActor.run {
@@ -336,23 +415,15 @@ class SnipeITAPIClient: ObservableObject {
             return
         }
 
-        guard let url = URL(string: "\(baseURL)/api/v1/locations") else {
-            #if DEBUG
-            print("Invalid URL for locations")
-            #endif
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(LocationsResponse.self, from: data)
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/locations",
+                as: Location.self
+            ) else { return }
             await MainActor.run {
-                self.locations = response.rows.sorted { $0.decodedName.lowercased() < $1.decodedName.lowercased() }
+                self.locations = rows.sorted {
+                    $0.decodedName.lowercased() < $1.decodedName.lowercased()
+                }
             }
         } catch {
             print("Error fetching locations: \(error.localizedDescription)")
@@ -361,15 +432,13 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchCompanies() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        guard let url = URL(string: "\(baseURL)/api/v1/companies?limit=500") else { return }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(CompaniesResponse.self, from: data)
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/companies",
+                as: Company.self
+            ) else { return }
             await MainActor.run {
-                self.companies = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+                self.companies = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
             }
         } catch {
             print("Error fetching companies: \(error.localizedDescription)")
@@ -378,15 +447,13 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchManufacturers() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        guard let url = URL(string: "\(baseURL)/api/v1/manufacturers?limit=500") else { return }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(ManufacturersResponse.self, from: data)
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/manufacturers",
+                as: Manufacturer.self
+            ) else { return }
             await MainActor.run {
-                self.manufacturers = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+                self.manufacturers = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
             }
         } catch {
             print("Error fetching manufacturers: \(error.localizedDescription)")
@@ -395,15 +462,13 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchSuppliers() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        guard let url = URL(string: "\(baseURL)/api/v1/suppliers?limit=500") else { return }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(SuppliersResponse.self, from: data)
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/suppliers",
+                as: Supplier.self
+            ) else { return }
             await MainActor.run {
-                self.suppliers = response.rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+                self.suppliers = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
             }
         } catch {
             print("Error fetching suppliers: \(error.localizedDescription)")
@@ -412,19 +477,12 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchUsersForAccessory(accessoryId: Int) async -> [User] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
-        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkedout") else {
-            print("Invalid URL for accessory users")
-            return []
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(UserResponse.self, from: data)
-            return response.rows
+            let rows = try await fetchAllPaginated(
+                path: "/api/v1/accessories/\(accessoryId)/checkedout",
+                as: User.self
+            )
+            return rows ?? []
         } catch {
             print("Error fetching users for accessory \(accessoryId): \(error.localizedDescription)")
             return []
@@ -487,9 +545,9 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchActivityReport() async -> [Activity] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        let limit = Self.apiPageSize
         var allActivities: [Activity] = []
         var offset = 0
-        let limit = 1000
         while true {
             guard let url = URL(string: "\(baseURL)/api/v1/reports/activity?limit=\(limit)&offset=\(offset)") else {
                 print("Invalid URL for activity report")
@@ -506,6 +564,7 @@ class SnipeITAPIClient: ObservableObject {
                     break
                 }
                 offset += limit
+                try? await Task.sleep(nanoseconds: Self.pageDelayNanos)
             } catch {
                 print("Error fetching activity report: \(error.localizedDescription)")
                 break
@@ -642,14 +701,12 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchModels() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        guard let url = URL(string: "\(baseURL)/api/v1/models?limit=500") else { return }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(ModelsResponse.self, from: data)
-            await MainActor.run { self.models = response.rows }
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/models",
+                as: ModelRow.self
+            ) else { return }
+            await MainActor.run { self.models = rows }
         } catch {
             print("Error fetching models: \(error)")
         }
@@ -845,14 +902,12 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchCategories() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        guard let url = URL(string: "\(baseURL)/api/v1/categories?limit=500") else { return }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(CategoriesResponse.self, from: data)
-            await MainActor.run { self.categories = response.rows }
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/categories",
+                as: CategoryRow.self
+            ) else { return }
+            await MainActor.run { self.categories = rows }
         } catch {
             print("Error fetching categories: \(error)")
         }
@@ -1241,15 +1296,13 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchStatusLabels() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        guard let url = URL(string: "\(baseURL)/api/v1/statuslabels") else { return }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            let response = try JSONDecoder().decode(StatusLabelResponse.self, from: data)
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/statuslabels",
+                as: StatusLabel.self
+            ) else { return }
             await MainActor.run {
-                self.statusLabels = response.rows
+                self.statusLabels = rows
             }
         } catch {
             print("Error fetching status labels: \(error)")
@@ -1513,24 +1566,18 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchAccessoryCheckedOutList(accessoryId: Int) async -> [AccessoryCheckedOutRow] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
-        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkedout") else { return [] }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, _) = try await urlSession.data(for: request)
-            do {
-                let decoded = try JSONDecoder().decode(AccessoryCheckedOutResponse.self, from: data)
-                return decoded.rows
-            } catch {
-                #if DEBUG
-                print("fetchAccessoryCheckedOutList decode error: \(error)")
-                #endif
-            }
+            let rows = try await fetchAllPaginated(
+                path: "/api/v1/accessories/\(accessoryId)/checkedout",
+                as: AccessoryCheckedOutRow.self
+            )
+            return rows ?? []
         } catch {
-            print("Error fetching checked out list: \(error)")
+            #if DEBUG
+            print("fetchAccessoryCheckedOutList error: \(error)")
+            #endif
+            return []
         }
-        return []
     }
 
     func fetchAccessoryDetails(accessoryId: Int) async -> Accessory? {
