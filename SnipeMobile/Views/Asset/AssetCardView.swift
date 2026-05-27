@@ -51,8 +51,22 @@ struct AssetCardView: View {
                 }
                 Spacer()
             }
-            if !asset.decodedAssignedToName.isEmpty || !asset.decodedLocationName.isEmpty {
+            let effectiveTitle = asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName
+            let showAssetName = !asset.decodedName.isEmpty && asset.decodedName != effectiveTitle
+            if showAssetName || !asset.decodedAssignedToName.isEmpty || !asset.decodedLocationName.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
+                    if showAssetName {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "tag")
+                                .font(.subheadline)
+                                .foregroundStyle(.tertiary)
+                            Text(asset.decodedName)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .lineSpacing(2)
+                        }
+                    }
                     if !asset.decodedAssignedToName.isEmpty {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: "person.circle")

@@ -489,6 +489,10 @@ struct AssetDetailView: View {
                             if !currentAsset.decodedSerial.isEmpty {
                                 copyableDetailRow(label: L10n.string("serial_number"), value: currentAsset.decodedSerial)
                             }
+                            if !currentAsset.decodedName.isEmpty,
+                               currentAsset.decodedName != currentAsset.decodedModelName {
+                                copyableDetailRow(label: L10n.string("name"), value: currentAsset.decodedName)
+                            }
                             if !currentAsset.decodedModelName.isEmpty {
                                 copyableDetailRow(label: L10n.string("model"), value: currentAsset.decodedModelName)
                             }
