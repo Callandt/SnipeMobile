@@ -4,8 +4,9 @@ iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users,
 
 ## Get the app
 
-- **[TestFlight (beta)](https://testflight.apple.com/join/TjDwstBE)** — join the beta on your iPhone or iPad (TestFlight app required).
-- **App Store** — coming soon.
+- **App Store** - (https://apps.apple.com/us/app/snipemobile/id6759792710) — Official App Store release.
+- **TestFlight (beta)** - (https://testflight.apple.com/join/TjDwstBE) — join the beta on your iPhone or iPad (TestFlight app required).
+
 
 ## Requirements
 
