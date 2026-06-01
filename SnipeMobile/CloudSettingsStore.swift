@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UserNotifications
 
 /// iCloud KV keys we sync.
 private enum CloudKey: String, CaseIterable {
@@ -234,6 +235,28 @@ final class CloudSettingsStore {
         store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
         store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue)
         store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue)
+    }
+
+    func wipeAllData() {
+        if isICloudAvailable {
+            for key in CloudKey.allCases {
+                store.removeObject(forKey: key.rawValue)
+            }
+            _ = store.synchronize()
+        }
+
+        KeychainSecretStore.wipeAll()
+
+        if let bundleId = Bundle.main.bundleIdentifier {
+            defaults.removePersistentDomain(forName: bundleId)
+        }
+        defaults.synchronize()
+
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+
+        URLCache.shared.removeAllCachedResponses()
     }
 
     @objc private func ubiquitousStoreDidChange(_ notification: Notification) {

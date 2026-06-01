@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-enum SecretKey: String {
+enum SecretKey: String, CaseIterable {
     case apiToken
     case dellTechDirectClientId
     case dellTechDirectClientSecret
@@ -66,6 +66,13 @@ enum KeychainSecretStore {
             kSecAttrAccount as String: key.rawValue
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    /// Remove every secret managed by the app from the keychain.
+    static func wipeAll() {
+        for key in SecretKey.allCases {
+            delete(key)
+        }
     }
 
     static func migrateLegacyUserDefaultsSecretsIfNeeded() {
