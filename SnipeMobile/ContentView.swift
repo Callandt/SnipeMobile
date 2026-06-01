@@ -133,7 +133,7 @@ struct ContentView: View {
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
-    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = true
+    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @State private var awaitingAuditNavigationResolution = false
     @State private var auditNotificationNavResolved = false
 
@@ -527,7 +527,7 @@ struct HardwareTab: View {
     var onOpenUser: (User) -> Void
     var onOpenLocation: (Location) -> Void
 
-    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = true
+    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
     @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
     @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0

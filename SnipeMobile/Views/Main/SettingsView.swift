@@ -6,28 +6,51 @@ struct SettingsView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     /// Shown as tab. No close button.
     var isPresentedAsTab: Bool = false
+
     @AppStorage("useBiometrics") private var useBiometrics: Bool = false
     @AppStorage("appTheme") private var appTheme: String = "system"
-    @State private var baseURL: String = ""
-    @State private var apiToken: String = ""
-    @State private var showAlert: Bool = false
-    @State private var alertMessage: String = ""
-    @State private var path: [SettingsRoute] = []
     @AppStorage("settingsLanguage") private var settingsLanguage: String = "en"
-    @State private var showBiometricError: Bool = false
-    @State private var biometricErrorMessage: String = ""
-    @State private var didAppear = false
-    @State private var pendingBiometricsValue: Bool? = nil
     @AppStorage("biometricsJustConfirmed") private var biometricsJustConfirmed: Bool = false
     @AppStorage("useCloudSync") private var useCloudSync: Bool = true
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
     @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
     @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0
-    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = true
+    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
+
+    @State private var baseURL: String = ""
+    @State private var apiToken: String = ""
+    @State private var showAlert: Bool = false
+    @State private var alertMessage: String = ""
+    @State private var path: [SettingsRoute] = []
+    @State private var pendingBiometricsValue: Bool? = nil
+    @State private var showResetConfirm: Bool = false
     @State private var notificationTime: Date = Date()
+
     /// Device has iCloud.
     private var isICloudAvailable: Bool {
         FileManager.default.ubiquityIdentityToken != nil
+    }
+
+    private var themeLabel: String {
+        switch appTheme {
+        case "light": return L10n.string("light")
+        case "dark":  return L10n.string("dark")
+        default:      return L10n.string("system")
+        }
+    }
+
+    private var apiStatusLabel: String {
+        guard apiClient.isConfigured, !apiClient.baseURL.isEmpty else {
+            return L10n.string("settings_not_configured")
+        }
+        return URL(string: apiClient.baseURL)?.host ?? apiClient.baseURL
+    }
+
+    private var auditStatusLabel: String {
+        guard enableAuditSubtab else { return L10n.string("settings_status_off") }
+        return auditNotificationsEnabled
+            ? L10n.string("settings_status_on")
+            : L10n.string("settings_status_off")
     }
 
     private func ensureAssetsLoadedIfNeeded() async {
@@ -37,100 +60,19 @@ struct SettingsView: View {
         }
     }
 
-    var isDutch: Bool { settingsLanguage == "nl" }
-    var isEnglish: Bool { settingsLanguage == "en" }
-
     var body: some View {
         NavigationStack(path: $path) {
             Form {
-                Section(header: Text(L10n.string("appearance"))) {
-                    Picker(L10n.string("theme"), selection: $appTheme) {
-                        Text(L10n.string("system")).tag("system")
-                        Text(L10n.string("light")).tag("light")
-                        Text(L10n.string("dark")).tag("dark")
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                }
-                Section(header: Text(L10n.string("icloud")), footer: Text(isICloudAvailable ? L10n.string("icloud_sync_footer") : L10n.string("icloud_unavailable"))) {
-                    Toggle(L10n.string("icloud_sync_toggle"), isOn: $useCloudSync)
-                        .disabled(!isICloudAvailable)
-                }
-                Section(header: Text(L10n.string("security"))) {
-                    Toggle(L10n.string("require_biometrics"), isOn: Binding(
-                        get: { useBiometrics },
-                        set: { newValue in
-                            pendingBiometricsValue = newValue
-                            authenticateBiometric { success in
-                                if success {
-                                    biometricsJustConfirmed = true
-                                    useBiometrics = newValue
-                                }
-                                pendingBiometricsValue = nil
-                            }
-                        }
-                    ))
-                    .disabled(pendingBiometricsValue != nil)
-                }
-                Section(header: Text(L10n.string("audit_settings_title"))) {
-                    Toggle(L10n.string("audit_subtab_toggle"), isOn: $enableAuditSubtab)
-
-                    Toggle(
-                        L10n.string("audit_notifications_toggle"),
-                        isOn: $auditNotificationsEnabled
-                    )
-                    .disabled(!enableAuditSubtab)
-
-                    DatePicker(
-                        L10n.string("audit_notification_time"),
-                        selection: $notificationTime,
-                        displayedComponents: .hourAndMinute
-                    )
-                    .disabled(!enableAuditSubtab || !auditNotificationsEnabled)
-                }
-                Section(header: Text(L10n.string("api_settings"))) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(L10n.string("api_settings_desc"))
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.leading)
-                        Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
-                            Text(L10n.string("how_api_key"))
-                                .font(.footnote)
-                                .foregroundColor(Color.blue)
-                                .underline()
-                                .padding(.top, 2)
-                        }
-                    }
-                    TextField("Snipe-IT URL (e.g., https://snipeit.yourcompany.com)", text: $baseURL)
-                        .autocapitalization(.none)
-                        .textContentType(.URL)
-                    SecureField("API Key", text: $apiToken)
-                        .textContentType(.password)
-                }
-
-                Section(header: Text(L10n.string("settings_brand_integrations"))) {
-                    NavigationLink(value: SettingsRoute.dell) {
-                        Label(L10n.string("settings_dell"), systemImage: "desktopcomputer")
-                    }
-                }
+                generalSection
+                privacySection
+                featuresSection
+                connectionSection
+                resetSection
             }
             .formStyle(.grouped)
             .navigationTitle(L10n.string("settings"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if !isPresentedAsTab {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(L10n.string("close")) {
-                            let storedToken = KeychainSecretStore.string(for: .apiToken)
-                            if apiCredentialsChanged(storedURL: apiClient.baseURL, storedToken: storedToken) {
-                                apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
-                            }
-                            CloudSettingsStore.shared.pushToCloud()
-                            dismiss()
-                        }
-                    }
-                }
-            }
+            .toolbar { closeToolbar }
             .navigationDestination(for: SettingsRoute.self) { route in
                 switch route {
                 case .appearance:
@@ -138,31 +80,24 @@ struct SettingsView: View {
                 case .security:
                     SecuritySettingsView(useBiometrics: $useBiometrics)
                 case .api:
-                    APISettingsView(apiClient: apiClient, baseURL: $baseURL, apiToken: $apiToken, showAlert: $showAlert, alertMessage: $alertMessage)
+                    APISettingsView(
+                        apiClient: apiClient,
+                        baseURL: $baseURL,
+                        apiToken: $apiToken,
+                        showAlert: $showAlert,
+                        alertMessage: $alertMessage
+                    )
+                case .audit:
+                    AuditSettingsView(
+                        enableAuditSubtab: $enableAuditSubtab,
+                        auditNotificationsEnabled: $auditNotificationsEnabled,
+                        notificationTime: $notificationTime
+                    )
                 case .dell:
                     DellSettingsView()
                 }
             }
-            .onAppear {
-                // iCloud sync on by default if account present.
-                if !isICloudAvailable {
-                    useCloudSync = false
-                    UserDefaults.standard.set(false, forKey: "useCloudSync")
-                } else if UserDefaults.standard.object(forKey: "useCloudSync") == nil {
-                    useCloudSync = true
-                    UserDefaults.standard.set(true, forKey: "useCloudSync")
-                }
-                baseURL = apiClient.baseURL
-                apiToken = KeychainSecretStore.string(for: .apiToken)
-
-                let cal = Calendar.current
-                notificationTime = cal.date(
-                    bySettingHour: auditNotificationHour,
-                    minute: auditNotificationMinute,
-                    second: 0,
-                    of: Date()
-                ) ?? Date()
-            }
+            .onAppear(perform: handleOnAppear)
             .onChange(of: appTheme) { _, newValue in
                 CloudSettingsStore.shared.setAppTheme(newValue)
             }
@@ -195,7 +130,6 @@ struct SettingsView: View {
                 auditNotificationMinute = comps.minute ?? 0
             }
             .onChange(of: auditNotificationsEnabled) { _, _ in
-                // block notifications if the subtab is off
                 if !enableAuditSubtab, auditNotificationsEnabled {
                     auditNotificationsEnabled = false
                     return
@@ -237,7 +171,180 @@ struct SettingsView: View {
             .alert(isPresented: $showAlert) {
                 Alert(title: Text(alertMessage))
             }
+            .alert(
+                L10n.string("reset_data_confirm_title"),
+                isPresented: $showResetConfirm
+            ) {
+                Button(L10n.string("cancel"), role: .cancel) {}
+                Button(L10n.string("reset_data_confirm_action"), role: .destructive) {
+                    CloudSettingsStore.shared.wipeAllData()
+                    apiClient.assets = []
+                    apiClient.users = []
+                    apiClient.accessories = []
+                    apiClient.locations = []
+                    apiClient.companies = []
+                    apiClient.manufacturers = []
+                    apiClient.suppliers = []
+                    apiClient.statusLabels = []
+                    apiClient.isConfigured = false
+                }
+            } message: {
+                Text(L10n.string("reset_data_confirm_message"))
+            }
         }
+    }
+
+    // MARK: - Sections
+
+    private var generalSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.appearance) {
+                SettingsRow(
+                    icon: "paintbrush.fill",
+                    iconColor: .purple,
+                    title: L10n.string("appearance"),
+                    value: themeLabel
+                )
+            }
+        }
+    }
+
+    private var privacySection: some View {
+        Section {
+            SettingsToggleRow(
+                icon: "icloud.fill",
+                iconColor: .blue,
+                title: L10n.string("icloud_sync_toggle"),
+                isOn: $useCloudSync
+            )
+            .disabled(!isICloudAvailable)
+
+            SettingsToggleRow(
+                icon: "faceid",
+                iconColor: .indigo,
+                title: L10n.string("require_biometrics"),
+                isOn: Binding(
+                    get: { useBiometrics },
+                    set: { newValue in
+                        pendingBiometricsValue = newValue
+                        authenticateBiometric { success in
+                            if success {
+                                biometricsJustConfirmed = true
+                                useBiometrics = newValue
+                            }
+                            pendingBiometricsValue = nil
+                        }
+                    }
+                )
+            )
+            .disabled(pendingBiometricsValue != nil)
+        } header: {
+            Text(L10n.string("settings_privacy"))
+        } footer: {
+            if !isICloudAvailable {
+                Text(L10n.string("icloud_unavailable"))
+            }
+        }
+    }
+
+    private var connectionSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.api) {
+                SettingsRow(
+                    icon: "antenna.radiowaves.left.and.right",
+                    iconColor: .green,
+                    title: L10n.string("api_settings_short"),
+                    value: apiStatusLabel
+                )
+            }
+            NavigationLink(value: SettingsRoute.dell) {
+                SettingsRow(
+                    icon: "desktopcomputer",
+                    iconColor: .gray,
+                    title: L10n.string("settings_dell"),
+                    value: nil
+                )
+            }
+        } header: {
+            Text(L10n.string("settings_connection"))
+        } footer: {
+            Text(L10n.string("connection_section_footer"))
+        }
+    }
+
+    private var featuresSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.audit) {
+                SettingsRow(
+                    icon: "bell.badge.fill",
+                    iconColor: .red,
+                    title: L10n.string("settings_audit_short"),
+                    value: auditStatusLabel
+                )
+            }
+        } header: {
+            Text(L10n.string("settings_features"))
+        } footer: {
+            Text(L10n.string("audit_settings_compact_footer"))
+        }
+    }
+
+    private var resetSection: some View {
+        Section {
+            Button(role: .destructive) {
+                showResetConfirm = true
+            } label: {
+                SettingsRow(
+                    icon: "trash.fill",
+                    iconColor: .red,
+                    title: L10n.string("reset_data_button"),
+                    value: nil,
+                    titleColor: .red
+                )
+            }
+        } footer: {
+            Text(L10n.string("reset_data_footer_short"))
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var closeToolbar: some ToolbarContent {
+        if !isPresentedAsTab {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(L10n.string("close")) {
+                    let storedToken = KeychainSecretStore.string(for: .apiToken)
+                    if apiCredentialsChanged(storedURL: apiClient.baseURL, storedToken: storedToken) {
+                        apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
+                    }
+                    CloudSettingsStore.shared.pushToCloud()
+                    dismiss()
+                }
+                .fontWeight(.semibold)
+            }
+        }
+    }
+
+    // MARK: - Lifecycle / helpers
+
+    private func handleOnAppear() {
+        // iCloud sync on by default if account present.
+        if !isICloudAvailable {
+            useCloudSync = false
+            UserDefaults.standard.set(false, forKey: "useCloudSync")
+        } else if UserDefaults.standard.object(forKey: "useCloudSync") == nil {
+            useCloudSync = true
+            UserDefaults.standard.set(true, forKey: "useCloudSync")
+        }
+        baseURL = apiClient.baseURL
+        apiToken = KeychainSecretStore.string(for: .apiToken)
+
+        let cal = Calendar.current
+        notificationTime = cal.date(
+            bySettingHour: auditNotificationHour,
+            minute: auditNotificationMinute,
+            second: 0,
+            of: Date()
+        ) ?? Date()
     }
 
     private func apiCredentialsChanged(storedURL: String, storedToken: String) -> Bool {
@@ -262,7 +369,178 @@ struct SettingsView: View {
     }
 }
 
-enum SettingsRoute: Hashable { case appearance, security, api, dell }
+enum SettingsRoute: Hashable { case appearance, security, api, audit, dell }
+
+// MARK: - Reusable building blocks (iOS Settings.app style)
+
+/// Rounded square icon, like the iOS Settings app.
+private struct SettingsIcon: View {
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(color.gradient)
+            .frame(width: 29, height: 29)
+            .overlay(
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+            )
+    }
+}
+
+/// Row with leading colored icon, title, and optional trailing value.
+private struct SettingsRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    var value: String? = nil
+    var titleColor: Color = .primary
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsIcon(symbol: icon, color: iconColor)
+            Text(title)
+                .foregroundStyle(titleColor)
+            Spacer(minLength: 8)
+            if let value {
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+}
+
+/// Toggle row with leading colored icon.
+private struct SettingsToggleRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            HStack(spacing: 12) {
+                SettingsIcon(symbol: icon, color: iconColor)
+                Text(title)
+            }
+        }
+    }
+}
+
+// MARK: - Detail views
+
+struct AppearanceSettingsView: View {
+    @Binding var appTheme: String
+
+    var body: some View {
+        Form {
+            Section {
+                Picker(L10n.string("theme"), selection: $appTheme) {
+                    Text(L10n.string("system")).tag("system")
+                    Text(L10n.string("light")).tag("light")
+                    Text(L10n.string("dark")).tag("dark")
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } header: {
+                Text(L10n.string("theme"))
+            }
+        }
+        .navigationTitle(L10n.string("appearance"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct SecuritySettingsView: View {
+    @Binding var useBiometrics: Bool
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(L10n.string("require_biometrics"), isOn: $useBiometrics)
+            } header: {
+                Text(L10n.string("security"))
+            }
+        }
+        .navigationTitle(L10n.string("security"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct APISettingsView: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var baseURL: String
+    @Binding var apiToken: String
+    @Binding var showAlert: Bool
+    @Binding var alertMessage: String
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("https://snipeit.yourcompany.com", text: $baseURL)
+                    .autocapitalization(.none)
+                    .textContentType(.URL)
+                    .keyboardType(.URL)
+                    .disableAutocorrection(true)
+                SecureField(L10n.string("dell_client_id"), text: $apiToken)
+                    .textContentType(.password)
+            } header: {
+                Text(L10n.string("api_settings"))
+            } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.string("api_settings_desc"))
+                    Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
+                        Text(L10n.string("how_api_key"))
+                            .font(.footnote.weight(.medium))
+                    }
+                }
+            }
+        }
+        .navigationTitle(L10n.string("api_settings"))
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            baseURL = apiClient.baseURL
+            apiToken = KeychainSecretStore.string(for: .apiToken)
+        }
+    }
+}
+
+struct AuditSettingsView: View {
+    @Binding var enableAuditSubtab: Bool
+    @Binding var auditNotificationsEnabled: Bool
+    @Binding var notificationTime: Date
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(L10n.string("audit_subtab_toggle"), isOn: $enableAuditSubtab)
+            } footer: {
+                Text(L10n.string("audit_settings_compact_footer"))
+            }
+
+            Section {
+                Toggle(
+                    L10n.string("audit_notifications_toggle"),
+                    isOn: $auditNotificationsEnabled
+                )
+                .disabled(!enableAuditSubtab)
+
+                DatePicker(
+                    L10n.string("audit_notification_time"),
+                    selection: $notificationTime,
+                    displayedComponents: .hourAndMinute
+                )
+                .disabled(!enableAuditSubtab || !auditNotificationsEnabled)
+            }
+        }
+        .navigationTitle(L10n.string("audit_settings_title"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
 struct DellSettingsView: View {
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
@@ -271,18 +549,29 @@ struct DellSettingsView: View {
 
     var body: some View {
         Form {
-            Section(header: Text(L10n.string("scanning")), footer: Text(L10n.string("dell_qr_scan_footer"))) {
+            Section {
                 Toggle(L10n.string("dell_qr_scan_toggle"), isOn: $enableDellQrScan)
+            } header: {
+                Text(L10n.string("scanning"))
+            } footer: {
+                Text(L10n.string("dell_qr_scan_footer"))
             }
-            Section(header: Text(L10n.string("dell_techdirect_api")), footer: Text(L10n.string("dell_techdirect_footer"))) {
+
+            Section {
                 TextField(L10n.string("dell_client_id"), text: $dellTechDirectClientId)
                     .textContentType(.username)
                     .autocapitalization(.none)
+                    .disableAutocorrection(true)
                 SecureField(L10n.string("dell_client_secret"), text: $dellTechDirectClientSecret)
                     .textContentType(.password)
+            } header: {
+                Text(L10n.string("dell_techdirect_api"))
+            } footer: {
+                Text(L10n.string("dell_techdirect_footer"))
             }
         }
         .navigationTitle(L10n.string("dell_settings_title"))
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             dellTechDirectClientId = KeychainSecretStore.string(for: .dellTechDirectClientId)
             dellTechDirectClientSecret = KeychainSecretStore.string(for: .dellTechDirectClientSecret)
@@ -298,56 +587,3 @@ struct DellSettingsView: View {
         }
     }
 }
-
-struct AppearanceSettingsView: View {
-    @Binding var appTheme: String
-    var body: some View {
-        Form {
-            Section(header: Text(L10n.string("theme"))) {
-                Picker(L10n.string("theme"), selection: $appTheme) {
-                    Text(L10n.string("system")).tag("system")
-                    Text(L10n.string("light")).tag("light")
-                    Text(L10n.string("dark")).tag("dark")
-                }
-                .pickerStyle(SegmentedPickerStyle())
-            }
-        }
-        .navigationTitle(L10n.string("appearance"))
-    }
-}
-
-struct SecuritySettingsView: View {
-    @Binding var useBiometrics: Bool
-    var body: some View {
-        Form {
-            Section(header: Text(L10n.string("security"))) {
-                Toggle(L10n.string("require_biometrics"), isOn: $useBiometrics)
-            }
-        }
-        .navigationTitle(L10n.string("security"))
-    }
-}
-
-struct APISettingsView: View {
-    @ObservedObject var apiClient: SnipeITAPIClient
-    @Binding var baseURL: String
-    @Binding var apiToken: String
-    @Binding var showAlert: Bool
-    @Binding var alertMessage: String
-    var body: some View {
-        Form {
-            Section(header: Text(L10n.string("api_settings"))) {
-                TextField("Snipe-IT URL (e.g., https://snipeit.yourcompany.com)", text: $baseURL)
-                    .autocapitalization(.none)
-                    .textContentType(.URL)
-                SecureField("API Key", text: $apiToken)
-                    .textContentType(.password)
-            }
-        }
-        .navigationTitle(L10n.string("api_settings"))
-        .onAppear {
-            baseURL = apiClient.baseURL
-            apiToken = KeychainSecretStore.string(for: .apiToken)
-        }
-    }
-} 
