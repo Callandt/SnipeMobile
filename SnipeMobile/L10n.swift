@@ -287,6 +287,8 @@ enum L10n {
         "audit_settings_compact_footer": "Show the audit tab in Hardware and get a daily reminder.",
         "api_settings_compact_footer": "Sync assets, users and locations with your Snipe-IT server.",
         "connection_section_footer": "API connections to Snipe-IT and supported vendor services.",
+        "settings_about": "About",
+        "settings_version": "Version",
     ]
 
     private static let french: [String: String] = [
@@ -535,6 +537,8 @@ enum L10n {
         "audit_settings_compact_footer": "Affiche l'onglet audit dans Matériel et envoie un rappel quotidien.",
         "api_settings_compact_footer": "Synchronisez actifs, utilisateurs et emplacements avec votre serveur Snipe-IT.",
         "connection_section_footer": "Connexions API vers Snipe-IT et services tiers pris en charge.",
+        "settings_about": "À propos",
+        "settings_version": "Version",
     ]
 
     private static let dutch: [String: String] = [
@@ -783,5 +787,7 @@ enum L10n {
         "audit_settings_compact_footer": "Toon de audit-tab in Hardware en krijg een dagelijkse herinnering.",
         "api_settings_compact_footer": "Synchroniseer assets, gebruikers en locaties met je Snipe-IT server.",
         "connection_section_footer": "API-verbindingen met Snipe-IT en ondersteunde leveranciersdiensten.",
+        "settings_about": "Over",
+        "settings_version": "Versie",
     ]
 }

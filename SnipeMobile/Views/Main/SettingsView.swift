@@ -67,7 +67,7 @@ struct SettingsView: View {
                 privacySection
                 featuresSection
                 connectionSection
-                resetSection
+                aboutAndResetSection
             }
             .formStyle(.grouped)
             .navigationTitle(L10n.string("settings"))
@@ -289,8 +289,14 @@ struct SettingsView: View {
         }
     }
 
-    private var resetSection: some View {
+    private var aboutAndResetSection: some View {
         Section {
+            SettingsRow(
+                icon: "info.circle.fill",
+                iconColor: .gray,
+                title: L10n.string("settings_version"),
+                value: AppInfo.versionAndBuild
+            )
             Button(role: .destructive) {
                 showResetConfirm = true
             } label: {
@@ -302,6 +308,8 @@ struct SettingsView: View {
                     titleColor: .red
                 )
             }
+        } header: {
+            Text(L10n.string("settings_about"))
         } footer: {
             Text(L10n.string("reset_data_footer_short"))
         }
@@ -387,6 +395,45 @@ private struct SettingsIcon: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
             )
+    }
+}
+
+/// App version / build / distribution channel info from the main bundle.
+enum AppInfo {
+    enum Channel: String {
+        case appStore = "App Store"
+        case testFlight = "TestFlight"
+        case debug = "Debug"
+    }
+
+    /// e.g. "1.2.3"
+    static var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    /// e.g. "42" (CFBundleVersion, increments per TestFlight build).
+    static var build: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+    }
+
+    /// How this build was distributed. Detected via the App Store receipt URL:
+    /// TestFlight installs ship a `sandboxReceipt`, App Store installs a `receipt`.
+    static var channel: Channel {
+        #if DEBUG
+        return .debug
+        #else
+        if let url = Bundle.main.appStoreReceiptURL {
+            if url.lastPathComponent == "sandboxReceipt" { return .testFlight }
+            return .appStore
+        }
+        return .debug
+        #endif
+    }
+
+    /// e.g. "1.2.3 (42) · TestFlight".
+    static var versionAndBuild: String {
+        let base = build.isEmpty ? version : "\(version) (\(build))"
+        return "\(base) · \(channel.rawValue)"
     }
 }
 
