@@ -4,8 +4,9 @@ iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users,
 
 ## Get the app
 
-- **[TestFlight (beta)](https://testflight.apple.com/join/TjDwstBE)** — join the beta on your iPhone or iPad (TestFlight app required).
-- **App Store** — coming soon.
+- **App Store** - (https://apps.apple.com/us/app/snipemobile/id6759792710) — Official App Store release.
+- **TestFlight (beta)** - (https://testflight.apple.com/join/TjDwstBE) — join the beta on your iPhone or iPad (TestFlight app required).
+
 
 ## Requirements
 
@@ -24,7 +25,7 @@ iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users,
 - **Hardware & accessories**: list, search, Scan QR codes, check-in/check-out, create and edit.
 - **Users & locations**: view and navigate to assigned assets.
 - **Theme**: light/dark/system.
-- **language**: Dutch and English.
+- **language**: Dutch, English and French.
 - **Security**: optional Face ID / Touch ID on app open.
 - **iCloud**: settings (including API configuration) can sync via iCloud.
 
