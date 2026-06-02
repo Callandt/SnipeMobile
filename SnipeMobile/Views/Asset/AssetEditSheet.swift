@@ -110,15 +110,15 @@ struct AssetEditSheet: View {
                                 let originalBookValue = NumberFormatHelpers.normalizeDecimalForAPI(asset.bookValue)
                                 let purchaseCostRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
                                     normalizedPurchaseCost.map { .value($0) } ?? .null
-                                // Als aankoopprijs leeg is en boekwaarde niet gewijzigd werd in de UI,
-                                // wis boekwaarde expliciet zodat "legacy" restwaarden niet blijven hangen.
+                                // When purchase cost is cleared and book value wasn't edited,
+                                // explicitly null the book value so legacy residuals don't stick.
                                 let shouldClearUnchangedBookValue = normalizedPurchaseCost == nil && normalizedBookValue == originalBookValue
                                 let bookValueRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
                                     shouldClearUnchangedBookValue
                                     ? .null
                                     : (normalizedBookValue.map { .value($0) } ?? .null)
-                                // Snipe-IT verwacht voor custom_fields meestal de interne veldsleutel
-                                // (bijv. "_snipeit_xxx_1"), niet altijd de zichtbare labelnaam.
+                                // custom_fields usually wants the internal key (e.g. "_snipeit_xxx_1"),
+                                // not the visible label.
                                 let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
                                     uniqueKeysWithValues: editCustomFields.map { key, value in
                                         let apiKey = asset.customFields?[key]?.field ?? key

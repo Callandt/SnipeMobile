@@ -4,17 +4,19 @@ import Foundation
 
 // MARK: - Tab
 enum MainTab: String, CaseIterable {
-    case hardware = "Hardware"
+    case hardware = "Hardware"   // UI: Assets
     case accessories = "Accessories"
-    case users = "Users"
-    case locations = "Locations"
+    case licenses = "Licenses"
+    case stock = "Stock"         // consumables + components
+    case directory = "Directory" // users + locations
 
     var localizedTitle: String {
         switch self {
-        case .hardware: return L10n.string("tab_hardware")
+        case .hardware: return L10n.string("tab_assets")
         case .accessories: return L10n.string("tab_accessories")
-        case .users: return L10n.string("tab_users")
-        case .locations: return L10n.string("tab_locations")
+        case .licenses: return L10n.string("tab_licenses")
+        case .stock: return L10n.string("tab_stock")
+        case .directory: return L10n.string("tab_directory")
         }
     }
 
@@ -22,9 +24,71 @@ enum MainTab: String, CaseIterable {
         switch self {
         case .hardware: return "laptopcomputer"
         case .accessories: return "mediastick"
+        case .licenses: return "doc.text.fill"
+        case .stock: return "shippingbox.fill"
+        case .directory: return "person.2.crop.square.stack.fill"
+        }
+    }
+}
+
+enum StockSubmodule: String, CaseIterable, Identifiable {
+    case consumables = "Consumables"
+    case components = "Components"
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .consumables: return L10n.string("tab_consumables")
+        case .components: return L10n.string("tab_components")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .consumables: return "shippingbox.fill"
+        case .components: return "cpu"
+        }
+    }
+}
+
+enum DirectorySubmodule: String, CaseIterable, Identifiable {
+    case users = "Users"
+    case locations = "Locations"
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .users: return L10n.string("tab_users")
+        case .locations: return L10n.string("tab_locations")
+        }
+    }
+
+    var icon: String {
+        switch self {
         case .users: return "person.2"
         case .locations: return "mappin.and.ellipse"
         }
+    }
+}
+
+enum TabOrderStore {
+    static let userDefaultsKey = "tabOrder"
+    static let defaultOrder: [MainTab] = [
+        .hardware, .accessories, .licenses, .stock, .directory,
+    ]
+
+    static func parse(_ raw: String) -> [MainTab] {
+        let parsed = raw
+            .split(separator: ",")
+            .compactMap { MainTab(rawValue: String($0)) }
+        let missing = defaultOrder.filter { !parsed.contains($0) }
+        return parsed.isEmpty ? defaultOrder : parsed + missing
+    }
+
+    static func serialize(_ tabs: [MainTab]) -> String {
+        tabs.map(\.rawValue).joined(separator: ",")
     }
 }
 
@@ -66,8 +130,7 @@ enum AuditDateClassifier {
         guard let nextDate = nextAuditDateGMT(asset) else { return false }
         let todayStart = auditDayStartGMT(for: now)
         let start = gmtCalendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
-        // "Komende N dagen" als: morgen tot en met (N-1) dagen later.
-        // Met dueSoonDays=7: morgen..vandaag+6.
+        // "Next N days" = tomorrow through (N-1) days later. With dueSoonDays=7: tomorrow..today+6.
         let endExclusive = gmtCalendar.date(byAdding: .day, value: dueSoonDays, to: todayStart) ?? start
         return nextDate >= start && nextDate < endExclusive
     }
@@ -125,9 +188,8 @@ struct ContentView: View {
     @State private var pendingAccessoryToOpen: Accessory?
     @State private var returnToTab: MainTab?
     @State private var hardwarePath = NavigationPath()
-    @State private var usersPath = NavigationPath()
-    @State private var locationsPath = NavigationPath()
     @State private var accessoriesPath = NavigationPath()
+    @State private var directoryPath = NavigationPath()
     /// Detail on stack. Tab bar stays visible.
     @State private var isDetailViewActive = false
     @State private var showScanErrorAlert = false
@@ -137,97 +199,58 @@ struct ContentView: View {
     @State private var pendingDellSerial: String?
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
+    @AppStorage("showAccessoriesTab") private var showAccessoriesTab: Bool = true
+    @AppStorage("showLicensesTab") private var showLicensesTab: Bool = true
+    @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
+    @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
     @State private var awaitingAuditNavigationResolution = false
     @State private var auditNotificationNavResolved = false
 
+    private var orderedVisibleTabs: [MainTab] {
+        TabOrderStore.defaultOrder.filter(isTabVisible)
+    }
+
+    private var enabledStockSubmodules: [StockSubmodule] {
+        var subs: [StockSubmodule] = []
+        if showConsumablesSub { subs.append(.consumables) }
+        if showComponentsSub { subs.append(.components) }
+        return subs
+    }
+
+    // Stock tab label/icon follows the sole enabled submodule when only one is on.
+    private func displayTitle(for tab: MainTab) -> String {
+        switch tab {
+        case .stock where enabledStockSubmodules.count == 1:
+            return enabledStockSubmodules[0].localizedTitle
+        default:
+            return tab.localizedTitle
+        }
+    }
+
+    private func displayIcon(for tab: MainTab) -> String {
+        switch tab {
+        case .stock where enabledStockSubmodules.count == 1:
+            return enabledStockSubmodules[0].icon
+        default:
+            return tab.icon
+        }
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
-            HardwareTab(
-                apiClient: apiClient,
-                searchText: $searchText,
-                isRefreshing: $isRefreshing,
-                hasLoadedInitialAssets: $hasLoadedInitialAssets,
-                assetDetailTab: $assetDetailTab,
-                scannedAssetId: $scannedAssetId,
-                showingSettings: $showingSettings,
-                showingScanner: $showingScanner,
-                showingAddAsset: $showingAddAsset,
-                navigationPath: $hardwarePath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingAssetToOpen: $pendingAssetToOpen,
-                returnToTab: $returnToTab,
-                auditListFilter: $auditListFilter,
-                hardwareSubtab: $hardwareSubtab,
-                showTodayOnlyOverride: $showTodayOnlyOverride,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; hardwarePath = NavigationPath() } },
-                onOpenUser: { u in pendingUserToOpen = u; usersPath.append(u); selectedTab = .users; returnToTab = .hardware },
-                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .hardware }
-            )
-            .tag(MainTab.hardware)
-            .tabItem { Label(MainTab.hardware.localizedTitle, systemImage: MainTab.hardware.icon) }
-
-            AccessoriesTab(
-                apiClient: apiClient,
-                searchText: $searchText,
-                isRefreshing: $isRefreshing,
-                accessoryDetailTab: $accessoryDetailTab,
-                showingSettings: $showingSettings,
-                showingScanner: $showingScanner,
-                showingAddAccessory: $showingAddAccessory,
-                navigationPath: $accessoriesPath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingAccessoryToOpen: $pendingAccessoryToOpen,
-                returnToTab: $returnToTab,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; accessoriesPath = NavigationPath() } },
-                onOpenUser: { u in pendingUserToOpen = u; usersPath.append(u); selectedTab = .users; returnToTab = .accessories },
-                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .accessories },
-                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .accessories }
-            )
-            .tag(MainTab.accessories)
-            .tabItem { Label(MainTab.accessories.localizedTitle, systemImage: MainTab.accessories.icon) }
-
-            UsersTab(
-                apiClient: apiClient,
-                searchText: $searchText,
-                isRefreshing: $isRefreshing,
-                userDetailTab: $userDetailTab,
-                showingSettings: $showingSettings,
-                showingScanner: $showingScanner,
-                showingAddAsset: $showingAddAsset,
-                navigationPath: $usersPath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingUserToOpen: $pendingUserToOpen,
-                returnToTab: $returnToTab,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; usersPath = NavigationPath() } },
-                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .users },
-                onOpenAccessory: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .users },
-                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .locations; returnToTab = .users }
-            )
-            .tag(MainTab.users)
-            .tabItem { Label(MainTab.users.localizedTitle, systemImage: MainTab.users.icon) }
-
-            LocationsTab(
-                apiClient: apiClient,
-                searchText: $searchText,
-                isRefreshing: $isRefreshing,
-                locationDetailTab: $locationDetailTab,
-                showingSettings: $showingSettings,
-                showingScanner: $showingScanner,
-                showingAddAsset: $showingAddAsset,
-                navigationPath: $locationsPath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingLocationToOpen: $pendingLocationToOpen,
-                returnToTab: $returnToTab,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; locationsPath = NavigationPath() } },
-                onOpenUser: { u in pendingUserToOpen = u; usersPath.append(u); selectedTab = .users; returnToTab = .locations },
-                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .locations }
-            )
-            .tag(MainTab.locations)
-            .tabItem { Label(MainTab.locations.localizedTitle, systemImage: MainTab.locations.icon) }
+            ForEach(orderedVisibleTabs, id: \.self) { tab in
+                tabView(for: tab)
+                    .tag(tab)
+                    .tabItem { Label(displayTitle(for: tab), systemImage: displayIcon(for: tab)) }
+            }
         }
         #if os(iOS)
         .tabViewStyle(.automatic)
         #endif
+        .onChange(of: showAccessoriesTab) { _, _ in resetSelectedTabIfHidden() }
+        .onChange(of: showLicensesTab) { _, _ in resetSelectedTabIfHidden() }
+        .onChange(of: showConsumablesSub) { _, _ in resetSelectedTabIfHidden() }
+        .onChange(of: showComponentsSub) { _, _ in resetSelectedTabIfHidden() }
         .onChange(of: selectedTab) { _, newTab in
             // Reset search
             searchText = ""
@@ -243,8 +266,9 @@ struct ContentView: View {
             switch newTab {
             case .hardware: hardwarePath = NavigationPath()
             case .accessories: accessoriesPath = NavigationPath()
-            case .users: usersPath = NavigationPath()
-            case .locations: locationsPath = NavigationPath()
+            case .directory: directoryPath = NavigationPath()
+            case .licenses, .stock:
+                break
             }
         }
         .modifier(TabBarMinimizeBehaviorModifier(isDetailVisible: isDetailViewActive))
@@ -317,7 +341,7 @@ struct ContentView: View {
                 }
             }
 
-            // Cold boot: `pendingRequest` kan al gezet zijn vóórdat `onChange` afvuurt.
+            // Cold boot: `pendingRequest` may already be set before `onChange` fires.
             if auditNotificationRouter.pendingRequest != nil, !auditNotificationNavResolved {
                 awaitingAuditNavigationResolution = true
                 auditNotificationNavResolved = false
@@ -340,6 +364,100 @@ struct ContentView: View {
         .onChange(of: apiClient.assets.count) { _, _ in
             guard awaitingAuditNavigationResolution, auditNotificationRouter.pendingRequest != nil else { return }
             tryResolveAndOpenAuditListFilter()
+        }
+    }
+
+    @ViewBuilder
+    private func tabView(for tab: MainTab) -> some View {
+        switch tab {
+        case .hardware:
+            HardwareTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                hasLoadedInitialAssets: $hasLoadedInitialAssets,
+                assetDetailTab: $assetDetailTab,
+                scannedAssetId: $scannedAssetId,
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner,
+                showingAddAsset: $showingAddAsset,
+                navigationPath: $hardwarePath,
+                isDetailViewActive: $isDetailViewActive,
+                pendingAssetToOpen: $pendingAssetToOpen,
+                returnToTab: $returnToTab,
+                auditListFilter: $auditListFilter,
+                hardwareSubtab: $hardwareSubtab,
+                showTodayOnlyOverride: $showTodayOnlyOverride,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; hardwarePath = NavigationPath() } },
+                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .hardware },
+                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .hardware }
+            )
+        case .accessories:
+            AccessoriesTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                accessoryDetailTab: $accessoryDetailTab,
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner,
+                showingAddAccessory: $showingAddAccessory,
+                navigationPath: $accessoriesPath,
+                isDetailViewActive: $isDetailViewActive,
+                pendingAccessoryToOpen: $pendingAccessoryToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; accessoriesPath = NavigationPath() } },
+                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .accessories },
+                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .accessories },
+                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .accessories }
+            )
+        case .licenses:
+            LicensesTab(
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner
+            )
+        case .stock:
+            StockTab(
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner
+            )
+        case .directory:
+            DirectoryTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                userDetailTab: $userDetailTab,
+                locationDetailTab: $locationDetailTab,
+                showingSettings: $showingSettings,
+                showingScanner: $showingScanner,
+                navigationPath: $directoryPath,
+                isDetailViewActive: $isDetailViewActive,
+                pendingUserToOpen: $pendingUserToOpen,
+                pendingLocationToOpen: $pendingLocationToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; directoryPath = NavigationPath() } },
+                onOpenAssetFromUser: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory },
+                onOpenAccessoryFromUser: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .directory },
+                onOpenLocationFromUser: { pendingLocationToOpen = $0 },
+                onOpenUserFromLocation: { pendingUserToOpen = $0 },
+                onOpenAssetFromLocation: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory }
+            )
+        }
+    }
+
+    private func isTabVisible(_ tab: MainTab) -> Bool {
+        switch tab {
+        case .hardware, .directory:
+            return true
+        case .accessories: return showAccessoriesTab
+        case .licenses: return showLicensesTab
+        case .stock:
+            return showConsumablesSub || showComponentsSub
+        }
+    }
+
+    private func resetSelectedTabIfHidden() {
+        if !isTabVisible(selectedTab) {
+            selectedTab = .hardware
         }
     }
 
@@ -1009,6 +1127,8 @@ struct HardwareTab: View {
     }
 }
 
+// MARK: - Accessories Tab
+
 struct AccessoriesTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
@@ -1026,90 +1146,31 @@ struct AccessoriesTab: View {
     var onOpenAsset: (Asset) -> Void
     var onOpenLocation: (Location) -> Void
 
-    var filteredAccessories: [Accessory] {
-        if searchText.isEmpty { return apiClient.accessories }
-        return apiClient.accessories.filter {
-            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssignedToName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedManufacturerName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedCategoryName.lowercased().contains(searchText.lowercased())
-        }
-    }
-
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            Group {
-                if !apiClient.isConfigured {
-                    ContentUnavailableView(
-                        L10n.string("no_data_yet"),
-                        systemImage: "link.badge.plus",
-                        description: Text(L10n.string("configure_api_short"))
-                    )
-                } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView(L10n.string("loading_accessories"))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if apiClient.errorMessage != nil {
-                    ScrollView {
-                        ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
-                            .frame(minHeight: 400)
-                    }
-                } else {
-                    List {
-                        Section {
-                            HStack {
-                                Label("\(apiClient.accessories.count)", systemImage: "mediastick")
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                            }
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                        }
-
-                        Section {
-                            ForEach(filteredAccessories) { accessory in
-                                Button {
-                                    navigationPath.append(accessory)
-                                } label: {
-                                    AccessoryCardView(accessory: accessory)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .listRowBackground(Color.clear)
-                            }
-                        }
-                    }
-                    .listStyle(.insetGrouped)
-                    .listSectionSpacing(.compact)
-                    .listSectionSeparator(.hidden)
-                }
-            }
+            AccessoriesContent(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                navigationPath: $navigationPath
+            )
             .onAppear { isDetailViewActive = false }
-            .navigationTitle(MainTab.accessories.localizedTitle)
+            .navigationTitle(L10n.string("tab_accessories"))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        showingAddAccessory = true
-                    } label: {
+                    Button { showingAddAccessory = true } label: {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(L10n.string("add_accessory"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingScanner = true
-                    } label: {
+                    Button { showingScanner = true } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
                     .accessibilityLabel(L10n.string("scan_qr"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
+                    Button { showingSettings = true } label: {
                         Image(systemName: "gearshape")
                     }
                 }
@@ -1137,23 +1198,364 @@ struct AccessoriesTab: View {
     }
 }
 
-// MARK: - Users Tab
-struct UsersTab: View {
+// MARK: - Licenses Tab (placeholder)
+
+struct LicensesTab: View {
+    @Binding var showingSettings: Bool
+    @Binding var showingScanner: Bool
+    @State private var searchText: String = ""
+    @State private var showingComingSoon = false
+
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                L10n.string("tab_licenses"),
+                systemImage: "doc.text.fill",
+                description: Text(L10n.string("module_coming_soon"))
+            )
+            .navigationTitle(L10n.string("tab_licenses"))
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingComingSoon = true } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel(L10n.string("add_license"))
+                }
+                commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
+            }
+            .searchable(text: $searchText, prompt: L10n.string("search_licenses"))
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
+                Button(L10n.string("ok"), role: .cancel) { }
+            } message: {
+                Text(L10n.string("module_coming_soon"))
+            }
+        }
+    }
+}
+
+// MARK: - Stock Tab (consumables + components)
+
+struct StockTab: View {
+    @Binding var showingSettings: Bool
+    @Binding var showingScanner: Bool
+
+    @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
+    @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
+    @AppStorage("stockSelectedSubmodule") private var selectedSubmoduleRaw: String = StockSubmodule.consumables.rawValue
+
+    @State private var searchText: String = ""
+    @State private var showingComingSoon = false
+
+    private var enabledSubmodules: [StockSubmodule] {
+        StockSubmodule.allCases.filter { isEnabled($0) }
+    }
+
+    private var selectedSubmodule: StockSubmodule {
+        let stored = StockSubmodule(rawValue: selectedSubmoduleRaw) ?? .consumables
+        return isEnabled(stored) ? stored : (enabledSubmodules.first ?? .consumables)
+    }
+
+    private func isEnabled(_ s: StockSubmodule) -> Bool {
+        switch s {
+        case .consumables: return showConsumablesSub
+        case .components: return showComponentsSub
+        }
+    }
+
+    private var searchPrompt: String {
+        switch selectedSubmodule {
+        case .consumables: return L10n.string("search_consumables")
+        case .components: return L10n.string("search_components")
+        }
+    }
+
+    private var addLabel: String {
+        switch selectedSubmodule {
+        case .consumables: return L10n.string("add_consumable")
+        case .components: return L10n.string("add_component")
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                selectedSubmodule.localizedTitle,
+                systemImage: selectedSubmodule.icon,
+                description: Text(L10n.string("module_coming_soon"))
+            )
+            .navigationTitle(selectedSubmodule.localizedTitle)
+            .toolbar {
+                if enabledSubmodules.count > 1 {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        submodulePickerMenu(
+                            current: selectedSubmodule.icon,
+                            options: enabledSubmodules.map { ($0.rawValue, $0.localizedTitle, $0.icon) },
+                            selection: $selectedSubmoduleRaw
+                        )
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingComingSoon = true } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel(addLabel)
+                }
+                commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
+            }
+            .searchable(text: $searchText, prompt: searchPrompt)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
+                Button(L10n.string("ok"), role: .cancel) { }
+            } message: {
+                Text(L10n.string("module_coming_soon"))
+            }
+        }
+    }
+}
+
+// MARK: - Shared helpers for module toolbars
+
+@ToolbarContentBuilder
+func commonModuleToolbar(showingSettings: Binding<Bool>, showingScanner: Binding<Bool>) -> some ToolbarContent {
+    ToolbarItem(placement: .navigationBarTrailing) {
+        Button { showingScanner.wrappedValue = true } label: {
+            Image(systemName: "qrcode.viewfinder")
+        }
+        .accessibilityLabel(L10n.string("scan_qr"))
+    }
+    ToolbarItem(placement: .navigationBarTrailing) {
+        Button { showingSettings.wrappedValue = true } label: {
+            Image(systemName: "gearshape")
+        }
+    }
+}
+
+func submodulePickerMenu(
+    current iconName: String,
+    options: [(raw: String, title: String, icon: String)],
+    selection: Binding<String>
+) -> some View {
+    Menu {
+        Picker(selection: selection) {
+            ForEach(options, id: \.raw) { option in
+                Label(option.title, systemImage: option.icon)
+                    .tag(option.raw)
+            }
+        } label: {
+            Text(L10n.string("switch_module"))
+        }
+    } label: {
+        HStack(spacing: 3) {
+            Image(systemName: iconName)
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.bold))
+        }
+        .padding(.horizontal, 4)
+    }
+    .accessibilityLabel(L10n.string("switch_module"))
+}
+
+private struct AccessoriesContent: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var navigationPath: NavigationPath
+
+    var filteredAccessories: [Accessory] {
+        if searchText.isEmpty { return apiClient.accessories }
+        return apiClient.accessories.filter {
+            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedAssignedToName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedManufacturerName.lowercased().contains(searchText.lowercased()) ||
+            $0.decodedCategoryName.lowercased().contains(searchText.lowercased())
+        }
+    }
+
+    var body: some View {
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api_short"))
+                )
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView(L10n.string("loading_accessories"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apiClient.errorMessage != nil {
+                ScrollView {
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                        .frame(minHeight: 400)
+                }
+            } else {
+                List {
+                    Section {
+                        HStack {
+                            Label("\(apiClient.accessories.count)", systemImage: "mediastick")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
+
+                    Section {
+                        ForEach(filteredAccessories) { accessory in
+                            Button {
+                                navigationPath.append(accessory)
+                            } label: {
+                                AccessoryCardView(accessory: accessory)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .listRowBackground(Color.clear)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(.compact)
+                .listSectionSeparator(.hidden)
+            }
+        }
+    }
+}
+
+// MARK: - Directory Tab (users + locations)
+
+struct DirectoryTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
     @Binding var userDetailTab: Int
+    @Binding var locationDetailTab: Int
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
-    @Binding var showingAddAsset: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
     @Binding var pendingUserToOpen: User?
+    @Binding var pendingLocationToOpen: Location?
     @Binding var returnToTab: MainTab?
     var onBackToPreviousTab: () -> Void
-    var onOpenAsset: (Asset) -> Void
-    var onOpenAccessory: (Accessory) -> Void
-    var onOpenLocation: (Location) -> Void
+    var onOpenAssetFromUser: (Asset) -> Void
+    var onOpenAccessoryFromUser: (Accessory) -> Void
+    var onOpenLocationFromUser: (Location) -> Void
+    var onOpenUserFromLocation: (User) -> Void
+    var onOpenAssetFromLocation: (Asset) -> Void
+
+    @AppStorage("directorySelectedSubmodule") private var selectedSubmoduleRaw: String = DirectorySubmodule.users.rawValue
+
+    @State private var showingComingSoon = false
+
+    private var enabledSubmodules: [DirectorySubmodule] { DirectorySubmodule.allCases }
+
+    private var selectedSubmodule: DirectorySubmodule {
+        DirectorySubmodule(rawValue: selectedSubmoduleRaw) ?? .users
+    }
+
+    private var addLabel: String {
+        selectedSubmodule == .users
+            ? L10n.string("add_user")
+            : L10n.string("add_location")
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            Group {
+                switch selectedSubmodule {
+                case .users:
+                    UsersContent(
+                        apiClient: apiClient,
+                        searchText: $searchText,
+                        isRefreshing: $isRefreshing,
+                        navigationPath: $navigationPath
+                    )
+                case .locations:
+                    LocationsContent(
+                        apiClient: apiClient,
+                        searchText: $searchText,
+                        isRefreshing: $isRefreshing,
+                        navigationPath: $navigationPath
+                    )
+                }
+            }
+            .onAppear { isDetailViewActive = false }
+            .navigationTitle(selectedSubmodule.localizedTitle)
+            .toolbar {
+                if enabledSubmodules.count > 1 {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        submodulePickerMenu(
+                            current: selectedSubmodule.icon,
+                            options: enabledSubmodules.map { ($0.rawValue, $0.localizedTitle, $0.icon) },
+                            selection: $selectedSubmoduleRaw
+                        )
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingComingSoon = true } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel(addLabel)
+                }
+                commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
+            }
+            .searchable(
+                text: $searchText,
+                prompt: selectedSubmodule == .users
+                    ? L10n.string("search_users")
+                    : L10n.string("search_locations")
+            )
+            .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
+                Button(L10n.string("ok"), role: .cancel) { }
+            } message: {
+                Text(L10n.string("add_coming_soon"))
+            }
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    await apiClient.fetchPrimaryThenBackground()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
+            }
+            .navigationDestination(for: User.self) { user in
+                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser)
+            }
+            .navigationDestination(for: Location.self) { location in
+                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUserFromLocation, onOpenAsset: onOpenAssetFromLocation)
+            }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        }
+        .onChange(of: pendingUserToOpen) { _, new in
+            if let user = new {
+                if selectedSubmoduleRaw != DirectorySubmodule.users.rawValue {
+                    selectedSubmoduleRaw = DirectorySubmodule.users.rawValue
+                }
+                navigationPath.append(user)
+                pendingUserToOpen = nil
+            }
+        }
+        .onChange(of: pendingLocationToOpen) { _, new in
+            if let location = new {
+                if selectedSubmoduleRaw != DirectorySubmodule.locations.rawValue {
+                    selectedSubmoduleRaw = DirectorySubmodule.locations.rawValue
+                }
+                navigationPath.append(location)
+                pendingLocationToOpen = nil
+            }
+        }
+    }
+}
+
+private struct UsersContent: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var navigationPath: NavigationPath
 
     var filteredUsers: [User] {
         if searchText.isEmpty { return apiClient.users }
@@ -1166,109 +1568,61 @@ struct UsersTab: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            Group {
-                if !apiClient.isConfigured {
-                    ContentUnavailableView(
-                        L10n.string("no_data_yet"),
-                        systemImage: "link.badge.plus",
-                        description: Text(L10n.string("configure_api_short"))
-                    )
-                } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView(L10n.string("loading_users"))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if apiClient.errorMessage != nil {
-                    ScrollView {
-                        ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
-                            .frame(minHeight: 400)
-                    }
-                } else {
-                    List {
-                        Section {
-                            HStack {
-                                Label("\(apiClient.users.count)", systemImage: "person.2")
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                            }
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api_short"))
+                )
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView(L10n.string("loading_users"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apiClient.errorMessage != nil {
+                ScrollView {
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                        .frame(minHeight: 400)
+                }
+            } else {
+                List {
+                    Section {
+                        HStack {
+                            Label("\(apiClient.users.count)", systemImage: "person.2")
+                                .foregroundStyle(.primary)
+                            Spacer()
                         }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
 
-                        Section {
-                            ForEach(filteredUsers) { user in
-                                Button {
-                                    navigationPath.append(user)
-                                } label: {
-                                    UserCardView(user: user)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .listRowBackground(Color.clear)
+                    Section {
+                        ForEach(filteredUsers) { user in
+                            Button {
+                                navigationPath.append(user)
+                            } label: {
+                                UserCardView(user: user)
                             }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .listRowBackground(Color.clear)
                         }
                     }
-                    .listStyle(.insetGrouped)
-                    .listSectionSpacing(.compact)
-                    .listSectionSeparator(.hidden)
                 }
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(.compact)
+                .listSectionSeparator(.hidden)
             }
-            .onAppear { isDetailViewActive = false }
-            .navigationTitle(MainTab.users.localizedTitle)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingScanner = true
-                    } label: {
-                        Image(systemName: "qrcode.viewfinder")
-                    }
-                    .accessibilityLabel(L10n.string("scan_qr"))
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
-            }
-            .searchable(text: $searchText, prompt: L10n.string("search_users"))
-            .refreshable {
-                if apiClient.isConfigured {
-                    isRefreshing = true
-                    await apiClient.fetchPrimaryThenBackground()
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    isRefreshing = false
-                }
-            }
-            .navigationDestination(for: User.self) { user in
-                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAsset, onOpenAccessory: onOpenAccessory, onOpenLocation: onOpenLocation)
-            }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        }
-        .onChange(of: pendingUserToOpen) { _, new in
-            if new != nil { pendingUserToOpen = nil }
         }
     }
 }
 
-// MARK: - Locations Tab
-struct LocationsTab: View {
+private struct LocationsContent: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
-    @Binding var locationDetailTab: Int
-    @Binding var showingSettings: Bool
-    @Binding var showingScanner: Bool
-    @Binding var showingAddAsset: Bool
     @Binding var navigationPath: NavigationPath
-    @Binding var isDetailViewActive: Bool
-    @Binding var pendingLocationToOpen: Location?
-    @Binding var returnToTab: MainTab?
-    var onBackToPreviousTab: () -> Void
-    var onOpenUser: (User) -> Void
-    var onOpenAsset: (Asset) -> Void
 
     var filteredLocations: [Location] {
         if searchText.isEmpty { return apiClient.locations }
@@ -1276,91 +1630,51 @@ struct LocationsTab: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            Group {
-                if !apiClient.isConfigured {
-                    ContentUnavailableView(
-                        L10n.string("no_data_yet"),
-                        systemImage: "link.badge.plus",
-                        description: Text(L10n.string("configure_api_short"))
-                    )
-                } else if apiClient.isLoading && !isRefreshing {
-                    ProgressView(L10n.string("loading_locations"))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if apiClient.errorMessage != nil {
-                    ScrollView {
-                        ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
-                            .frame(minHeight: 400)
-                    }
-                } else {
-                    List {
-                        Section {
-                            HStack {
-                                Label("\(apiClient.locations.count)", systemImage: "mappin.and.ellipse")
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                            }
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api_short"))
+                )
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView(L10n.string("loading_locations"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apiClient.errorMessage != nil {
+                ScrollView {
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                        .frame(minHeight: 400)
+                }
+            } else {
+                List {
+                    Section {
+                        HStack {
+                            Label("\(apiClient.locations.count)", systemImage: "mappin.and.ellipse")
+                                .foregroundStyle(.primary)
+                            Spacer()
                         }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
 
-                        Section {
-                            ForEach(filteredLocations) { location in
-                                Button {
-                                    navigationPath.append(location)
-                                } label: {
-                                    LocationCardView(location: location)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .listRowBackground(Color.clear)
+                    Section {
+                        ForEach(filteredLocations) { location in
+                            Button {
+                                navigationPath.append(location)
+                            } label: {
+                                LocationCardView(location: location)
                             }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .listRowBackground(Color.clear)
                         }
                     }
-                    .listStyle(.insetGrouped)
-                    .listSectionSpacing(.compact)
-                    .listSectionSeparator(.hidden)
                 }
-            }
-            .onAppear { isDetailViewActive = false }
-            .navigationTitle(MainTab.locations.localizedTitle)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingScanner = true
-                    } label: {
-                        Image(systemName: "qrcode.viewfinder")
-                    }
-                    .accessibilityLabel(L10n.string("scan_qr"))
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
-            }
-            .searchable(text: $searchText, prompt: L10n.string("search_locations"))
-            .refreshable {
-                if apiClient.isConfigured {
-                    isRefreshing = true
-                    await apiClient.fetchPrimaryThenBackground()
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    isRefreshing = false
-                }
-            }
-            .navigationDestination(for: Location.self) { location in
-                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset)
-            }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        }
-        .onChange(of: pendingLocationToOpen) { _, new in
-            if let location = new {
-                navigationPath.append(location)
-                pendingLocationToOpen = nil
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(.compact)
+                .listSectionSeparator(.hidden)
             }
         }
     }

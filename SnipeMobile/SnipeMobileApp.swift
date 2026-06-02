@@ -171,7 +171,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     @StateObject private var appSettings = AppSettings()
     @StateObject private var auditNotificationRouter = AuditNotificationRouter()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
+    @AppStorage("hasSeenModulesIntro") private var hasSeenModulesIntro: Bool = false
     @State private var showAPISettings: Bool = false
+    @State private var showModuleSelection: Bool = false
+    @State private var showModulesIntroForExisting: Bool = false
     @State private var isLocked = false
     @State private var showBiometricError = false
     @State private var biometricErrorMessage = ""
@@ -194,18 +197,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         WindowGroup {
             ZStack {
                 if !hasCompletedOnboarding {
-                    if showAPISettings {
+                    if showModuleSelection {
+                        ModuleSelectionView(onDone: {
+                            hasCompletedOnboarding = true
+                            hasSeenModulesIntro = true
+                            CloudSettingsStore.shared.setHasCompletedOnboarding(true)
+                            CloudSettingsStore.shared.setHasSeenModulesIntro(true)
+                            showModuleSelection = false
+                            showAPISettings = false
+                        })
+                    } else if showAPISettings {
                         APISettingsOnboardingView(
                             onContinue: { url, key in
                                 apiClient.saveConfiguration(baseURL: url, apiToken: key)
-                                hasCompletedOnboarding = true
-                                CloudSettingsStore.shared.setHasCompletedOnboarding(true)
-                                showAPISettings = false
+                                showModuleSelection = true
                             },
                             onSkip: {
-                                hasCompletedOnboarding = true
-                                CloudSettingsStore.shared.setHasCompletedOnboarding(true)
-                                showAPISettings = false
+                                showModuleSelection = true
                             },
                             apiClient: apiClient
                         )
@@ -267,6 +275,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                     reviewPromptLaunchCount += 1
                     didCountLaunchThisSession = true
                 }
+
+                // One-time module picker after upgrade.
+                if hasCompletedOnboarding && !hasSeenModulesIntro {
+                    showModulesIntroForExisting = true
+                }
+            }
+            .fullScreenCover(isPresented: $showModulesIntroForExisting) {
+                ModuleSelectionView(onDone: {
+                    hasSeenModulesIntro = true
+                    CloudSettingsStore.shared.setHasSeenModulesIntro(true)
+                    showModulesIntroForExisting = false
+                })
+                .environmentObject(appSettings)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 if hasCompletedOnboarding && appSettings.useBiometrics == true && !isLocked && !justAuthenticated {
@@ -375,6 +396,7 @@ struct MainSplitView: View {
     @State private var showSettings = false
     @State private var showAddAsset = false
     @State private var showAddAccessory = false
+    @State private var showComingSoonAlert = false
     @State private var showScanner = false
     @State private var scannedAssetId: Int?
     @State private var isRefreshing = false
@@ -388,6 +410,61 @@ struct MainSplitView: View {
     @State private var selectedAccessoryDetailTab: Int = 0
     @State private var selectedUserDetailTab: Int = 0
     @State private var selectedLocationDetailTab: Int = 0
+    @AppStorage("showAccessoriesTab") private var showAccessoriesTab: Bool = true
+    @AppStorage("showLicensesTab") private var showLicensesTab: Bool = true
+    @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
+    @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
+    @AppStorage("stockSelectedSubmodule") private var stockSelectedRaw: String = StockSubmodule.consumables.rawValue
+    @AppStorage("directorySelectedSubmodule") private var directorySelectedRaw: String = DirectorySubmodule.users.rawValue
+
+    private var orderedVisibleSections: [MainTab] {
+        TabOrderStore.defaultOrder.filter { tab in
+            switch tab {
+            case .hardware, .directory: return true
+            case .accessories: return showAccessoriesTab
+            case .licenses: return showLicensesTab
+            case .stock: return showConsumablesSub || showComponentsSub
+            }
+        }
+    }
+
+    private var enabledStockSubmodules: [StockSubmodule] {
+        StockSubmodule.allCases.filter {
+            switch $0 {
+            case .consumables: return showConsumablesSub
+            case .components: return showComponentsSub
+            }
+        }
+    }
+
+    private var stockSelectedSubmodule: StockSubmodule {
+        let stored = StockSubmodule(rawValue: stockSelectedRaw) ?? .consumables
+        return enabledStockSubmodules.contains(stored) ? stored : (enabledStockSubmodules.first ?? .consumables)
+    }
+
+    private var enabledDirectorySubmodules: [DirectorySubmodule] { DirectorySubmodule.allCases }
+
+    private var directorySelectedSubmodule: DirectorySubmodule {
+        DirectorySubmodule(rawValue: directorySelectedRaw) ?? .users
+    }
+
+    private func sectionTitle(_ section: MainTab) -> String {
+        switch section {
+        case .stock where enabledStockSubmodules.count == 1:
+            return enabledStockSubmodules[0].localizedTitle
+        default:
+            return section.localizedTitle
+        }
+    }
+
+    private func sectionIcon(_ section: MainTab) -> String {
+        switch section {
+        case .stock where enabledStockSubmodules.count == 1:
+            return enabledStockSubmodules[0].icon
+        default:
+            return section.icon
+        }
+    }
     /// Tab bar state. iPhone only.
     @State private var isDetailViewActive = false
     /// From detail link. Don't clear section onChange.
@@ -520,8 +597,15 @@ struct MainSplitView: View {
         switch selectedSection {
         case .hardware: return L10n.string("search_assets")
         case .accessories: return L10n.string("search_accessories")
-        case .users: return L10n.string("search_users")
-        case .locations: return L10n.string("search_locations")
+        case .licenses: return L10n.string("search_licenses")
+        case .stock:
+            return stockSelectedSubmodule == .consumables
+                ? L10n.string("search_consumables")
+                : L10n.string("search_components")
+        case .directory:
+            return directorySelectedSubmodule == .users
+                ? L10n.string("search_users")
+                : L10n.string("search_locations")
         }
     }
 
@@ -656,7 +740,7 @@ struct MainSplitView: View {
             Text(auditCompletionErrorMessage)
         }
         .onAppear {
-            // Cold boot: `pendingRequest` kan al gezet zijn vóórdat `onChange` afvuurt.
+            // Cold boot: `pendingRequest` may already be set before `onChange` fires.
             if auditNotificationRouter.pendingRequest != nil, !auditNotificationNavResolved {
                 awaitingAuditNavigationResolution = true
                 auditNotificationNavResolved = false
@@ -767,11 +851,11 @@ struct MainSplitView: View {
                 }
                 .buttonStyle(.plain)
 
-                ForEach(MainTab.allCases, id: \.self) { section in
+                ForEach(orderedVisibleSections, id: \.self) { section in
                     Button {
                         selectedSection = section
                     } label: {
-                        Label(section.localizedTitle, systemImage: section.icon)
+                        Label(sectionTitle(section), systemImage: sectionIcon(section))
                             .foregroundStyle(selectedSection == section ? Color.accentColor : .primary)
                     }
                     .buttonStyle(.plain)
@@ -800,29 +884,117 @@ struct MainSplitView: View {
 
     private var ipadContentWithToolbar: some View {
         ipadContentColumn
-            .navigationTitle(selectedSection.localizedTitle)
+            .navigationTitle(comboAwareSectionTitle)
             .navigationBarTitleDisplayMode(.large)
             .searchable(text: $searchText, prompt: Text(ipadSearchPrompt))
             .toolbar {
-                if selectedSection == .hardware || selectedSection == .accessories {
+                if selectedSection == .stock, enabledStockSubmodules.count > 1 {
                     ToolbarItem(placement: .primaryAction) {
-                        HStack(spacing: 16) {
-                            if selectedSection == .hardware {
-                                Button(action: { showAddAsset = true }) {
-                                    Image(systemName: "plus.circle")
+                        comboPicker(
+                            current: stockSelectedSubmodule.icon,
+                            options: enabledStockSubmodules.map { ($0.rawValue, $0.localizedTitle, $0.icon) },
+                            selection: $stockSelectedRaw
+                        )
+                    }
+                }
+                if selectedSection == .directory, enabledDirectorySubmodules.count > 1 {
+                    ToolbarItem(placement: .primaryAction) {
+                        comboPicker(
+                            current: directorySelectedSubmodule.icon,
+                            options: enabledDirectorySubmodules.map { ($0.rawValue, $0.localizedTitle, $0.icon) },
+                            selection: Binding(
+                                get: { directorySelectedRaw },
+                                set: { newValue in
+                                    directorySelectedRaw = newValue
+                                    selectedUser = nil
+                                    selectedLocation = nil
                                 }
-                                .accessibilityLabel(L10n.string("add_asset"))
-                            }
-                            if selectedSection == .accessories {
-                                Button(action: { showAddAccessory = true }) {
-                                    Image(systemName: "plus.circle")
-                                }
-                                .accessibilityLabel(L10n.string("add_accessory"))
-                            }
+                            )
+                        )
+                    }
+                }
+                if selectedSection == .hardware {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(action: { showAddAsset = true }) {
+                            Image(systemName: "plus.circle")
                         }
+                        .accessibilityLabel(L10n.string("add_asset"))
+                    }
+                }
+                if selectedSection == .accessories {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(action: { showAddAccessory = true }) {
+                            Image(systemName: "plus.circle")
+                        }
+                        .accessibilityLabel(L10n.string("add_accessory"))
+                    }
+                }
+                if selectedSection == .licenses || selectedSection == .stock {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(action: { showComingSoonAlert = true }) {
+                            Image(systemName: "plus.circle")
+                        }
+                        .accessibilityLabel(L10n.string("add"))
+                    }
+                }
+                if selectedSection == .directory {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(action: { showComingSoonAlert = true }) {
+                            Image(systemName: "plus.circle")
+                        }
+                        .accessibilityLabel(directoryAddLabel)
                     }
                 }
             }
+            .alert(L10n.string("module_coming_soon_title"), isPresented: $showComingSoonAlert) {
+                Button(L10n.string("ok"), role: .cancel) { }
+            } message: {
+                Text(comingSoonMessage)
+            }
+    }
+
+    private var directoryAddLabel: String {
+        directorySelectedSubmodule == .users
+            ? L10n.string("add_user")
+            : L10n.string("add_location")
+    }
+
+    private var comingSoonMessage: String {
+        selectedSection == .directory
+            ? L10n.string("add_coming_soon")
+            : L10n.string("module_coming_soon")
+    }
+
+    private var comboAwareSectionTitle: String {
+        switch selectedSection {
+        case .stock: return stockSelectedSubmodule.localizedTitle
+        case .directory: return directorySelectedSubmodule.localizedTitle
+        default: return selectedSection.localizedTitle
+        }
+    }
+
+    private func comboPicker(
+        current iconName: String,
+        options: [(raw: String, title: String, icon: String)],
+        selection: Binding<String>
+    ) -> some View {
+        Menu {
+            Picker(selection: selection) {
+                ForEach(options, id: \.raw) { option in
+                    Label(option.title, systemImage: option.icon)
+                        .tag(option.raw)
+                }
+            } label: {
+                Text(L10n.string("switch_module"))
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: iconName)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+            }
+        }
+        .accessibilityLabel(L10n.string("switch_module"))
     }
 
     @ViewBuilder
@@ -843,7 +1015,8 @@ struct MainSplitView: View {
                         selectedLocation = nil
                         selectedUserDetailTab = 0
                         skipClearSelectionOnSectionChange = true
-                        selectedSection = .users
+                        directorySelectedRaw = DirectorySubmodule.users.rawValue
+                        selectedSection = .directory
                     },
                     onOpenLocation: { [apiClient] location in
                         let resolved = apiClient.locations.first(where: { $0.id == location.id }) ?? location
@@ -853,7 +1026,8 @@ struct MainSplitView: View {
                         selectedUser = nil
                         selectedLocationDetailTab = 0
                         skipClearSelectionOnSectionChange = true
-                        selectedSection = .locations
+                        directorySelectedRaw = DirectorySubmodule.locations.rawValue
+                        selectedSection = .directory
                     }
                 )
             } else {
@@ -878,7 +1052,8 @@ struct MainSplitView: View {
                         selectedLocation = nil
                         selectedUserDetailTab = 0
                         skipClearSelectionOnSectionChange = true
-                        selectedSection = .users
+                        directorySelectedRaw = DirectorySubmodule.users.rawValue
+                        selectedSection = .directory
                     },
                     onOpenAsset: { [apiClient] asset in
                         let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
@@ -898,7 +1073,8 @@ struct MainSplitView: View {
                         selectedUser = nil
                         selectedLocationDetailTab = 0
                         skipClearSelectionOnSectionChange = true
-                        selectedSection = .locations
+                        directorySelectedRaw = DirectorySubmodule.locations.rawValue
+                        selectedSection = .directory
                     }
                 )
             } else {
@@ -908,6 +1084,26 @@ struct MainSplitView: View {
                     description: Text("Choose an accessory from the list")
                 )
             }
+        case .licenses:
+            ContentUnavailableView(
+                L10n.string("tab_licenses"),
+                systemImage: "doc.text.fill",
+                description: Text(L10n.string("module_coming_soon"))
+            )
+        case .stock:
+            ContentUnavailableView(
+                stockSelectedSubmodule.localizedTitle,
+                systemImage: stockSelectedSubmodule.icon,
+                description: Text(L10n.string("module_coming_soon"))
+            )
+        case .directory:
+            ipadDirectoryDetail
+        }
+    }
+
+    @ViewBuilder
+    private var ipadDirectoryDetail: some View {
+        switch directorySelectedSubmodule {
         case .users:
             if let user = selectedUser {
                 UserDetailView(
@@ -943,7 +1139,7 @@ struct MainSplitView: View {
                         selectedUser = nil
                         selectedLocationDetailTab = 0
                         skipClearSelectionOnSectionChange = true
-                        selectedSection = .locations
+                        directorySelectedRaw = DirectorySubmodule.locations.rawValue
                     }
                 )
             } else {
@@ -968,7 +1164,7 @@ struct MainSplitView: View {
                         selectedLocation = nil
                         selectedUserDetailTab = 0
                         skipClearSelectionOnSectionChange = true
-                        selectedSection = .users
+                        directorySelectedRaw = DirectorySubmodule.users.rawValue
                     },
                     onOpenAsset: { [apiClient] asset in
                         let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
@@ -988,6 +1184,14 @@ struct MainSplitView: View {
                     description: Text("Choose a location from the list")
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private var ipadDirectoryList: some View {
+        switch directorySelectedSubmodule {
+        case .users: ipadUserList
+        case .locations: ipadLocationList
         }
     }
 
@@ -1013,10 +1217,22 @@ struct MainSplitView: View {
                     ipadAssetList
                 case .accessories:
                     ipadAccessoryList
-                case .users:
-                    ipadUserList
-                case .locations:
-                    ipadLocationList
+                case .licenses:
+                    ContentUnavailableView(
+                        L10n.string("tab_licenses"),
+                        systemImage: "doc.text.fill",
+                        description: Text(L10n.string("module_coming_soon"))
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .stock:
+                    ContentUnavailableView(
+                        stockSelectedSubmodule.localizedTitle,
+                        systemImage: stockSelectedSubmodule.icon,
+                        description: Text(L10n.string("module_coming_soon"))
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .directory:
+                    ipadDirectoryList
                 }
             }
         }
@@ -1082,7 +1298,7 @@ struct MainSplitView: View {
             }
 
             List {
-                // Audit subtab: vandaag + komende audits.
+                // Audit subtab: today + upcoming audits.
                 if enableAuditSubtab, hardwareSubtab == .audit {
                     switch auditListFilter {
                     case .dueToday:
