@@ -150,6 +150,20 @@ class SnipeITAPIClient: ObservableObject {
                 }
             }
         }
+        NotificationCenter.default.addObserver(forName: .appDataDidWipe, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.isConfigured = false
+                self.assets = []
+                self.users = []
+                self.accessories = []
+                self.locations = []
+                self.companies = []
+                self.manufacturers = []
+                self.suppliers = []
+                self.statusLabels = []
+            }
+        }
     }
 
     func saveConfiguration(baseURL: String, apiToken: String) {

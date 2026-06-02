@@ -1,5 +1,6 @@
 import SwiftUI
 import LocalAuthentication
+import StoreKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
@@ -25,6 +26,7 @@ struct SettingsView: View {
     @State private var pendingBiometricsValue: Bool? = nil
     @State private var showResetConfirm: Bool = false
     @State private var notificationTime: Date = Date()
+    @State private var versionDisplay = AppInfo.versionBase
 
     /// Device has iCloud.
     private var isICloudAvailable: Bool {
@@ -98,6 +100,10 @@ struct SettingsView: View {
                 }
             }
             .onAppear(perform: handleOnAppear)
+            .task {
+                let channel = await AppInfo.resolveChannel()
+                versionDisplay = AppInfo.versionAndBuild(channel: channel)
+            }
             .onChange(of: appTheme) { _, newValue in
                 CloudSettingsStore.shared.setAppTheme(newValue)
             }
@@ -177,16 +183,8 @@ struct SettingsView: View {
             ) {
                 Button(L10n.string("cancel"), role: .cancel) {}
                 Button(L10n.string("reset_data_confirm_action"), role: .destructive) {
+                    // SnipeITAPIClient reacts to `.appDataDidWipe` posted by wipeAllData.
                     CloudSettingsStore.shared.wipeAllData()
-                    apiClient.assets = []
-                    apiClient.users = []
-                    apiClient.accessories = []
-                    apiClient.locations = []
-                    apiClient.companies = []
-                    apiClient.manufacturers = []
-                    apiClient.suppliers = []
-                    apiClient.statusLabels = []
-                    apiClient.isConfigured = false
                 }
             } message: {
                 Text(L10n.string("reset_data_confirm_message"))
@@ -295,7 +293,7 @@ struct SettingsView: View {
                 icon: "info.circle.fill",
                 iconColor: .gray,
                 title: L10n.string("settings_version"),
-                value: AppInfo.versionAndBuild
+                value: versionDisplay
             )
             Button(role: .destructive) {
                 showResetConfirm = true
@@ -381,7 +379,7 @@ enum SettingsRoute: Hashable { case appearance, security, api, audit, dell }
 
 // MARK: - Reusable building blocks (iOS Settings.app style)
 
-/// Rounded square icon, like the iOS Settings app.
+/// Rounded square icon like the iOS Settings app.
 private struct SettingsIcon: View {
     let symbol: String
     let color: Color
@@ -398,7 +396,7 @@ private struct SettingsIcon: View {
     }
 }
 
-/// App version / build / distribution channel info from the main bundle.
+/// App version, build, and distribution channel.
 enum AppInfo {
     enum Channel: String {
         case appStore = "App Store"
@@ -416,28 +414,61 @@ enum AppInfo {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
     }
 
-    /// How this build was distributed. Detected via the App Store receipt URL:
-    /// TestFlight installs ship a `sandboxReceipt`, App Store installs a `receipt`.
-    static var channel: Channel {
+    /// Resolves the distribution channel via StoreKit. Cached after first call.
+    static func resolveChannel() async -> Channel {
         #if DEBUG
         return .debug
         #else
-        if let url = Bundle.main.appStoreReceiptURL {
-            if url.lastPathComponent == "sandboxReceipt" { return .testFlight }
-            return .appStore
-        }
-        return .debug
+        if let cachedChannel { return cachedChannel }
+        let resolved = await channelFromStoreKit()
+        cachedChannel = resolved
+        return resolved
         #endif
     }
 
+    /// Version + build, no channel suffix.
+    static var versionBase: String {
+        build.isEmpty ? version : "\(version) (\(build))"
+    }
+
     /// e.g. "1.2.3 (42) · TestFlight".
-    static var versionAndBuild: String {
-        let base = build.isEmpty ? version : "\(version) (\(build))"
-        return "\(base) · \(channel.rawValue)"
+    static func versionAndBuild(channel: Channel) -> String {
+        "\(versionBase) · \(channel.rawValue)"
+    }
+
+    private static var cachedChannel: Channel?
+
+    private static func channelFromStoreKit() async -> Channel {
+        do {
+            let result = try await AppTransaction.shared
+            let environment: AppStore.Environment
+            switch result {
+            case .verified(let transaction):
+                environment = transaction.environment
+            case .unverified(let transaction, _):
+                environment = transaction.environment
+            }
+            return mapEnvironment(environment)
+        } catch {
+            return .debug
+        }
+    }
+
+    private static func mapEnvironment(_ environment: AppStore.Environment) -> Channel {
+        switch environment {
+        case .production:
+            return .appStore
+        case .sandbox:
+            return .testFlight
+        case .xcode:
+            return .debug
+        default:
+            return .debug
+        }
     }
 }
 
-/// Row with leading colored icon, title, and optional trailing value.
+/// Row with a colored icon, title, and optional trailing value.
 private struct SettingsRow: View {
     let icon: String
     let iconColor: Color
@@ -461,7 +492,7 @@ private struct SettingsRow: View {
     }
 }
 
-/// Toggle row with leading colored icon.
+/// Toggle row with a colored icon.
 private struct SettingsToggleRow: View {
     let icon: String
     let iconColor: Color

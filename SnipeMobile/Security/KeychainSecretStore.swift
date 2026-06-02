@@ -7,28 +7,60 @@ enum SecretKey: String, CaseIterable {
     case dellTechDirectClientSecret
 }
 
+/// Keychain wrapper. Writes are synchronizable (iCloud Keychain); reads fall back to legacy local items.
 enum KeychainSecretStore {
     private static let migrationFlagKey = "didMigrateSecretsToKeychainV1"
+    private static let iCloudMigrationFlagKey = "didMigrateSecretsToICloudKeychainV1"
 
     private static var service: String {
         Bundle.main.bundleIdentifier ?? "com.snipeMobile.app"
     }
 
-    static func string(for key: SecretKey) -> String {
-        let query: [String: Any] = [
+    /// Target the iCloud copy, the legacy local-only copy, or either.
+    private enum SyncScope {
+        case cloud
+        case localOnly
+        case any
+    }
+
+    private static func baseQuery(for key: SecretKey, scope: SyncScope) -> [String: Any] {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: key.rawValue,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecAttrAccount as String: key.rawValue
         ]
+        switch scope {
+        case .cloud:
+            query[kSecAttrSynchronizable as String] = kCFBooleanTrue as Any
+        case .localOnly:
+            query[kSecAttrSynchronizable as String] = kCFBooleanFalse as Any
+        case .any:
+            query[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
+        }
+        return query
+    }
+
+    static func string(for key: SecretKey) -> String {
+        if let value = read(key: key, scope: .cloud), !value.isEmpty {
+            return value
+        }
+        if let value = read(key: key, scope: .localOnly), !value.isEmpty {
+            return value
+        }
+        return ""
+    }
+
+    private static func read(key: SecretKey, scope: SyncScope) -> String? {
+        var query = baseQuery(for: key, scope: scope)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess,
               let data = item as? Data,
               let value = String(data: data, encoding: .utf8) else {
-            return ""
+            return nil
         }
         return value
     }
@@ -39,36 +71,31 @@ enum KeychainSecretStore {
             return
         }
 
-        let encoded = Data(value.utf8)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key.rawValue
-        ]
+        // Drop legacy local-only copy first.
+        SecItemDelete(baseQuery(for: key, scope: .localOnly) as CFDictionary)
 
+        let encoded = Data(value.utf8)
         let attributes: [String: Any] = [
             kSecValueData as String: encoded,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            // Required for iCloud Keychain replication.
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
 
-        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        let updateQuery = baseQuery(for: key, scope: .cloud)
+        let updateStatus = SecItemUpdate(updateQuery as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecSuccess { return }
 
-        var insertQuery = query
+        var insertQuery = baseQuery(for: key, scope: .cloud)
         insertQuery.merge(attributes) { _, new in new }
         SecItemAdd(insertQuery as CFDictionary, nil)
     }
 
     static func delete(_ key: SecretKey) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key.rawValue
-        ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(baseQuery(for: key, scope: .cloud) as CFDictionary)
+        SecItemDelete(baseQuery(for: key, scope: .localOnly) as CFDictionary)
     }
 
-    /// Remove every secret managed by the app from the keychain.
+    /// Remove every app-managed secret from the keychain.
     static func wipeAll() {
         for key in SecretKey.allCases {
             delete(key)
@@ -89,5 +116,25 @@ enum KeychainSecretStore {
         }
 
         defaults.set(true, forKey: migrationFlagKey)
+    }
+
+    /// One-time migration: rewrite local-only items as iCloud-synced so other devices pick them up.
+    static func migrateLocalSecretsToICloudKeychainIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: iCloudMigrationFlagKey) else { return }
+
+        for key in SecretKey.allCases {
+            let localValue = read(key: key, scope: .localOnly) ?? ""
+            guard !localValue.isEmpty else { continue }
+
+            let cloudValue = read(key: key, scope: .cloud) ?? ""
+            if cloudValue.isEmpty {
+                set(localValue, for: key)
+            } else {
+                SecItemDelete(baseQuery(for: key, scope: .localOnly) as CFDictionary)
+            }
+        }
+
+        defaults.set(true, forKey: iCloudMigrationFlagKey)
     }
 }

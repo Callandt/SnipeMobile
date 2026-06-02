@@ -22,9 +22,12 @@ private enum CloudKey: String, CaseIterable {
     case enableDellQrScan
     case dellTechDirectClientId
     case dellTechDirectClientSecret
+    /// Unix timestamp of last wipe. Other devices mirror it locally.
+    case lastWipeAt
 }
 
 private let useCloudSyncKey = "useCloudSync"
+private let lastSeenWipeAtKey = "lastSeenWipeAt"
 
 final class CloudSettingsStore {
     static let shared = CloudSettingsStore()
@@ -177,6 +180,15 @@ final class CloudSettingsStore {
 
     private func mergeCloudValuesIntoUserDefaults() {
         guard useCloudSync, isICloudAvailable else { return }
+
+        // Mirror a remote wipe before merging anything else.
+        let cloudWipeAt = store.double(forKey: CloudKey.lastWipeAt.rawValue)
+        let localSeenWipeAt = defaults.double(forKey: lastSeenWipeAtKey)
+        if cloudWipeAt > 0, cloudWipeAt > localSeenWipeAt {
+            performLocalWipe(rememberWipeAt: cloudWipeAt)
+            return
+        }
+
         if let v = store.string(forKey: CloudKey.baseURL.rawValue), !v.isEmpty {
             defaults.set(v, forKey: "baseURL")
         }
@@ -238,18 +250,28 @@ final class CloudSettingsStore {
     }
 
     func wipeAllData() {
+        let timestamp = Date().timeIntervalSince1970
+
         if isICloudAvailable {
             for key in CloudKey.allCases {
                 store.removeObject(forKey: key.rawValue)
             }
+            // Marker stays so other devices mirror the wipe.
+            store.set(timestamp, forKey: CloudKey.lastWipeAt.rawValue)
             _ = store.synchronize()
         }
 
+        performLocalWipe(rememberWipeAt: timestamp)
+    }
+
+    /// Wipe local state and remember the timestamp to avoid re-wiping when iCloud echoes back.
+    private func performLocalWipe(rememberWipeAt timestamp: TimeInterval) {
         KeychainSecretStore.wipeAll()
 
         if let bundleId = Bundle.main.bundleIdentifier {
             defaults.removePersistentDomain(forName: bundleId)
         }
+        defaults.set(timestamp, forKey: lastSeenWipeAtKey)
         defaults.synchronize()
 
         let center = UNUserNotificationCenter.current()
@@ -257,6 +279,11 @@ final class CloudSettingsStore {
         center.removeAllDeliveredNotifications()
 
         URLCache.shared.removeAllCachedResponses()
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .appDataDidWipe, object: nil)
+            NotificationCenter.default.post(name: .cloudSettingsDidChange, object: nil)
+        }
     }
 
     @objc private func ubiquitousStoreDidChange(_ notification: Notification) {
@@ -271,4 +298,6 @@ final class CloudSettingsStore {
 
 extension Notification.Name {
     static let cloudSettingsDidChange = Notification.Name("cloudSettingsDidChange")
+    /// Posted after a local or remotely-triggered wipe.
+    static let appDataDidWipe = Notification.Name("appDataDidWipe")
 }
