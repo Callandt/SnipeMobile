@@ -1644,4 +1644,96 @@ class SnipeITAPIClient: ObservableObject {
         }
         return nil
     }
+
+    func fetchMaintenances(assetId: Int) async -> [AssetMaintenance]? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        do {
+            return try await fetchAllPaginated(
+                path: "/api/v1/hardware/\(assetId)/maintenances",
+                as: AssetMaintenance.self
+            )
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return nil
+        }
+    }
+
+    func createMaintenance(_ body: MaintenanceCreateRequest) async -> Bool {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/maintenances") else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            if !(200...299).contains(http.statusCode) {
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let msg = (json?["messages"] as? String) ?? "Create failed."
+                await MainActor.run { self.lastApiMessage = msg }
+                return false
+            }
+            return true
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    func updateMaintenance(id: Int, update: MaintenanceUpdateRequest) async -> Bool {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)") else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            request.httpBody = try JSONEncoder().encode(update)
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            if !(200...299).contains(http.statusCode) {
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let msg = (json?["messages"] as? String) ?? "Update failed."
+                await MainActor.run { self.lastApiMessage = msg }
+                return false
+            }
+            return true
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    func deleteMaintenance(id: Int) async -> Bool {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)") else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            if !(200...299).contains(http.statusCode) {
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let msg = (json?["messages"] as? String) ?? "Delete failed."
+                await MainActor.run { self.lastApiMessage = msg }
+                return false
+            }
+            return true
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
 } 
