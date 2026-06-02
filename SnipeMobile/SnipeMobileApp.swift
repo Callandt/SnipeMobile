@@ -164,6 +164,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     init() {
         KeychainSecretStore.migrateLegacyUserDefaultsSecretsIfNeeded()
+        KeychainSecretStore.migrateLocalSecretsToICloudKeychainIfNeeded()
         CloudSettingsStore.shared.mergeFromCloud()
     }
     @StateObject private var apiClient = SnipeITAPIClient()
@@ -393,6 +394,9 @@ struct MainSplitView: View {
     @State private var skipClearSelectionOnSectionChange = false
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
+    @State private var showAddDellAssetPrompt = false
+    @State private var pendingDellURLForAdd: URL?
+    @State private var pendingDellSerial: String?
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
@@ -565,9 +569,17 @@ struct MainSplitView: View {
         .sheet(isPresented: $showSettings) {
             settingsSheet
         }
-        .sheet(isPresented: $showAddAsset) {
-            AddAssetSheet(apiClient: apiClient, isPresented: $showAddAsset)
-                .presentationDetents([.large])
+        .sheet(isPresented: $showAddAsset, onDismiss: {
+            pendingDellURLForAdd = nil
+            pendingDellSerial = nil
+        }) {
+            AddAssetSheet(
+                apiClient: apiClient,
+                isPresented: $showAddAsset,
+                prefilledDellURL: pendingDellURLForAdd,
+                prefilledSerial: pendingDellSerial
+            )
+            .presentationDetents([.large])
         }
         .sheet(isPresented: $showAddAccessory) {
             AddAccessorySheet(apiClient: apiClient, isPresented: $showAddAccessory)
@@ -618,6 +630,22 @@ struct MainSplitView: View {
         } message: {
             if let msg = scanErrorMessage {
                 Text(msg)
+            }
+        }
+        .alert(
+            L10n.string("dell_asset_not_found_title"),
+            isPresented: $showAddDellAssetPrompt
+        ) {
+            Button(L10n.string("cancel"), role: .cancel) {
+                pendingDellURLForAdd = nil
+                pendingDellSerial = nil
+            }
+            Button(L10n.string("dell_asset_not_found_add")) {
+                showAddAsset = true
+            }
+        } message: {
+            if let s = pendingDellSerial {
+                Text(L10n.string("dell_asset_not_found_message", s))
             }
         }
         .alert(L10n.string("error"), isPresented: $showAuditCompletionErrorAlert) {
@@ -1401,15 +1429,13 @@ struct MainSplitView: View {
                                     selectedSection = .hardware
                                 } else {
                                     scannedAssetId = nil
-                                    scanErrorMessage = L10n.string("asset_not_found_serial", serial)
-                                    showScanErrorAlert = true
+                                    promptAddDellAsset(url: url, serial: serial)
                                 }
                             }
                         }
                     } else {
                         scannedAssetId = nil
-                        scanErrorMessage = L10n.string("asset_not_found_serial", serial)
-                        showScanErrorAlert = true
+                        promptAddDellAsset(url: url, serial: serial)
                     }
                     return
                 }
@@ -1458,6 +1484,12 @@ struct MainSplitView: View {
             scanErrorMessage = String(format: L10n.string("scan_failed"), error.localizedDescription)
             showScanErrorAlert = true
         }
+    }
+
+    private func promptAddDellAsset(url: URL, serial: String) {
+        pendingDellURLForAdd = url
+        pendingDellSerial = serial
+        showAddDellAssetPrompt = true
     }
 
     private func extractAssetId(from url: URL) -> Int? {

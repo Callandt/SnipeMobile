@@ -289,6 +289,9 @@ enum L10n {
         "connection_section_footer": "API connections to Snipe-IT and supported vendor services.",
         "settings_about": "About",
         "settings_version": "Version",
+        "dell_asset_not_found_title": "Asset not found",
+        "dell_asset_not_found_message": "No asset was found with serial number \"%@\". Do you want to add a new asset with this serial?",
+        "dell_asset_not_found_add": "Add asset",
     ]
 
     private static let french: [String: String] = [
@@ -539,6 +542,9 @@ enum L10n {
         "connection_section_footer": "Connexions API vers Snipe-IT et services tiers pris en charge.",
         "settings_about": "À propos",
         "settings_version": "Version",
+        "dell_asset_not_found_title": "Actif introuvable",
+        "dell_asset_not_found_message": "Aucun actif trouvé avec le numéro de série « %@ ». Voulez-vous ajouter un nouvel actif avec ce numéro ?",
+        "dell_asset_not_found_add": "Ajouter l'actif",
     ]
 
     private static let dutch: [String: String] = [
@@ -789,5 +795,8 @@ enum L10n {
         "connection_section_footer": "API-verbindingen met Snipe-IT en ondersteunde leveranciersdiensten.",
         "settings_about": "Over",
         "settings_version": "Versie",
+        "dell_asset_not_found_title": "Asset niet gevonden",
+        "dell_asset_not_found_message": "Geen asset gevonden met serienummer \"%@\". Wil je een nieuwe asset toevoegen met dit serienummer?",
+        "dell_asset_not_found_add": "Asset toevoegen",
     ]
 }

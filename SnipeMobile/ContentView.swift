@@ -132,6 +132,9 @@ struct ContentView: View {
     @State private var isDetailViewActive = false
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
+    @State private var showAddDellAssetPrompt = false
+    @State private var pendingDellURLForAdd: URL?
+    @State private var pendingDellSerial: String?
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @State private var awaitingAuditNavigationResolution = false
@@ -269,8 +272,32 @@ struct ContentView: View {
                     appSettings.appTheme == "dark" ? .dark : nil
                 )
         }
-        .sheet(isPresented: $showingAddAsset) {
-            AddAssetSheet(apiClient: apiClient, isPresented: $showingAddAsset)
+        .sheet(isPresented: $showingAddAsset, onDismiss: {
+            pendingDellURLForAdd = nil
+            pendingDellSerial = nil
+        }) {
+            AddAssetSheet(
+                apiClient: apiClient,
+                isPresented: $showingAddAsset,
+                prefilledDellURL: pendingDellURLForAdd,
+                prefilledSerial: pendingDellSerial
+            )
+        }
+        .alert(
+            L10n.string("dell_asset_not_found_title"),
+            isPresented: $showAddDellAssetPrompt
+        ) {
+            Button(L10n.string("cancel"), role: .cancel) {
+                pendingDellURLForAdd = nil
+                pendingDellSerial = nil
+            }
+            Button(L10n.string("dell_asset_not_found_add")) {
+                showingAddAsset = true
+            }
+        } message: {
+            if let s = pendingDellSerial {
+                Text(L10n.string("dell_asset_not_found_message", s))
+            }
         }
         .sheet(isPresented: $showingAddAccessory) {
             AddAccessorySheet(apiClient: apiClient, isPresented: $showingAddAccessory)
@@ -429,15 +456,13 @@ struct ContentView: View {
                                     selectedTab = .hardware
                                 } else {
                                     scannedAssetId = nil
-                                    scanErrorMessage = L10n.string("asset_not_found_serial", serial)
-                                    showScanErrorAlert = true
+                                    promptAddDellAsset(url: url, serial: serial)
                                 }
                             }
                         }
                     } else {
                         scannedAssetId = nil
-                        scanErrorMessage = L10n.string("asset_not_found_serial", serial)
-                        showScanErrorAlert = true
+                        promptAddDellAsset(url: url, serial: serial)
                     }
                     return
                 }
@@ -493,6 +518,13 @@ struct ContentView: View {
             scanErrorMessage = String(format: L10n.string("scan_failed"), error.localizedDescription)
             showScanErrorAlert = true
         }
+    }
+
+    /// Prompt to create a new asset when a Dell QR has no match in Snipe-IT.
+    private func promptAddDellAsset(url: URL, serial: String) {
+        pendingDellURLForAdd = url
+        pendingDellSerial = serial
+        showAddDellAssetPrompt = true
     }
 
     private func extractAssetId(from url: URL) -> Int? {
@@ -585,6 +617,7 @@ struct HardwareTab: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             hardwareTabContent
+                .background(Color(.systemGroupedBackground).ignoresSafeArea())
         }
         .onAppear {
             if apiClient.isConfigured && apiClient.assets.isEmpty && !hasLoadedInitialAssets {
@@ -920,8 +953,6 @@ struct HardwareTab: View {
         .listStyle(.insetGrouped)
         .listSectionSpacing(0)
         .listSectionSeparator(.hidden)
-        // Extra bottom padding so the tab bar doesn't overlap the content.
-        .padding(.bottom, 12)
         .overlay {
             if showLoadingPlaceholder {
                 ProgressView(L10n.string("loading_assets"))
@@ -1095,6 +1126,7 @@ struct AccessoriesTab: View {
             .navigationDestination(for: Accessory.self) { accessory in
                 AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $accessoryDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset, onOpenLocation: onOpenLocation)
             }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
         }
         .onChange(of: pendingAccessoryToOpen) { _, new in
             if let accessory = new {
@@ -1213,6 +1245,7 @@ struct UsersTab: View {
             .navigationDestination(for: User.self) { user in
                 UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAsset, onOpenAccessory: onOpenAccessory, onOpenLocation: onOpenLocation)
             }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
         }
         .onChange(of: pendingUserToOpen) { _, new in
             if new != nil { pendingUserToOpen = nil }
@@ -1322,6 +1355,7 @@ struct LocationsTab: View {
             .navigationDestination(for: Location.self) { location in
                 LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset)
             }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
         }
         .onChange(of: pendingLocationToOpen) { _, new in
             if let location = new {

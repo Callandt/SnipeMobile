@@ -3,6 +3,10 @@ import SwiftUI
 struct AddAssetSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var isPresented: Bool
+    /// Dell QR URL to pre-fill serial (+ purchase date and warranty via TechDirect when set).
+    var prefilledDellURL: URL? = nil
+    /// Plain serial pre-fill when no Dell URL is available.
+    var prefilledSerial: String? = nil
     @State private var name = ""
     @State private var assetTag = ""
     @State private var serial = ""
@@ -114,6 +118,13 @@ struct AddAssetSheet: View {
         // Status stays unset
         if apiClient.companies.isEmpty {
             Task { await apiClient.fetchCompanies() }
+        }
+
+        // Reuse handleDellUrl so pre-fill matches the in-sheet scan flow.
+        if let dellURL = prefilledDellURL {
+            Task { await handleDellUrl(dellURL) }
+        } else if let s = prefilledSerial?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            serial = s
         }
     }
 
