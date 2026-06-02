@@ -14,6 +14,8 @@ private enum CloudKey: String, CaseIterable {
     case apiToken
     case isConfigured
     case hasCompletedOnboarding
+    case hasSeenModulesIntro
+    case tabOrder
     case appTheme
     case useBiometrics
     case appLanguage
@@ -104,6 +106,22 @@ final class CloudSettingsStore {
         defaults.set(value, forKey: "hasCompletedOnboarding")
         if useCloudSync, isICloudAvailable {
             store.set(value, forKey: CloudKey.hasCompletedOnboarding.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
+    func setHasSeenModulesIntro(_ value: Bool) {
+        defaults.set(value, forKey: "hasSeenModulesIntro")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.hasSeenModulesIntro.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
+    func setTabOrder(_ value: String) {
+        defaults.set(value, forKey: "tabOrder")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.tabOrder.rawValue)
             _ = store.synchronize()
         }
     }
@@ -203,6 +221,12 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.hasCompletedOnboarding.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.hasCompletedOnboarding.rawValue), forKey: "hasCompletedOnboarding")
         }
+        if store.object(forKey: CloudKey.hasSeenModulesIntro.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.hasSeenModulesIntro.rawValue), forKey: "hasSeenModulesIntro")
+        }
+        if let v = store.string(forKey: CloudKey.tabOrder.rawValue) {
+            defaults.set(v, forKey: "tabOrder")
+        }
         if let v = store.string(forKey: CloudKey.appTheme.rawValue) {
             defaults.set(v, forKey: "appTheme")
         }
@@ -239,6 +263,10 @@ final class CloudSettingsStore {
         store.removeObject(forKey: CloudKey.apiToken.rawValue)
         store.set(defaults.bool(forKey: "isConfigured"), forKey: CloudKey.isConfigured.rawValue)
         store.set(defaults.bool(forKey: "hasCompletedOnboarding"), forKey: CloudKey.hasCompletedOnboarding.rawValue)
+        store.set(defaults.bool(forKey: "hasSeenModulesIntro"), forKey: CloudKey.hasSeenModulesIntro.rawValue)
+        if let v = defaults.string(forKey: "tabOrder") {
+            store.set(v, forKey: CloudKey.tabOrder.rawValue)
+        }
         if let v = defaults.string(forKey: "appTheme") { store.set(v, forKey: CloudKey.appTheme.rawValue) }
         store.set(defaults.bool(forKey: "useBiometrics"), forKey: CloudKey.useBiometrics.rawValue)
         if let v = defaults.string(forKey: "appLanguage") { store.set(v, forKey: CloudKey.appLanguage.rawValue) }

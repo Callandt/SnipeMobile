@@ -812,8 +812,7 @@ class SnipeITAPIClient: ObservableObject {
             let encoded = try JSONEncoder().encode(body)
             var bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
             if let customFields = body.custom_fields {
-                // Compatibiliteit: sommige Snipe-IT versies verwachten custom velden
-                // als top-level _snipeit_* keys.
+                // Some Snipe-IT versions expect custom fields as top-level _snipeit_* keys.
                 for (dbKey, value) in customFields {
                     bodyObject[dbKey] = value
                 }
@@ -1155,8 +1154,8 @@ class SnipeITAPIClient: ObservableObject {
             let encodedBody = try JSONEncoder().encode(update)
             var bodyObject = (try JSONSerialization.jsonObject(with: encodedBody) as? [String: Any]) ?? [:]
             if let customFields = update.custom_fields {
-                // Compatibiliteit: sommige Snipe-IT versies verwachten custom velden als
-                // top-level _snipeit_* keys, naast/ipv custom_fields.
+                // Some Snipe-IT versions expect custom fields as top-level _snipeit_* keys
+                // alongside (or instead of) custom_fields.
                 for (dbKey, wrappedValue) in customFields {
                     bodyObject[dbKey] = wrappedValue.value
                 }

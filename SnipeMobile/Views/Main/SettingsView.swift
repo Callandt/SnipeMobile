@@ -17,6 +17,10 @@ struct SettingsView: View {
     @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
     @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
+    @AppStorage("showAccessoriesTab") private var showAccessoriesTab: Bool = true
+    @AppStorage("showLicensesTab") private var showLicensesTab: Bool = true
+    @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
+    @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
 
     @State private var baseURL: String = ""
     @State private var apiToken: String = ""
@@ -66,6 +70,7 @@ struct SettingsView: View {
         NavigationStack(path: $path) {
             Form {
                 generalSection
+                modulesSection
                 privacySection
                 featuresSection
                 connectionSection
@@ -97,6 +102,13 @@ struct SettingsView: View {
                     )
                 case .dell:
                     DellSettingsView()
+                case .modules:
+                    ModulesSettingsView(
+                        showAccessoriesTab: $showAccessoriesTab,
+                        showLicensesTab: $showLicensesTab,
+                        showConsumablesSub: $showConsumablesSub,
+                        showComponentsSub: $showComponentsSub
+                    )
                 }
             }
             .onAppear(perform: handleOnAppear)
@@ -202,6 +214,28 @@ struct SettingsView: View {
                     iconColor: .purple,
                     title: L10n.string("appearance"),
                     value: themeLabel
+                )
+            }
+        }
+    }
+
+    private var enabledModuleCount: Int {
+        var count = 0
+        if showAccessoriesTab { count += 1 }
+        if showLicensesTab { count += 1 }
+        if showConsumablesSub { count += 1 }
+        if showComponentsSub { count += 1 }
+        return count
+    }
+
+    private var modulesSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.modules) {
+                SettingsRow(
+                    icon: "square.grid.2x2.fill",
+                    iconColor: .orange,
+                    title: L10n.string("settings_modules"),
+                    value: L10n.string("settings_modules_count", enabledModuleCount)
                 )
             }
         }
@@ -375,7 +409,7 @@ struct SettingsView: View {
     }
 }
 
-enum SettingsRoute: Hashable { case appearance, security, api, audit, dell }
+enum SettingsRoute: Hashable { case appearance, security, api, audit, dell, modules }
 
 // MARK: - Reusable building blocks (iOS Settings.app style)
 
@@ -616,6 +650,47 @@ struct AuditSettingsView: View {
             }
         }
         .navigationTitle(L10n.string("audit_settings_title"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct ModulesSettingsView: View {
+    @Binding var showAccessoriesTab: Bool
+    @Binding var showLicensesTab: Bool
+    @Binding var showConsumablesSub: Bool
+    @Binding var showComponentsSub: Bool
+
+    var body: some View {
+        List {
+            Section {
+                Toggle(isOn: $showAccessoriesTab) {
+                    Label(L10n.string("tab_accessories"), systemImage: "mediastick")
+                }
+
+                Toggle(isOn: $showLicensesTab) {
+                    Label(L10n.string("tab_licenses"), systemImage: "doc.text.fill")
+                }
+            } header: {
+                Text(L10n.string("settings_modules_tabs_header"))
+            } footer: {
+                Text(L10n.string("settings_modules_tabs_footer"))
+            }
+
+            Section {
+                Toggle(isOn: $showConsumablesSub) {
+                    Label(L10n.string("tab_consumables"), systemImage: "shippingbox.fill")
+                }
+                Toggle(isOn: $showComponentsSub) {
+                    Label(L10n.string("tab_components"), systemImage: "cpu")
+                }
+            } header: {
+                Text(L10n.string("tab_stock"))
+            } footer: {
+                Text(L10n.string("settings_modules_stock_footer"))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(L10n.string("settings_modules"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
