@@ -9,6 +9,7 @@ struct MaintenanceTab: View {
     @State private var fetchError: String? = nil
     @State private var showCreateSheet = false
     @State private var selectedRecord: AssetMaintenance? = nil
+    @State private var listVersion = 0
 
     var body: some View {
         Group {
@@ -39,6 +40,7 @@ struct MaintenanceTab: View {
                             .buttonStyle(.plain)
                         }
                     }
+                    .id(listVersion)
                     .padding(.horizontal)
                     .padding(.vertical, 16)
                 }
@@ -70,7 +72,9 @@ struct MaintenanceTab: View {
     }
 
     private func loadRecords() async {
-        isLoading = true
+        if records.isEmpty {
+            isLoading = true
+        }
         fetchError = nil
         guard let fetched = await apiClient.fetchMaintenances(assetId: assetId) else {
             isLoading = false
@@ -81,5 +85,6 @@ struct MaintenanceTab: View {
         records = fetched.sorted {
             ($0.startDate?.date ?? "") > ($1.startDate?.date ?? "")
         }
+        listVersion += 1
     }
 }

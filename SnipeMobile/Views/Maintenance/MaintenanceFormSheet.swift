@@ -135,13 +135,13 @@ struct MaintenanceFormSheet: View {
         let startStr = dateFormatter.string(from: startDate)
         let endStr = hasCompletionDate ? dateFormatter.string(from: completionDate) : nil
         let supplierIdOpt: Int? = selectedSupplierId == 0 ? nil : selectedSupplierId
-        let costOpt: String? = cost.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cost
+        let costOpt: Double? = Double(cost.trimmingCharacters(in: .whitespaces))
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
 
         let ok: Bool
         if let existing = record {
             let update = MaintenanceUpdateRequest(
-                title: title,
+                name: title,
                 asset_maintenance_type: selectedType,
                 supplier_id: supplierIdOpt,
                 cost: costOpt,
@@ -154,7 +154,7 @@ struct MaintenanceFormSheet: View {
         } else {
             let create = MaintenanceCreateRequest(
                 asset_id: assetId,
-                title: title,
+                name: title,
                 asset_maintenance_type: selectedType,
                 supplier_id: supplierIdOpt,
                 cost: costOpt,
