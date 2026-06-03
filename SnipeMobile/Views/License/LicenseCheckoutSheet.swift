@@ -50,21 +50,15 @@ struct LicenseCheckoutSheet: View {
 
                 if selectedTab == 0 {
                     Section {
-                        TextField(L10n.string("search_users"), text: $userSearchText)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredUsers) { user in
-                                    UserRow(user: user, isSelected: selectedUser?.id == user.id) {
-                                        selectedUser = user
-                                        selectedAsset = nil
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 4)
-                                }
+                        CheckoutUserPickerContent(
+                            searchText: $userSearchText,
+                            users: filteredUsers,
+                            selectedUserId: selectedUser?.id,
+                            onSelect: { user in
+                                selectedUser = user
+                                selectedAsset = nil
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .frame(maxHeight: 220)
+                        )
                     } header: {
                         Text(L10n.string("select_user_short"))
                     }

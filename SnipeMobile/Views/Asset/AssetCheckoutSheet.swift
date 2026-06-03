@@ -14,11 +14,12 @@ struct AssetCheckoutSheet: View {
     @State private var showResult: Bool = false
     @State private var resultMessage: String = ""
     @State private var userSearchText: String = ""
-    @State private var selectedUser: User? = nil
-    @State private var selectedTab: Int = 0 // 0 = user, 1 = location
+    @State private var assetSearchText: String = ""
     @State private var locationSearchText: String = ""
+    @State private var selectedUser: User? = nil
+    @State private var selectedAsset: Asset? = nil
     @State private var selectedLocation: Location? = nil
-    @State private var selectedStatusId: Int? = nil
+    @State private var selectedTab: Int = 0
 
     var body: some View {
         NavigationStack {
@@ -27,75 +28,56 @@ struct AssetCheckoutSheet: View {
                     Picker("", selection: $selectedTab) {
                         Text(L10n.string("user")).tag(0)
                         Text(L10n.string("location")).tag(1)
+                        Text(L10n.string("asset")).tag(2)
                     }
                     .pickerStyle(.segmented)
                 }
 
                 if selectedTab == 0 {
                     Section {
-                        TextField(L10n.string("search_users"), text: $userSearchText)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredUsers) { user in
-                                    UserRow(user: user, isSelected: selectedUser?.id == user.id) {
-                                        selectedUser = user
-                                        selectedLocation = nil
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 4)
-                                }
+                        CheckoutUserPickerContent(
+                            searchText: $userSearchText,
+                            users: filteredUsers,
+                            selectedUserId: selectedUser?.id,
+                            onSelect: { user in
+                                clearSelection()
+                                selectedUser = user
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .frame(maxHeight: 200)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        )
                     } header: {
                         Text(L10n.string("select_user_short"))
                     }
-                } else {
+                } else if selectedTab == 1 {
                     Section {
-                        TextField(L10n.string("search_locations"), text: $locationSearchText)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredLocations) { location in
-                                    LocationRow(location: location, isSelected: selectedLocation?.id == location.id) {
-                                        selectedLocation = location
-                                        selectedUser = nil
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 4)
-                                }
+                        CheckoutLocationPickerContent(
+                            searchText: $locationSearchText,
+                            locations: filteredLocations,
+                            selectedLocationId: selectedLocation?.id,
+                            onSelect: { location in
+                                clearSelection()
+                                selectedLocation = location
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .frame(maxHeight: 200)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        )
                     } header: {
                         Text(L10n.string("select_location_short"))
                     }
+                } else {
+                    Section {
+                        CheckoutAssetPickerContent(
+                            searchText: $assetSearchText,
+                            assets: filteredTargetAssets,
+                            selectedAssetId: selectedAsset?.id,
+                            onSelect: { target in
+                                clearSelection()
+                                selectedAsset = target
+                            }
+                        )
+                    } header: {
+                        Text(L10n.string("select_asset_short"))
+                    }
                 }
 
-                Section {
-                    if !deployableStatusLabels.isEmpty {
-                        AdaptivePickerRow(
-                            title: L10n.string("status"),
-                            items: deployableStatusLabels.map { (value: $0.id, label: $0.statusMeta ?? "") },
-                            selection: Binding(
-                                get: { selectedStatusId ?? -1 },
-                                set: { selectedStatusId = $0 == -1 ? nil : $0 }
-                            ),
-                            emptyOption: (-1, L10n.string("none"))
-                        )
-                    }
-                    TextField(L10n.string("notes"), text: $notes, axis: .vertical)
-                        .lineLimit(3...6)
-                    Toggle(L10n.string("expected_checkin"), isOn: $hasExpectedCheckin)
-                    if hasExpectedCheckin {
-                        DatePicker(L10n.string("expected_checkin_date"), selection: $expectedCheckin, displayedComponents: .date)
-                    }
-                } header: {
-                    Text(L10n.string("asset_details"))
-                }
+                assetDetailsSection
             }
             .formStyle(.grouped)
             .scrollContentBackground(.visible)
@@ -111,21 +93,33 @@ struct AssetCheckoutSheet: View {
                         ProgressView()
                     } else {
                         Button(L10n.string("check_out")) { handleCheckout() }
-                            .disabled(selectedTab == 0 ? selectedUser == nil : selectedLocation == nil)
+                            .disabled(!canConfirm)
                     }
                 }
+            }
+            .onAppear {
+                if apiClient.assets.isEmpty { Task { await apiClient.fetchAssets() } }
             }
             .alert(L10n.string("result"), isPresented: $showResult) {
                 Button(L10n.string("ok"), role: .cancel) { }
             } message: {
                 Text(resultMessage)
             }
-            .onChange(of: apiClient.statusLabels.count) { _, _ in
-                if let id = selectedStatusId, !deployableStatusLabels.contains(where: { $0.id == id }) {
-                    selectedStatusId = deployableStatusLabels.first?.id
-                }
-            }
         }
+    }
+
+    private var canConfirm: Bool {
+        switch selectedTab {
+        case 0: return selectedUser != nil
+        case 1: return selectedLocation != nil
+        default: return selectedAsset != nil
+        }
+    }
+
+    private func clearSelection() {
+        selectedUser = nil
+        selectedLocation = nil
+        selectedAsset = nil
     }
 
     var filteredUsers: [User] {
@@ -147,8 +141,32 @@ struct AssetCheckoutSheet: View {
             .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
     }
 
-    var deployableStatusLabels: [StatusLabel] {
-        apiClient.statusLabels.filter { $0.statusMeta?.lowercased() == "deployable" }
+    /// Target assets for checkout (exclude the asset being checked out).
+    var filteredTargetAssets: [Asset] {
+        apiClient.assets
+            .filter { $0.id != asset.id }
+            .filter {
+                assetSearchText.isEmpty ||
+                $0.decodedName.localizedCaseInsensitiveContains(assetSearchText) ||
+                $0.decodedAssetTag.localizedCaseInsensitiveContains(assetSearchText) ||
+                $0.decodedModelName.localizedCaseInsensitiveContains(assetSearchText) ||
+                $0.decodedSerial.localizedCaseInsensitiveContains(assetSearchText)
+            }
+            .sorted { $0.decodedAssetTag.localizedCaseInsensitiveCompare($1.decodedAssetTag) == .orderedAscending }
+    }
+
+    @ViewBuilder
+    private var assetDetailsSection: some View {
+        Section {
+            TextField(L10n.string("notes"), text: $notes, axis: .vertical)
+                .lineLimit(3...6)
+            Toggle(L10n.string("expected_checkin"), isOn: $hasExpectedCheckin)
+            if hasExpectedCheckin {
+                DatePicker(L10n.string("expected_checkin_date"), selection: $expectedCheckin, displayedComponents: .date)
+            }
+        } header: {
+            Text(L10n.string("asset_details"))
+        }
     }
 
     func handleCheckout() {
@@ -164,9 +182,6 @@ struct AssetCheckoutSheet: View {
             if hasExpectedCheckin {
                 body["expected_checkin"] = formatter.string(from: expectedCheckin)
             }
-            if let statusId = selectedStatusId {
-                body["status_id"] = statusId
-            }
             var success = false
             if selectedTab == 0, let user = selectedUser {
                 body["assigned_user"] = user.id
@@ -175,6 +190,10 @@ struct AssetCheckoutSheet: View {
             } else if selectedTab == 1, let location = selectedLocation {
                 body["assigned_location"] = location.id
                 body["checkout_to_type"] = "location"
+                success = await apiClient.checkoutAssetCustom(assetId: asset.id, body: body)
+            } else if selectedTab == 2, let target = selectedAsset {
+                body["assigned_asset"] = target.id
+                body["checkout_to_type"] = "asset"
                 success = await apiClient.checkoutAssetCustom(assetId: asset.id, body: body)
             }
             await MainActor.run {
@@ -195,56 +214,6 @@ struct AssetCheckoutSheet: View {
         self.asset = asset
         self._isPresented = isPresented
         self.onSuccess = onSuccess
-        if let firstDeployable = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
-            _selectedStatusId = State(initialValue: firstDeployable.id)
-        } else {
-            _selectedStatusId = State(initialValue: nil)
-        }
         _checkoutName = State(initialValue: asset.name)
-    }
-}
-
-struct UserRow: View {
-    let user: User
-    let isSelected: Bool
-    let onSelect: () -> Void
-    var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(user.decodedName)
-                        .foregroundStyle(.primary)
-                    Text(user.decodedEmail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.tint)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct LocationRow: View {
-    let location: Location
-    let isSelected: Bool
-    let onSelect: () -> Void
-    var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                Text(location.decodedName)
-                    .foregroundStyle(.primary)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.tint)
-                }
-            }
-        }
-        .buttonStyle(.plain)
     }
 }

@@ -298,39 +298,15 @@ struct ComponentDetailView: View {
                     Button(action: {
                         if let fullAsset { onOpenAsset?(fullAsset) }
                     }) {
-                        HStack {
-                            Image(systemName: "laptopcomputer")
-                                .foregroundStyle(.tertiary)
-                                .frame(width: 30, height: 30)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(fullAsset?.decodedName ?? HTMLDecoder.decode(row.assetName ?? ""))
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                let tag = fullAsset?.decodedAssetTag ?? HTMLDecoder.decode(row.assetTag ?? "")
-                                if !tag.isEmpty {
-                                    Text(tag)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if let qty = row.assignedQty {
-                                Text("×\(qty)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if fullAsset != nil {
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
+                        AssignedAssetCard(
+                            asset: fullAsset,
+                            fallbackTitle: HTMLDecoder.decode(row.assetName ?? ""),
+                            fallbackTag: HTMLDecoder.decode(row.assetTag ?? ""),
+                            quantity: row.assignedQty
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(fullAsset == nil)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
                 }
             }
         }

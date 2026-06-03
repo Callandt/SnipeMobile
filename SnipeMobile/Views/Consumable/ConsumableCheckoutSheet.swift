@@ -17,21 +17,14 @@ struct ConsumableCheckoutSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField(L10n.string("search_users"), text: $userSearchText)
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredUsers) { user in
-                                UserRow(user: user, isSelected: selectedUser?.id == user.id) {
-                                    selectedUser = user
-                                }
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 4)
-                            }
+                    CheckoutUserPickerContent(
+                        searchText: $userSearchText,
+                        users: filteredUsers,
+                        selectedUserId: selectedUser?.id,
+                        onSelect: { user in
+                            selectedUser = user
                         }
-                        .padding(.vertical, 4)
-                    }
-                    .frame(maxHeight: 240)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    )
                 } header: {
                     Text(L10n.string("select_user_short"))
                 }

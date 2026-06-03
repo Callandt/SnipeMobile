@@ -32,43 +32,29 @@ struct AccessoryCheckoutSheet: View {
 
                 if selectedTab == 0 {
                     Section {
-                        TextField(L10n.string("search_users"), text: $userSearchText)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredUsers) { user in
-                                    UserRow(user: user, isSelected: selectedUser?.id == user.id) {
-                                        clearSelection()
-                                        selectedUser = user
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 4)
-                                }
+                        CheckoutUserPickerContent(
+                            searchText: $userSearchText,
+                            users: filteredUsers,
+                            selectedUserId: selectedUser?.id,
+                            onSelect: { user in
+                                clearSelection()
+                                selectedUser = user
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .frame(maxHeight: 200)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        )
                     } header: {
                         Text(L10n.string("select_user_short"))
                     }
                 } else if selectedTab == 1 {
                     Section {
-                        TextField(L10n.string("search_locations"), text: $locationSearchText)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredLocations) { location in
-                                    LocationRow(location: location, isSelected: selectedLocation?.id == location.id) {
-                                        clearSelection()
-                                        selectedLocation = location
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 4)
-                                }
+                        CheckoutLocationPickerContent(
+                            searchText: $locationSearchText,
+                            locations: filteredLocations,
+                            selectedLocationId: selectedLocation?.id,
+                            onSelect: { location in
+                                clearSelection()
+                                selectedLocation = location
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .frame(maxHeight: 200)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        )
                     } header: {
                         Text(L10n.string("select_location_short"))
                     }

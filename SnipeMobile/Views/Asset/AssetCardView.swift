@@ -69,7 +69,7 @@ struct AssetCardView: View {
                     }
                     if !asset.decodedAssignedToName.isEmpty {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "person.circle")
+                            Image(systemName: assigneeIconName)
                                 .font(.subheadline)
                                 .foregroundStyle(.tertiary)
                             Text(asset.decodedAssignedToName)
@@ -101,5 +101,12 @@ struct AssetCardView: View {
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .contentShape(Rectangle())
+    }
+
+    private var assigneeIconName: String {
+        guard let assignedTo = asset.assignedTo else { return "person.circle" }
+        if assignedTo.isLocation { return "mappin.circle" }
+        if assignedTo.isAsset { return "laptopcomputer" }
+        return "person.circle"
     }
 } 

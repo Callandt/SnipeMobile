@@ -260,10 +260,10 @@ struct AccessoryDetailView: View {
     }
 
     private func performCheckin() async {
-        guard let target = checkinTarget else { return }
+        guard let target = checkinTarget, let checkedoutId = target.id else { return }
         checkinTarget = nil
         isCheckingIn = true
-        let success = await checkinAccessory(checkedoutId: target.id)
+        let success = await executeAccessoryCheckin(checkedoutId: checkedoutId)
         if !success {
             checkinErrorMessage = L10n.string("checkin_failed")
             showCheckinError = true
@@ -358,98 +358,30 @@ struct AccessoryDetailView: View {
     @ViewBuilder
     private func checkedOutRowLabel(for row: SnipeITAPIClient.AccessoryCheckedOutRow) -> some View {
         if let assigned = row.assignedTo {
-        if assigned.isUser {
-            let fullUser = assigned.id.flatMap { id in apiClient.users.first(where: { $0.id == id }) }
-            HStack {
-                Image(systemName: "person.circle")
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 30, height: 30)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(fullUser?.decodedName ?? assigned.decodedName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    if let email = fullUser?.decodedEmail, !email.isEmpty {
-                        Text(email)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+            if assigned.isUser {
+                let fullUser = assigned.id.flatMap { id in apiClient.users.first(where: { $0.id == id }) }
+                AssignedUserCard(
+                    user: fullUser,
+                    fallbackName: assigned.decodedName,
+                    fallbackEmail: fullUser?.decodedEmail ?? ""
+                )
+            } else if assigned.isLocation {
+                if let id = assigned.id, let fullLocation = apiClient.locations.first(where: { $0.id == id }) {
+                    AssignedLocationCard(location: fullLocation)
+                } else {
+                    AssignedLocationCard(location: Location(id: assigned.id ?? 0, name: assigned.decodedName))
                 }
-                Spacer()
-                if canNavigateAssignee(assigned) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+            } else if assigned.isAsset {
+                let fullAsset = assigned.id.flatMap { id in apiClient.assets.first(where: { $0.id == id }) }
+                AssignedAssetCard(
+                    asset: fullAsset,
+                    fallbackTitle: assigned.decodedModel.isEmpty ? assigned.decodedName : assigned.decodedModel,
+                    fallbackTag: assigned.decodedAssetTag,
+                    fallbackAssignee: fullAsset?.decodedAssignedToName ?? ""
+                )
+            } else {
+                AssignedUserCard(user: nil, fallbackName: assigned.decodedName)
             }
-        } else if assigned.isLocation {
-            HStack {
-                Image(systemName: "mappin.and.ellipse")
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 30, height: 30)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(assigned.decodedName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    if let note = row.note, !note.isEmpty {
-                        Text(note)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if canNavigateAssignee(assigned) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        } else if assigned.isAsset {
-            let fullAsset = assigned.id.flatMap { id in apiClient.assets.first(where: { $0.id == id }) }
-            let title = fullAsset.map { $0.decodedModelName.isEmpty ? $0.decodedName : $0.decodedModelName }
-                ?? (assigned.decodedModel.isEmpty ? assigned.decodedName : assigned.decodedModel)
-            let tag = fullAsset?.decodedAssetTag ?? assigned.decodedAssetTag
-            let assignee = fullAsset?.decodedAssignedToName ?? ""
-            HStack {
-                Image(systemName: "laptopcomputer")
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 30, height: 30)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title.isEmpty ? L10n.string("asset") : title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    if !tag.isEmpty {
-                        Text(String(format: L10n.string("tag_label"), tag))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    if !assignee.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "person.circle")
-                                .font(.caption)
-                            Text(assignee)
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if canNavigateAssignee(assigned) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        } else {
-            HStack {
-                Image(systemName: "questionmark.circle")
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 30, height: 30)
-                Text(assigned.decodedName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Spacer()
-            }
-        }
         }
     }
 
@@ -482,9 +414,6 @@ struct AccessoryDetailView: View {
                         checkedOutRowLabel(for: row)
                     }
                     .buttonStyle(.plain)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
                     .contextMenu {
                         if row.availableActions?.checkin == true {
                             Button(role: .destructive) {
@@ -500,27 +429,12 @@ struct AccessoryDetailView: View {
         .padding(.horizontal)
     }
 
-    // Check-in flow
-    private func checkinAccessory(checkedoutId: Int?) async -> Bool {
-        guard let checkedoutId = checkedoutId else { return false }
-        guard let url = URL(string: "\(apiClient.baseURL)/api/v1/accessories/\(accessory.id)/checkin") else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(KeychainSecretStore.string(for: .apiToken))", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = ["checkedout_id": checkedoutId]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                // Refresh list
-                checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
-                return true
-            }
-            return false
-        } catch {
-            return false
+    private func executeAccessoryCheckin(checkedoutId: Int) async -> Bool {
+        let success = await apiClient.checkinAccessory(accessoryId: accessory.id, checkedoutId: checkedoutId)
+        if success {
+            checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
         }
+        return success
     }
 } 
 

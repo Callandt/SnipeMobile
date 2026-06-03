@@ -401,7 +401,8 @@ struct ContentView: View {
                 onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .hardware },
                 onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .hardware },
                 onOpenLicense: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .hardware },
-                onOpenAccessory: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .hardware }
+                onOpenAccessory: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .hardware },
+                onOpenComponent: { pendingComponentToOpen = $0; selectedTab = .stock; returnToTab = .hardware }
             )
         case .accessories:
             AccessoriesTab(
@@ -716,6 +717,7 @@ struct HardwareTab: View {
     var onOpenLocation: (Location) -> Void
     var onOpenLicense: (License) -> Void
     var onOpenAccessory: (Accessory) -> Void
+    var onOpenComponent: (Component) -> Void
 
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
@@ -944,7 +946,7 @@ struct HardwareTab: View {
             }
         }
         .navigationDestination(for: Asset.self) { asset in
-            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation, onOpenLicense: onOpenLicense, onOpenAccessory: onOpenAccessory)
+            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation, onOpenLicense: onOpenLicense, onOpenAccessory: onOpenAccessory, onOpenComponent: onOpenComponent, onOpenAsset: { navigationPath.append($0) })
         }
         .alert(L10n.string("delete_asset_confirm_title"), isPresented: $showDeleteConfirm) {
             Button(L10n.string("cancel"), role: .cancel) {
@@ -969,6 +971,22 @@ struct HardwareTab: View {
                 Text(L10n.string("delete_asset_confirm_message", a.decodedAssetTag))
             }
         }
+    }
+
+    private var isHardwareListContentEmpty: Bool {
+        if enableAuditSubtab, hardwareSubtab == .audit {
+            switch auditListFilter {
+            case .dueToday: return dueTodayAssets.isEmpty
+            case .dueSoon: return dueSoonAssets.isEmpty
+            case .all: return dueTodayAssets.isEmpty && dueSoonAssets.isEmpty && overdueAssets.isEmpty
+            }
+        }
+        let assetsToShow = showTodayOnlyOverride ? dueTodayAssets : searchFilteredAssets
+        return assetsToShow.isEmpty
+    }
+
+    private var hardwareEmptyTitle: String {
+        searchText.isEmpty ? L10n.string("no_assets") : L10n.string("no_assets_match")
     }
 
     private var hardwareAssetList: some View {
@@ -1017,12 +1035,6 @@ struct HardwareTab: View {
                                 auditAssetRow(asset)
                             }
                         }
-                    } else {
-                        Section {
-                            Text(L10n.string("no_assets"))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 16)
-                        }
                     }
 
                 case .dueSoon:
@@ -1038,12 +1050,6 @@ struct HardwareTab: View {
                             ForEach(dueSoonAssets) { asset in
                                 auditAssetRow(asset)
                             }
-                        }
-                    } else {
-                        Section {
-                            Text(L10n.string("no_assets"))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 16)
                         }
                     }
 
@@ -1093,13 +1099,7 @@ struct HardwareTab: View {
                 }
             } else {
                 let assetsToShow = showTodayOnlyOverride ? dueTodayAssets : searchFilteredAssets
-                if assetsToShow.isEmpty {
-                    Section {
-                        Text(L10n.string("no_assets"))
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 16)
-                    }
-                } else {
+                if !assetsToShow.isEmpty {
                     Section {
                         ForEach(assetsToShow) { asset in
                             auditAssetRow(asset)
@@ -1115,6 +1115,8 @@ struct HardwareTab: View {
             if showLoadingPlaceholder {
                 ProgressView(L10n.string("loading_assets"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else if isHardwareListContentEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(hardwareEmptyTitle, systemImage: "laptopcomputer")
             }
         }
     }
@@ -1845,6 +1847,11 @@ private struct AccessoriesContent: View {
                 .listStyle(.insetGrouped)
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .moduleEmptyOverlay(
+                    isVisible: filteredAccessories.isEmpty && apiClient.isConfigured && !apiClient.isLoading,
+                    title: L10n.string("no_accessories"),
+                    systemImage: "mediastick"
+                )
             }
         }
     }
@@ -2041,6 +2048,11 @@ private struct UsersContent: View {
                 .listStyle(.insetGrouped)
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .moduleEmptyOverlay(
+                    isVisible: filteredUsers.isEmpty && apiClient.isConfigured && !apiClient.isLoading,
+                    title: L10n.string("no_users"),
+                    systemImage: "person.2"
+                )
             }
         }
     }
@@ -2103,6 +2115,11 @@ private struct LocationsContent: View {
                 .listStyle(.insetGrouped)
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .moduleEmptyOverlay(
+                    isVisible: filteredLocations.isEmpty && apiClient.isConfigured && !apiClient.isLoading,
+                    title: L10n.string("no_locations"),
+                    systemImage: "mappin.and.ellipse"
+                )
             }
         }
     }

@@ -14,11 +14,9 @@ struct UserDetailView: View {
     var onOpenConsumable: ((Consumable) -> Void)? = nil
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
-    @StateObject private var accessoryHistoryViewModel = HistoryViewModel()
-    @State private var accessoryHistory: [Activity] = []
-    @State private var userActivity: [Activity] = []
-    @State private var assetDetailTab: Int = 0
     @State private var detailImageURL: String? = nil
+    @State private var userAssets: [Asset] = []
+    @State private var userAccessories: [Accessory] = []
     @State private var userLicenses: [License] = []
     @State private var userConsumables: [Consumable] = []
 
@@ -41,224 +39,6 @@ struct UserDetailView: View {
         return nil
     }
 
-    private var assignedItems: [AssignedItem] {
-        let assetItems = apiClient.assets.filter { $0.assignedTo?.id == user.id }.map { AssignedItem.asset($0) }
-        let accessoryItems = apiClient.accessories.filter { $0.assignedTo?.id == user.id }.map { AssignedItem.accessory($0) }
-        return assetItems + accessoryItems
-    }
-
-    // Accessories last checked out to this user
-    private var actuallyAssignedAccessories: [Accessory] {
-        let isCheckout: (String) -> Bool = { action in
-            let lower = action.lowercased()
-            return lower.contains("check") && lower.contains("uit")
-        }
-        // All accessory activities
-        let accessoryActivities = userActivity.filter { $0.item?.type == "accessory" && $0.item?.id != nil }
-        // By accessory id
-        let grouped = Dictionary(grouping: accessoryActivities, by: { $0.item!.id })
-        // Latest action per accessory
-        let assignedAccessoryIds = grouped.compactMap { (accessoryId, activities) -> Int? in
-            let last = activities.max(by: { ($0.createdAt?.datetime ?? "") < ($1.createdAt?.datetime ?? "") })
-            if let last = last, isCheckout(last.actionType) {
-                return accessoryId
-            }
-            return nil
-        }
-        return apiClient.accessories.filter { assignedAccessoryIds.contains($0.id) }
-    }
-
-    enum AssignedItem: Identifiable {
-        case asset(Asset)
-        case accessory(Accessory)
-        var id: Int {
-            switch self {
-            case .asset(let asset): return asset.id
-            case .accessory(let accessory): return accessory.id + 1_000_000 // no clash with asset ids
-            }
-        }
-    }
-
-    var assignedAssetsSection: some View {
-        List {
-            Section {
-                ForEach(assignedItems) { item in
-                    switch item {
-                    case .asset(let asset):
-                        Button { onOpenAsset?(asset) } label: {
-                            assignedToStyleAssetRow(asset: asset)
-                        }
-                        .buttonStyle(.plain)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                        .listRowBackground(Color.clear)
-                    case .accessory(let accessory):
-                        Button { onOpenAccessory?(accessory) } label: {
-                            assignedToStyleAccessoryRow(accessory: accessory)
-                        }
-                        .buttonStyle(.plain)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                        .listRowBackground(Color.clear)
-                    }
-                }
-                ForEach(actuallyAssignedAccessories) { accessory in
-                    Button { onOpenAccessory?(accessory) } label: {
-                        assignedToStyleAccessoryRow(accessory: accessory)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                    .listRowBackground(Color.clear)
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .listSectionSpacing(.compact)
-        .listSectionSeparator(.hidden)
-        .contentMargins(.top, 0, for: .scrollContent)
-        .contentMargins(.horizontal, 0, for: .scrollContent)
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
-    }
-
-    /// Gray row. Icon + name.
-    private func assignedToStyleAssetRow(asset: Asset) -> some View {
-        HStack {
-            Image(systemName: "laptopcomputer")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(asset.decodedAssetTag)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    private func assignedToStyleAccessoryRow(accessory: Accessory) -> some View {
-        HStack {
-            Image(systemName: "cube.box")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(accessory.decodedName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if !accessory.decodedCategoryName.isEmpty {
-                    Text(accessory.decodedCategoryName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    private func assignedToStyleConsumableRow(consumable: Consumable) -> some View {
-        HStack {
-            Image(systemName: "shippingbox")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(consumable.decodedName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if !consumable.decodedCategoryName.isEmpty {
-                    Text(consumable.decodedCategoryName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    private func assignedToStyleLicenseRow(license: License) -> some View {
-        HStack {
-            Image(systemName: "doc.text.fill")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(license.decodedName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if !license.decodedManufacturerName.isEmpty {
-                    Text(license.decodedManufacturerName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    @ViewBuilder
-    private var assignedLicensesSection: some View {
-        if !userLicenses.isEmpty {
-            VStack(alignment: .leading, spacing: 15) {
-                Text(L10n.string("tab_licenses"))
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                VStack(spacing: 12) {
-                    ForEach(userLicenses) { license in
-                        Button {
-                            onOpenLicense?(license)
-                        } label: {
-                            assignedToStyleLicenseRow(license: license)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
-    }
-
-    @ViewBuilder
-    private var assignedConsumablesSection: some View {
-        if !userConsumables.isEmpty {
-            VStack(alignment: .leading, spacing: 15) {
-                Text(L10n.string("tab_consumables"))
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                VStack(spacing: 12) {
-                    ForEach(userConsumables) { consumable in
-                        Button {
-                            onOpenConsumable?(consumable)
-                        } label: {
-                            assignedToStyleConsumableRow(consumable: consumable)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
-    }
-
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -271,7 +51,6 @@ struct UserDetailView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 2)
 
-                // Copy toast under tabs
                 if showCopyNotification, let text = copyNotification {
                     VStack {
                         Text(L10n.string("copied", text))
@@ -295,80 +74,57 @@ struct UserDetailView: View {
                 }
 
                 if selectedTab == 0 {
-                    VStack(spacing: 12) {
-                        // Fixed header
+                    ScrollView {
                         VStack(spacing: 12) {
-                            if let imageURL = resolvedImageURL {
-                                VStack(spacing: 10) {
-                                    Text(L10n.string("image"))
-                                        .font(.headline)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                    AsyncImage(url: imageURL) { phase in
-                                        switch phase {
-                                        case .success(let image):
-                                            image
-                                                .resizable()
-                                                .scaledToFit()
-                                                .frame(maxHeight: 220)
-                                                .frame(maxWidth: .infinity)
-                                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                        case .failure(_):
-                                            Image(systemName: "photo")
-                                                .font(.system(size: 36))
-                                                .foregroundStyle(.secondary)
-                                                .frame(maxWidth: .infinity, minHeight: 140)
-                                        case .empty:
-                                            ProgressView()
-                                                .frame(maxWidth: .infinity, minHeight: 140)
-                                        @unknown default:
-                                            EmptyView()
+                            userInfoSection
+
+                            if !userAssets.isEmpty {
+                                assignedSection(title: L10n.string("assigned_assets")) {
+                                    ForEach(userAssets) { asset in
+                                        Button { onOpenAsset?(asset) } label: {
+                                            AssignedAssetCard(asset: asset)
                                         }
+                                        .buttonStyle(.plain)
                                     }
                                 }
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(12)
                             }
-                            Text(L10n.string("user_info"))
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.top, 2)
 
-                            VStack(alignment: .leading, spacing: 15) {
-                                if let empNumber = user.employeeNumber, !empNumber.isEmpty {
-                                    copyableDetailRow(label: "Employee Number", value: empNumber)
-                                }
-                                
-                                if let email = user.email, !email.isEmpty {
-                                    copyableDetailRow(label: "Email", value: email)
-                                }
-                                
-                                if let locationName = user.location?.name, !locationName.isEmpty {
-                                    copyableDetailRow(label: "Location", value: locationName)
+                            if !userAccessories.isEmpty {
+                                assignedSection(title: L10n.string("tab_accessories")) {
+                                    ForEach(userAccessories) { accessory in
+                                        Button { onOpenAccessory?(accessory) } label: {
+                                            AssignedAccessoryCard(accessory: accessory)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
                             }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
+
+                            if !userLicenses.isEmpty {
+                                assignedSection(title: L10n.string("tab_licenses")) {
+                                    ForEach(userLicenses) { license in
+                                        Button { onOpenLicense?(license) } label: {
+                                            AssignedLicenseCard(license: license)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            if !userConsumables.isEmpty {
+                                assignedSection(title: L10n.string("tab_consumables")) {
+                                    ForEach(userConsumables) { consumable in
+                                        Button { onOpenConsumable?(consumable) } label: {
+                                            AssignedConsumableCard(consumable: consumable)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
                         }
-                        .padding(.horizontal)
-
-                        if !assignedItems.isEmpty || !actuallyAssignedAccessories.isEmpty {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text(L10n.string("assigned_assets"))
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                assignedAssetsSection
-                            }
-                            .padding(.horizontal)
-                        }
-
-                        assignedLicensesSection
-
-                        assignedConsumablesSection
+                        .padding(.bottom, 16)
+                        .padding(.top, 16)
                     }
-                    .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
-                    .padding(.top, 16)
                     .background(Color(.systemBackground))
                 } else {
                     HistoryView(itemType: "user", itemId: user.id, apiClient: apiClient)
@@ -376,7 +132,6 @@ struct UserDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            // Copy notification overlay
             if showCopyNotification, let text = copyNotification {
                 VStack {
                     Text(L10n.string("copied", text))
@@ -431,13 +186,7 @@ struct UserDetailView: View {
         }
         .onAppear {
             selectedTab = 0
-            accessoryHistoryViewModel.fetchHistory(itemType: "accessory", itemId: 0, apiClient: apiClient)
-            Task {
-                self.accessoryHistory = await apiClient.fetchActivityReport()
-            }
-            Task {
-                self.userActivity = await apiClient.fetchActivityForItem(itemType: "user", itemId: user.id)
-            }
+            reloadAssignedItems()
             Task {
                 if let fullUser = await apiClient.fetchUserDetails(userId: user.id),
                    let image = fullUser.image,
@@ -447,12 +196,103 @@ struct UserDetailView: View {
                     detailImageURL = nil
                 }
             }
-            Task {
-                userLicenses = await apiClient.fetchUserLicenses(userId: user.id)
+        }
+        .onChange(of: user.id) { _, _ in
+            reloadAssignedItems()
+        }
+    }
+
+    private var userInfoSection: some View {
+        VStack(spacing: 12) {
+            if let imageURL = resolvedImageURL {
+                VStack(spacing: 10) {
+                    Text(L10n.string("image"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 220)
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        case .failure(_):
+                            Image(systemName: "photo")
+                                .font(.system(size: 36))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 140)
+                        case .empty:
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 140)
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
             }
-            Task {
-                userConsumables = await apiClient.fetchUserConsumables(userId: user.id)
+
+            Text(L10n.string("user_info"))
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 15) {
+                if let empNumber = user.employeeNumber, !empNumber.isEmpty {
+                    copyableDetailRow(label: "Employee Number", value: empNumber)
+                }
+
+                if let email = user.email, !email.isEmpty {
+                    copyableDetailRow(label: "Email", value: email)
+                }
+
+                if let locationName = user.location?.name, !locationName.isEmpty {
+                    copyableDetailRow(label: "Location", value: locationName)
+                }
             }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+        .padding(.horizontal)
+    }
+
+    private func assignedSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text(title)
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .center)
+            VStack(spacing: 12) {
+                content()
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private func reloadAssignedItems() {
+        Task {
+            async let assets = apiClient.fetchUserAssets(userId: user.id)
+            async let accessories = apiClient.fetchUserAccessories(userId: user.id)
+            async let licenses = apiClient.fetchUserLicenses(userId: user.id)
+            async let consumables = apiClient.fetchUserConsumables(userId: user.id)
+            userAssets = mergeCached(await assets, from: apiClient.assets, id: \.id)
+            userAccessories = mergeCached(await accessories, from: apiClient.accessories, id: \.id)
+            userLicenses = mergeCached(await licenses, from: apiClient.licenses, id: \.id)
+            userConsumables = mergeCached(await consumables, from: apiClient.consumables, id: \.id)
+        }
+    }
+
+    private func mergeCached<T>(_ items: [T], from cache: [T], id: KeyPath<T, Int>) -> [T] {
+        items.map { item in
+            let itemId = item[keyPath: id]
+            return cache.first(where: { $0[keyPath: id] == itemId }) ?? item
         }
     }
 
@@ -469,7 +309,7 @@ struct UserDetailView: View {
             }
 
             Spacer()
-            
+
             Button(action: {
                 UIPasteboard.general.string = value
                 withAnimation {
@@ -483,4 +323,4 @@ struct UserDetailView: View {
             }
         }
     }
-} 
+}

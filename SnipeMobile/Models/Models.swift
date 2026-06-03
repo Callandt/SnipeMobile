@@ -221,6 +221,18 @@ struct AssignedTo: Codable {
     enum CodingKeys: String, CodingKey {
         case id, username, name, firstName = "first_name", lastName = "last_name", email, employeeNumber = "employee_number", type
     }
+
+    private var normalizedType: String {
+        let raw = (type ?? "").lowercased()
+        if raw == "user" || raw.hasSuffix("\\user") { return "user" }
+        if raw == "location" || raw.hasSuffix("\\location") { return "location" }
+        if raw == "asset" || raw.hasSuffix("\\asset") { return "asset" }
+        return raw
+    }
+
+    var isUser: Bool { normalizedType == "user" }
+    var isLocation: Bool { normalizedType == "location" }
+    var isAsset: Bool { normalizedType == "asset" }
 }
 
 struct Location: Codable, Identifiable, Hashable {

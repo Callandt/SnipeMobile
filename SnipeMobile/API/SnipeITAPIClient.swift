@@ -217,6 +217,86 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    // MARK: - Immediate cache refresh after check-in/out
+
+    /// Full list sync in the background — does not block the UI.
+    func syncAllInBackground() {
+        Task { await fetchPrimaryThenBackground() }
+    }
+
+    func applyUpdatedAsset(_ asset: Asset) {
+        if let idx = assets.firstIndex(where: { $0.id == asset.id }) {
+            assets[idx] = asset
+        } else {
+            assets.insert(asset, at: 0)
+        }
+    }
+
+    func applyUpdatedAccessory(_ accessory: Accessory) {
+        if let idx = accessories.firstIndex(where: { $0.id == accessory.id }) {
+            accessories[idx] = accessory
+        } else {
+            accessories.insert(accessory, at: 0)
+        }
+    }
+
+    func applyUpdatedComponent(_ component: Component) {
+        if let idx = components.firstIndex(where: { $0.id == component.id }) {
+            components[idx] = component
+        } else {
+            components.insert(component, at: 0)
+        }
+    }
+
+    func applyUpdatedConsumable(_ consumable: Consumable) {
+        if let idx = consumables.firstIndex(where: { $0.id == consumable.id }) {
+            consumables[idx] = consumable
+        } else {
+            consumables.insert(consumable, at: 0)
+        }
+    }
+
+    func applyUpdatedLicense(_ license: License) {
+        if let idx = licenses.firstIndex(where: { $0.id == license.id }) {
+            licenses[idx] = license
+        } else {
+            licenses.insert(license, at: 0)
+        }
+    }
+
+    func refreshAssetInCache(assetId: Int, responseJSON: [String: Any]? = nil) async {
+        if let json = responseJSON {
+            mergeAssetFromResponseJSON(json)
+        }
+        if let details = await fetchHardwareDetails(assetId: assetId) {
+            applyUpdatedAsset(details)
+        }
+    }
+
+    func refreshAccessoryInCache(accessoryId: Int) async {
+        if let details = await fetchAccessoryDetails(accessoryId: accessoryId) {
+            applyUpdatedAccessory(details)
+        }
+    }
+
+    func refreshComponentInCache(componentId: Int) async {
+        if let details = await fetchComponentDetails(componentId: componentId) {
+            applyUpdatedComponent(details)
+        }
+    }
+
+    func refreshConsumableInCache(consumableId: Int) async {
+        if let details = await fetchConsumableDetails(consumableId: consumableId) {
+            applyUpdatedConsumable(details)
+        }
+    }
+
+    func refreshLicenseInCache(licenseId: Int) async {
+        if let details = await fetchLicenseDetails(licenseId: licenseId) {
+            applyUpdatedLicense(details)
+        }
+    }
+
     func fetchAssets() async {
         fetchAssetsGeneration += 1
         let myGen = fetchAssetsGeneration
@@ -696,7 +776,8 @@ class SnipeITAPIClient: ObservableObject {
                 await MainActor.run { self.lastApiMessage = msg }
                 let isError = (json?["status"] as? String) == "error"
                 if httpResponse.statusCode == 200, !isError {
-                    Task { await self.fetchConsumables() }
+                    await refreshConsumableInCache(consumableId: consumableId)
+                    syncAllInBackground()
                     return true
                 }
                 return false
@@ -960,7 +1041,8 @@ class SnipeITAPIClient: ObservableObject {
                 await MainActor.run { self.lastApiMessage = msg }
                 let isError = (json?["status"] as? String) == "error"
                 if httpResponse.statusCode == 200, !isError {
-                    Task { await self.fetchComponents() }
+                    await refreshComponentInCache(componentId: componentId)
+                    syncAllInBackground()
                     return true
                 }
                 return false
@@ -975,20 +1057,37 @@ class SnipeITAPIClient: ObservableObject {
     /// Licenses assigned to a user. Returns full License objects (same shape as /api/v1/licenses rows).
     func fetchUserLicenses(userId: Int) async -> [License] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
-        guard let url = URL(string: "\(baseURL)/api/v1/users/\(userId)/licenses") else { return [] }
-
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await urlSession.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return [] }
-            if let decoded = try? JSONDecoder().decode(LicensesResponse.self, from: data) {
-                return decoded.rows
-            }
+            return try await fetchAllPaginated(
+                path: "/api/v1/users/\(userId)/licenses",
+                as: License.self
+            ) ?? []
+        } catch {
             return []
+        }
+    }
+
+    /// Assets assigned to a user (`GET /api/v1/users/{id}/assets`).
+    func fetchUserAssets(userId: Int) async -> [Asset] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        do {
+            return try await fetchAllPaginated(
+                path: "/api/v1/users/\(userId)/assets",
+                as: Asset.self
+            ) ?? []
+        } catch {
+            return []
+        }
+    }
+
+    /// Accessories checked out to a user (`GET /api/v1/users/{id}/accessories`).
+    func fetchUserAccessories(userId: Int) async -> [Accessory] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        do {
+            return try await fetchAllPaginated(
+                path: "/api/v1/users/\(userId)/accessories",
+                as: Accessory.self
+            ) ?? []
         } catch {
             return []
         }
@@ -1019,6 +1118,19 @@ class SnipeITAPIClient: ObservableObject {
     /// Accessories checked out to a location (`GET /locations/{id}/assigned/accessories`).
     func fetchLocationAccessories(locationId: Int) async -> [Accessory] {
         await fetchAssignedAccessories(path: "/api/v1/locations/\(locationId)/assigned/accessories")
+    }
+
+    /// Assets checked out to a location (`GET /api/v1/locations/{id}/assets`).
+    func fetchLocationAssets(locationId: Int) async -> [Asset] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        do {
+            return try await fetchAllPaginated(
+                path: "/api/v1/locations/\(locationId)/assets",
+                as: Asset.self
+            ) ?? []
+        } catch {
+            return []
+        }
     }
 
     private func fetchAssignedAccessories(path: String) async -> [Accessory] {
@@ -1093,6 +1205,150 @@ class SnipeITAPIClient: ObservableObject {
             }
             return results
         } catch {
+            return []
+        }
+    }
+
+    /// Hardware assets checked out to this asset (`GET /hardware/{id}/assigned/assets`).
+    func fetchAssetAssignedAssets(assetId: Int) async -> [Asset] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+
+        var results: [Asset] = []
+        var seen = Set<Int>()
+
+        func appendUnique(_ assets: [Asset]) {
+            for asset in assets where seen.insert(asset.id).inserted {
+                results.append(asset)
+            }
+        }
+
+        do {
+            if let fromEndpoint = try await fetchAllPaginated(
+                path: "/api/v1/hardware/\(assetId)/assigned/assets",
+                as: Asset.self
+            ) {
+                appendUnique(fromEndpoint)
+            }
+        } catch {
+            #if DEBUG
+            print("fetchAssetAssignedAssets endpoint error: \(error)")
+            #endif
+        }
+        if let fromQuery = await fetchAllAssignedAssets(toAssetId: assetId) {
+            appendUnique(fromQuery)
+        }
+
+        let cached = assets.filter { $0.assignedTo?.isAsset == true && $0.assignedTo?.id == assetId }
+        appendUnique(cached)
+
+        return results.sorted {
+            $0.decodedAssetTag.localizedCaseInsensitiveCompare($1.decodedAssetTag) == .orderedAscending
+        }
+    }
+
+    private func fetchAllAssignedAssets(toAssetId assetId: Int) async -> [Asset]? {
+        do {
+            return try await fetchAllPaginated(
+                path: "/api/v1/hardware",
+                as: Asset.self,
+                extraQueryItems: [
+                    URLQueryItem(name: "assigned_to", value: "\(assetId)"),
+                    URLQueryItem(name: "assigned_type", value: "App\\Models\\Asset")
+                ]
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchHardwareAssetList(path: String) async -> [Asset]? {
+        guard let url = URL(string: "\(baseURL)\(path)") else { return nil }
+        return await fetchHardwareAssetList(url: url, treatNotFoundAsMissing: true)
+    }
+
+    private func fetchHardwareAssetList(query: [URLQueryItem]) async -> [Asset]? {
+        guard var components = URLComponents(string: "\(baseURL)/api/v1/hardware") else { return nil }
+        components.queryItems = query
+        guard let url = components.url else { return nil }
+        return await fetchHardwareAssetList(url: url, treatNotFoundAsMissing: false)
+    }
+
+    private func fetchHardwareAssetList(url: URL, treatNotFoundAsMissing: Bool) async -> [Asset]? {
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return nil }
+            if treatNotFoundAsMissing, http.statusCode == 404 { return nil }
+            guard (200...299).contains(http.statusCode) else { return [] }
+            if let decoded = try? JSONDecoder().decode(AssetResponse.self, from: data) {
+                return decoded.rows
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rows = json["rows"] as? [[String: Any]] else { return [] }
+            return rows.compactMap { row in
+                guard let rowData = try? JSONSerialization.data(withJSONObject: row) else { return nil }
+                return try? JSONDecoder().decode(Asset.self, from: rowData)
+            }
+        } catch {
+            #if DEBUG
+            print("fetchHardwareAssetList error: \(error)")
+            #endif
+            return treatNotFoundAsMissing ? nil : []
+        }
+    }
+
+    struct AssetAssignedComponent: Identifiable, Hashable {
+        let component: Component
+        let assignedQty: Int
+
+        var id: Int { component.id }
+    }
+
+    /// Components checked out to a hardware asset (`GET /hardware/{id}/assigned/components`).
+    func fetchAssetComponents(assetId: Int) async -> [AssetAssignedComponent] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/assigned/components") else { return [] }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return [] }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rows = json["rows"] as? [[String: Any]] else { return [] }
+
+            var results: [AssetAssignedComponent] = []
+            for row in rows {
+                let qty = row["assigned_qty"] as? Int ?? 1
+                if let componentDict = row["component"] as? [String: Any],
+                   let componentData = try? JSONSerialization.data(withJSONObject: componentDict),
+                   let component = try? JSONDecoder().decode(Component.self, from: componentData) {
+                    results.append(AssetAssignedComponent(component: component, assignedQty: qty))
+                    continue
+                }
+                if let componentDict = row["name"] as? [String: Any],
+                   let componentData = try? JSONSerialization.data(withJSONObject: componentDict),
+                   let component = try? JSONDecoder().decode(Component.self, from: componentData) {
+                    results.append(AssetAssignedComponent(component: component, assignedQty: qty))
+                    continue
+                }
+                if let componentId = row["id"] as? Int,
+                   let cached = components.first(where: { $0.id == componentId }) {
+                    results.append(AssetAssignedComponent(component: cached, assignedQty: qty))
+                }
+            }
+            return results
+        } catch {
+            #if DEBUG
+            print("fetchAssetComponents error: \(error)")
+            #endif
             return []
         }
     }
@@ -1220,6 +1476,11 @@ class SnipeITAPIClient: ObservableObject {
                let status = json["status"] as? String, status == "error" {
                 return Self.extractApiErrorMessage(from: json) ?? "Check-out failed."
             }
+            await refreshLicenseInCache(licenseId: licenseId)
+            if let assetId {
+                await refreshAssetInCache(assetId: assetId)
+            }
+            syncAllInBackground()
             return nil
         } catch {
             return error.localizedDescription
@@ -1343,6 +1604,8 @@ class SnipeITAPIClient: ObservableObject {
                let status = json["status"] as? String, status == "error" {
                 return Self.extractApiErrorMessage(from: json) ?? "Check-in failed."
             }
+            await refreshLicenseInCache(licenseId: licenseId)
+            syncAllInBackground()
             return nil
         } catch {
             return error.localizedDescription
@@ -1455,8 +1718,11 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (_, response) = try await urlSession.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                await refreshAssetInCache(assetId: assetId, responseJSON: json)
+                syncAllInBackground()
                 return true
             }
             return false
@@ -1484,7 +1750,11 @@ class SnipeITAPIClient: ObservableObject {
                     ?? (httpResponse.statusCode == 200 ? "Check-out successful!" : "Check-out failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200 {
-                    await mergeAssetFromResponseJSON(json)
+                    await refreshAssetInCache(assetId: assetId, responseJSON: json)
+                    if let parentId = body["assigned_asset"] as? Int {
+                        await refreshAssetInCache(assetId: parentId)
+                    }
+                    syncAllInBackground()
                 }
                 return httpResponse.statusCode == 200
             }
@@ -2342,8 +2612,11 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
-            let (_, response) = try await urlSession.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                await refreshAssetInCache(assetId: assetId, responseJSON: json)
+                syncAllInBackground()
                 return true
             }
             return false
@@ -2371,7 +2644,8 @@ class SnipeITAPIClient: ObservableObject {
                     ?? (httpResponse.statusCode == 200 ? "Check-in successful!" : "Check-in failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200 {
-                    await mergeAssetFromResponseJSON(json)
+                    await refreshAssetInCache(assetId: assetId, responseJSON: json)
+                    syncAllInBackground()
                 }
                 return httpResponse.statusCode == 200
             }
@@ -2431,6 +2705,8 @@ class SnipeITAPIClient: ObservableObject {
                 msg = "Check-out successful."
             }
             await MainActor.run { self.lastApiMessage = msg }
+            await refreshAccessoryInCache(accessoryId: accessoryId)
+            syncAllInBackground()
             return true
         } catch {
             await MainActor.run {
@@ -2440,7 +2716,28 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    private func mergeAssetFromResponseJSON(_ json: [String: Any]?) async {
+    func checkinAccessory(accessoryId: Int, checkedoutId: Int) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkin") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["checkedout_id": checkedoutId]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (_, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return false
+            }
+            await refreshAccessoryInCache(accessoryId: accessoryId)
+            syncAllInBackground()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func mergeAssetFromResponseJSON(_ json: [String: Any]?) {
         guard let json else { return }
 
         func decodeAsset(from object: Any) -> Asset? {

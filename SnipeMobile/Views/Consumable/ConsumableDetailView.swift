@@ -298,33 +298,14 @@ struct ConsumableDetailView: View {
                     Button(action: {
                         if let fullUser { onOpenUser?(fullUser) }
                     }) {
-                        HStack {
-                            Image(systemName: "person.circle")
-                                .foregroundStyle(.tertiary)
-                                .frame(width: 30, height: 30)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(fullUser?.decodedName ?? HTMLDecoder.decode(row.name ?? ""))
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                if let email = fullUser?.decodedEmail ?? row.email, !email.isEmpty {
-                                    Text(email)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if fullUser != nil {
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
+                        AssignedUserCard(
+                            user: fullUser,
+                            fallbackName: HTMLDecoder.decode(row.name ?? ""),
+                            fallbackEmail: fullUser?.decodedEmail ?? row.email ?? ""
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(fullUser == nil)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
                 }
             }
         }

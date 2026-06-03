@@ -1170,6 +1170,30 @@ struct MainSplitView: View {
                         selectedAccessoryDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         selectedSection = .accessories
+                    },
+                    onOpenComponent: { [apiClient] component in
+                        let resolved = apiClient.components.first(where: { $0.id == component.id }) ?? component
+                        selectedComponent = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedLicense = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedComponentDetailTab = 0
+                        stockSelectedRaw = StockSubmodule.components.rawValue
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .stock
+                    },
+                    onOpenAsset: { [apiClient] target in
+                        let resolved = apiClient.assets.first(where: { $0.id == target.id }) ?? target
+                        selectedAsset = resolved
+                        selectedAccessory = nil
+                        selectedLicense = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAssetDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .hardware
                     }
                 )
             } else {
@@ -1584,12 +1608,6 @@ struct MainSplitView: View {
                                     ipadAssetRow(asset)
                                 }
                             }
-                        } else {
-                            Section {
-                                Text(L10n.string("no_assets"))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 16)
-                            }
                         }
 
                     case .dueSoon:
@@ -1605,12 +1623,6 @@ struct MainSplitView: View {
                                 ForEach(dueSoonAssets) { asset in
                                     ipadAssetRow(asset)
                                 }
-                            }
-                        } else {
-                            Section {
-                                Text(L10n.string("no_assets"))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 16)
                             }
                         }
 
@@ -1656,23 +1668,10 @@ struct MainSplitView: View {
                                 }
                             }
                         }
-                        if dueTodayAssets.isEmpty && dueSoonAssets.isEmpty && overdueAssets.isEmpty {
-                            Section {
-                                Text(L10n.string("no_assets"))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 16)
-                            }
-                        }
                     }
                 } else {
                     let assetsToShow = showTodayOnlyOverride ? dueTodayAssets : filteredAssets
-                    if assetsToShow.isEmpty {
-                        Section {
-                            Text(L10n.string("no_assets"))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 16)
-                        }
-                    } else {
+                    if !assetsToShow.isEmpty {
                         ForEach(assetsToShow) { asset in
                             ipadAssetRow(asset)
                         }
@@ -1696,7 +1695,10 @@ struct MainSplitView: View {
                 }()
 
                 if isRelevantAssetsEmpty && apiClient.isConfigured && !apiClient.isLoading {
-                    ContentUnavailableView(L10n.string("no_hardware"), systemImage: "laptopcomputer")
+                    ContentUnavailableView(
+                        searchText.isEmpty ? L10n.string("no_assets") : L10n.string("no_assets_match"),
+                        systemImage: "laptopcomputer"
+                    )
                 }
             }
             .refreshable {

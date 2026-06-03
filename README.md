@@ -2,7 +2,7 @@
 
 iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users, and locations. Scan QR codes, check in/out hardware, and edit data from your phone or tablet.
 
-If SnipeMobile saves you time, consider [buying me a coffee](https://buymeacoffee.com/Callandt).
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?logo=buymeacoffee)](https://buymeacoffee.com/Callandt)
 
 ## Get the app
 

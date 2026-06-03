@@ -11,9 +11,13 @@ struct AssetDetailView: View {
     var onOpenLocation: ((Location) -> Void)? = nil
     var onOpenLicense: ((License) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
+    var onOpenComponent: ((Component) -> Void)? = nil
+    var onOpenAsset: ((Asset) -> Void)? = nil
     @State private var userId: String = ""
     @State private var assetLicenses: [License] = []
     @State private var assetAccessories: [Accessory] = []
+    @State private var assetComponents: [SnipeITAPIClient.AssetAssignedComponent] = []
+    @State private var assignedChildAssets: [Asset] = []
     @Environment(\.dismiss) var dismiss
     @State private var hasLoggedAppearance = false
     @State private var copyNotification: String?
@@ -81,13 +85,22 @@ struct AssetDetailView: View {
     }
 
     private var assignedUser: User? {
-        guard currentAsset.assignedTo?.type == "user", let id = currentAsset.assignedTo?.id else { return nil }
+        guard currentAsset.assignedTo?.isUser == true, let id = currentAsset.assignedTo?.id else { return nil }
         return apiClient.users.first { $0.id == id }
     }
 
     private var assignedLocation: Location? {
-        guard currentAsset.assignedTo?.type == "location", let id = currentAsset.assignedTo?.id else { return nil }
+        guard currentAsset.assignedTo?.isLocation == true, let id = currentAsset.assignedTo?.id else { return nil }
         return apiClient.locations.first { $0.id == id }
+    }
+
+    private var assignedAsset: Asset? {
+        guard currentAsset.assignedTo?.isAsset == true, let id = currentAsset.assignedTo?.id else { return nil }
+        return apiClient.assets.first { $0.id == id }
+    }
+
+    private var cachedChildAssetCount: Int {
+        apiClient.assets.filter { $0.assignedTo?.isAsset == true && $0.assignedTo?.id == currentAsset.id }.count
     }
 
     private var computedWarrantyExpires: String? {
@@ -241,7 +254,9 @@ struct AssetDetailView: View {
                             checkInOutSuccess = success
                             checkInOutMessage = success ? "Check-in successful!" : (apiClient.errorMessage ?? "Check-in failed.")
                             showCheckInOutResult = true
-                            if success { Task { await apiClient.fetchPrimaryThenBackground() } }
+                            if success {
+                                await reloadAssignedRelations()
+                            }
                         }
                     }) {
                         Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
@@ -311,12 +326,7 @@ struct AssetDetailView: View {
                     detailImageURL = image
                 }
             }
-            Task {
-                async let licenses = apiClient.fetchAssetLicenses(assetId: currentAsset.id)
-                async let accessories = apiClient.fetchAssetAccessories(assetId: currentAsset.id)
-                assetLicenses = await licenses
-                assetAccessories = await accessories
-            }
+            Task { await reloadAssignedRelations() }
             selectedModelId = currentAsset.model?.id ?? 0
             // Date init
             let formatter = DateFormatter()
@@ -369,11 +379,30 @@ struct AssetDetailView: View {
             editSheet
         }
         .sheet(isPresented: $showCheckoutSheet) {
-            AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: { Task { await apiClient.fetchPrimaryThenBackground() } })
+            AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: {
+                Task { await reloadAssignedRelations() }
+            })
+        }
+        .onChange(of: currentAsset.id) { _, _ in
+            Task { await reloadAssignedRelations() }
+        }
+        .onChange(of: cachedChildAssetCount) { _, _ in
+            Task { await reloadAssignedRelations() }
         }
         .alert(isPresented: $showCheckInOutResult) {
             Alert(title: Text(checkInOutSuccess ? L10n.string("success") : L10n.string("error")), message: Text(checkInOutMessage), dismissButton: .default(Text(L10n.string("ok"))))
         }
+    }
+
+    private func reloadAssignedRelations() async {
+        async let licenses = apiClient.fetchAssetLicenses(assetId: currentAsset.id)
+        async let accessories = apiClient.fetchAssetAccessories(assetId: currentAsset.id)
+        async let components = apiClient.fetchAssetComponents(assetId: currentAsset.id)
+        async let childAssets = apiClient.fetchAssetAssignedAssets(assetId: currentAsset.id)
+        assetLicenses = await licenses
+        assetAccessories = await accessories
+        assetComponents = await components
+        assignedChildAssets = await childAssets
     }
 
     private func prepareAndShowEditSheet() {
@@ -526,64 +555,52 @@ struct AssetDetailView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(12)
 
-                        // Assigned To. Gray card.
-                        if currentAsset.statusLabel.statusMeta?.lowercased() == "deployed", currentAsset.assignedTo != nil {
+                        // Assigned To.
+                        if let assignedTo = currentAsset.assignedTo,
+                           currentAsset.statusLabel.statusMeta?.lowercased() == "deployed"
+                           || !currentAsset.decodedAssignedToName.isEmpty {
                             VStack(alignment: .leading, spacing: 15) {
                                 Text(L10n.string("assigned_to"))
                                     .font(.headline)
                                     .frame(maxWidth: .infinity, alignment: .center)
                                 if let user = assignedUser {
                                     Button { onOpenUser?(user) } label: {
-                                        HStack {
-                                            Image(systemName: "person.circle")
-                                                .foregroundStyle(.tertiary)
-                                                .frame(width: 30, height: 30)
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(user.decodedName)
-                                                    .font(.headline)
-                                                    .foregroundStyle(.primary)
-                                                if !user.decodedEmail.isEmpty {
-                                                    Text(user.decodedEmail)
-                                                        .font(.subheadline)
-                                                        .foregroundStyle(.secondary)
-                                                }
-                                                if !user.decodedLocationName.isEmpty {
-                                                    Text(user.decodedLocationName)
-                                                        .font(.subheadline)
-                                                        .foregroundStyle(.secondary)
-                                                }
-                                            }
-                                            Spacer()
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption)
-                                                .foregroundStyle(.tertiary)
-                                        }
+                                        AssignedUserCard(user: user)
                                     }
                                     .buttonStyle(.plain)
-                                    .padding()
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
                                 } else if let loc = assignedLocation {
                                     Button { onOpenLocation?(loc) } label: {
-                                        HStack {
-                                            Image(systemName: "mappin.and.ellipse")
-                                                .foregroundStyle(.tertiary)
-                                                .frame(width: 30, height: 30)
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(HTMLDecoder.decode(loc.name))
-                                                    .font(.headline)
-                                                    .foregroundStyle(.primary)
-                                            }
-                                            Spacer()
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption)
-                                                .foregroundStyle(.tertiary)
-                                        }
+                                        AssignedLocationCard(location: loc)
                                     }
                                     .buttonStyle(.plain)
-                                    .padding()
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
+                                } else if let assignedAsset {
+                                    Button { onOpenAsset?(assignedAsset) } label: {
+                                        AssignedAssetCard(asset: assignedAsset)
+                                    }
+                                    .buttonStyle(.plain)
+                                } else if assignedTo.isLocation {
+                                    AssignedLocationCard(location: Location(id: assignedTo.id, name: currentAsset.decodedAssignedToName))
+                                } else if assignedTo.isAsset {
+                                    AssignedAssetCard(asset: nil, fallbackTitle: currentAsset.decodedAssignedToName)
+                                } else {
+                                    AssignedUserCard(user: nil, fallbackName: currentAsset.decodedAssignedToName)
+                                }
+                            }
+                            .padding(.top, 5)
+                        }
+
+                        if !assignedChildAssets.isEmpty {
+                            VStack(alignment: .leading, spacing: 15) {
+                                Text(L10n.string("assigned_assets"))
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                VStack(spacing: 12) {
+                                    ForEach(assignedChildAssets) { childAsset in
+                                        Button { onOpenAsset?(childAsset) } label: {
+                                            AssignedAssetCard(asset: childAsset)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
                             }
                             .padding(.top, 5)
@@ -597,7 +614,7 @@ struct AssetDetailView: View {
                                 VStack(spacing: 12) {
                                     ForEach(assetLicenses) { license in
                                         Button { onOpenLicense?(license) } label: {
-                                            assetLicenseRow(license: license)
+                                            AssignedLicenseCard(license: license)
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -614,7 +631,7 @@ struct AssetDetailView: View {
                                 VStack(spacing: 12) {
                                     ForEach(assetAccessories) { accessory in
                                         Button { onOpenAccessory?(accessory) } label: {
-                                            assetAccessoryRow(accessory: accessory)
+                                            AssignedAccessoryCard(accessory: accessory)
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -622,6 +639,24 @@ struct AssetDetailView: View {
                             }
                             .padding(.top, 5)
                         }
+
+                        if !assetComponents.isEmpty {
+                            VStack(alignment: .leading, spacing: 15) {
+                                Text(L10n.string("tab_components"))
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                VStack(spacing: 12) {
+                                    ForEach(assetComponents) { row in
+                                        Button { onOpenComponent?(row.component) } label: {
+                                            AssignedComponentCard(component: row.component, quantity: row.assignedQty)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.top, 5)
+                        }
+
                         // Date fields
                         let hasAnyDate =
                             (currentAsset.purchaseDate?.formatted?.isEmpty == false) ||
@@ -720,56 +755,6 @@ struct AssetDetailView: View {
     /// Strip thousand separators. Keep comma.
     private func normalizeDecimalForCopy(_ value: String) -> String {
         value.replacingOccurrences(of: ".", with: "")
-    }
-
-    private func assetLicenseRow(license: License) -> some View {
-        HStack {
-            Image(systemName: "doc.text.fill")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(license.decodedName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if !license.decodedManufacturerName.isEmpty {
-                    Text(license.decodedManufacturerName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    private func assetAccessoryRow(accessory: Accessory) -> some View {
-        HStack {
-            Image(systemName: "mediastick")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(accessory.decodedName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if !accessory.decodedCategoryName.isEmpty {
-                    Text(accessory.decodedCategoryName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
     }
 
     @ViewBuilder

@@ -11,14 +11,9 @@ struct LocationDetailView: View {
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
     @State private var locationAccessories: [Accessory] = []
+    @State private var locationAssets: [Asset] = []
     @State private var isLoadingAccessories = false
-
-    // Assets at this location.
-    private var assetsAtLocation: [Asset] {
-        apiClient.assets.filter {
-            $0.location?.id == location.id || $0.rtdLocation?.id == location.id
-        }
-    }
+    @State private var isLoadingAssets = false
 
     // Users at this location.
     private var usersAtLocation: [User] {
@@ -29,7 +24,7 @@ struct LocationDetailView: View {
         VStack(spacing: 0) {
             Picker("Select a tab", selection: $selectedTab) {
                 Text(L10n.string("users_count", usersAtLocation.count)).tag(0)
-                Text(L10n.string("assets_count", assetsAtLocation.count)).tag(1)
+                Text(L10n.string("assets_count", locationAssets.count)).tag(1)
                 Text(L10n.string("accessories_count", locationAccessories.count)).tag(2)
             }
             .pickerStyle(SegmentedPickerStyle())
@@ -43,50 +38,44 @@ struct LocationDetailView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.top, 16)
                 } else {
-                    List {
-                        Section {
+                    ScrollView {
+                        VStack(spacing: 12) {
                             ForEach(usersAtLocation) { user in
                                 Button { onOpenUser?(user) } label: {
-                                    assignedToStyleUserRow(user: user)
+                                    AssignedUserCard(user: user)
                                 }
                                 .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .listRowBackground(Color.clear)
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.top, 16)
+                        .padding(.bottom, 16)
                     }
-                    .listStyle(.insetGrouped)
-                    .listSectionSpacing(.compact)
-                    .listSectionSeparator(.hidden)
-                    .contentMargins(.top, 16, for: .scrollContent)
-                    .scrollContentBackground(.hidden)
                     .background(Color(.systemBackground))
                 }
             } else if selectedTab == 1 {
-                if assetsAtLocation.isEmpty {
+                if isLoadingAssets {
+                    ProgressView(L10n.string("loading_assets"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 16)
+                } else if locationAssets.isEmpty {
                     ContentUnavailableView(L10n.string("no_assets"), systemImage: "laptopcomputer", description: Text(L10n.string("no_assets_location")))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.top, 16)
                 } else {
-                    List {
-                        Section {
-                            ForEach(assetsAtLocation) { asset in
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(locationAssets) { asset in
                                 Button { onOpenAsset?(asset) } label: {
-                                    assignedToStyleAssetRow(asset: asset)
+                                    AssignedAssetCard(asset: asset)
                                 }
                                 .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .listRowBackground(Color.clear)
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.top, 16)
+                        .padding(.bottom, 16)
                     }
-                    .listStyle(.insetGrouped)
-                    .listSectionSpacing(.compact)
-                    .listSectionSeparator(.hidden)
-                    .contentMargins(.top, 16, for: .scrollContent)
-                    .scrollContentBackground(.hidden)
                     .background(Color(.systemBackground))
                 }
             } else {
@@ -103,24 +92,19 @@ struct LocationDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.top, 16)
                 } else {
-                    List {
-                        Section {
+                    ScrollView {
+                        VStack(spacing: 12) {
                             ForEach(locationAccessories) { accessory in
                                 Button { onOpenAccessory?(accessory) } label: {
-                                    assignedToStyleAccessoryRow(accessory: accessory)
+                                    AssignedAccessoryCard(accessory: accessory)
                                 }
                                 .buttonStyle(.plain)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                                .listRowBackground(Color.clear)
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.top, 16)
+                        .padding(.bottom, 16)
                     }
-                    .listStyle(.insetGrouped)
-                    .listSectionSpacing(.compact)
-                    .listSectionSeparator(.hidden)
-                    .contentMargins(.top, 16, for: .scrollContent)
-                    .scrollContentBackground(.hidden)
                     .background(Color(.systemBackground))
                 }
             }
@@ -158,94 +142,23 @@ struct LocationDetailView: View {
         }
         .onAppear {
             selectedTab = 0
-            reloadAccessories()
+            reloadAssignedItems()
         }
         .onChange(of: location.id) { _, _ in
-            reloadAccessories()
+            reloadAssignedItems()
         }
     }
 
-    private func reloadAccessories() {
+    private func reloadAssignedItems() {
         Task {
+            isLoadingAssets = true
             isLoadingAccessories = true
-            locationAccessories = await apiClient.fetchLocationAccessories(locationId: location.id)
+            async let assets = apiClient.fetchLocationAssets(locationId: location.id)
+            async let accessories = apiClient.fetchLocationAccessories(locationId: location.id)
+            locationAssets = await assets
+            locationAccessories = await accessories
+            isLoadingAssets = false
             isLoadingAccessories = false
         }
     }
-
-    /// Gray row. Icon + name. No chevron.
-    private func assignedToStyleUserRow(user: User) -> some View {
-        HStack {
-            Image(systemName: "person.circle")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(HTMLDecoder.decode(user.decodedName))
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if !user.decodedEmail.isEmpty {
-                    Text(HTMLDecoder.decode(user.decodedEmail))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                if !user.decodedLocationName.isEmpty {
-                    Text(HTMLDecoder.decode(user.decodedLocationName))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    private func assignedToStyleAssetRow(asset: Asset) -> some View {
-        HStack {
-            Image(systemName: "laptopcomputer")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(asset.decodedAssetTag)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-
-    private func assignedToStyleAccessoryRow(accessory: Accessory) -> some View {
-        HStack {
-            Image(systemName: "mediastick")
-                .foregroundStyle(.tertiary)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(accessory.decodedName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                if !accessory.decodedCategoryName.isEmpty {
-                    Text(accessory.decodedCategoryName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-    }
-} 
+}

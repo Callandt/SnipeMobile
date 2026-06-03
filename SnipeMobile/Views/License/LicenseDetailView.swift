@@ -259,8 +259,10 @@ struct LicenseDetailView: View {
                         count: groups.assigned.count,
                         color: .blue
                     )
-                    ForEach(groups.assigned) { seat in
-                        seatCard(seat, kind: .assigned)
+                    VStack(spacing: 12) {
+                        ForEach(groups.assigned) { seat in
+                            seatCard(seat, kind: .assigned)
+                        }
                     }
                 }
                 if !groups.free.isEmpty {
@@ -400,9 +402,6 @@ struct LicenseDetailView: View {
         switch kind {
         case .assigned:
             seatRow(seat)
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
                 .contextMenu {
                     Button(role: .destructive) {
                         checkinTarget = seat
@@ -444,31 +443,18 @@ struct LicenseDetailView: View {
 
     @ViewBuilder
     private func seatRow(_ seat: SnipeITAPIClient.LicenseSeatRow) -> some View {
-        if let assigned = seat.assignedUser, let userId = assigned.id as Int? {
+        if let assigned = seat.assignedUser {
+            let userId = assigned.id
             Button {
                 if let fullUser = apiClient.users.first(where: { $0.id == userId }) {
                     onOpenUser?(fullUser)
                 }
             } label: {
-                HStack {
-                    Image(systemName: "person.circle")
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 30, height: 30)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(apiClient.users.first(where: { $0.id == userId })?.decodedName ?? assigned.name)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        if let email = apiClient.users.first(where: { $0.id == userId })?.decodedEmail, !email.isEmpty {
-                            Text(email)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+                AssignedUserCard(
+                    user: apiClient.users.first(where: { $0.id == userId }),
+                    fallbackName: assigned.name,
+                    fallbackEmail: assigned.email ?? ""
+                )
             }
             .buttonStyle(.plain)
         } else if let assignedAsset = seat.assignedAsset {
@@ -477,20 +463,10 @@ struct LicenseDetailView: View {
                     onOpenAsset?(fullAsset)
                 }
             } label: {
-                HStack {
-                    Image(systemName: "laptopcomputer")
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 30, height: 30)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(assignedAsset.name ?? "")
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+                AssignedAssetCard(
+                    asset: apiClient.assets.first(where: { $0.id == assignedAsset.id }),
+                    fallbackTitle: assignedAsset.name ?? ""
+                )
             }
             .buttonStyle(.plain)
         }
