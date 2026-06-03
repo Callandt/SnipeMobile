@@ -276,7 +276,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                     didCountLaunchThisSession = true
                 }
 
-                // One-time module picker after upgrade.
+                // One-time module picker for users upgrading from before it existed.
                 if hasCompletedOnboarding && !hasSeenModulesIntro {
                     showModulesIntroForExisting = true
                 }

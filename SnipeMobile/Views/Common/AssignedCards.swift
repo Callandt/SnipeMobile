@@ -18,7 +18,7 @@ struct AssignedUserCard: View {
                             .foregroundStyle(.tertiary)
                             .frame(width: 36, height: 36)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(fallbackName)
+                            Text(fallbackName.isEmpty ? L10n.string("user") : fallbackName)
                                 .font(.headline)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.primary)

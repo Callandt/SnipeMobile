@@ -20,8 +20,17 @@ struct LocationDetailView: View {
         apiClient.users.filter { $0.location?.id == location.id }
     }
 
+    private var currentLocation: Location {
+        apiClient.locations.first { $0.id == location.id } ?? location
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            LocationCardView(location: currentLocation, useExplicitBackground: false)
+                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal)
+                .padding(.top, 12)
+
             Picker("Select a tab", selection: $selectedTab) {
                 Text(L10n.string("users_count", usersAtLocation.count)).tag(0)
                 Text(L10n.string("assets_count", locationAssets.count)).tag(1)

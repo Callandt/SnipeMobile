@@ -5,6 +5,8 @@ struct ModuleSelectionView: View {
     @AppStorage("showLicensesTab") private var showLicensesTab: Bool = true
     @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
+    @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
+    @AppStorage("showMaintenance") private var showMaintenance: Bool = true
 
     var onDone: () -> Void
 
@@ -50,6 +52,12 @@ struct ModuleSelectionView: View {
                                 Divider().padding(.leading, 48)
                                 row(icon: "cpu", title: L10n.string("tab_components"), binding: $showComponentsSub)
                             }
+
+                            section(title: L10n.string("settings_features")) {
+                                row(icon: "bell.badge.fill", title: L10n.string("settings_audit_short"), binding: $enableAuditSubtab)
+                                Divider().padding(.leading, 48)
+                                row(icon: "wrench.and.screwdriver.fill", title: L10n.string("settings_maintenance"), binding: $showMaintenance)
+                            }
                         }
 
                         Button(action: onDone) {
@@ -77,6 +85,12 @@ struct ModuleSelectionView: View {
                     .frame(maxWidth: 420)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
+            }
+        }
+        .onAppear {
+            // Audit defaults off elsewhere; turn it on here unless already chosen.
+            if UserDefaults.standard.object(forKey: "enableAuditSubtab") == nil {
+                enableAuditSubtab = true
             }
         }
     }

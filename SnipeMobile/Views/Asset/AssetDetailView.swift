@@ -58,6 +58,7 @@ struct AssetDetailView: View {
     @State private var showCheckoutSheet = false
     @State private var detailImageURL: String? = nil
     @State private var ephemeralNotice: EphemeralNotice?
+    @AppStorage("showMaintenance") private var showMaintenance: Bool = true
 
     /// From apiClient or passed in.
     private var currentAsset: Asset {
@@ -214,7 +215,9 @@ struct AssetDetailView: View {
             Picker("Details", selection: $selectedTab) {
                 Text(L10n.string("details")).tag(0)
                 Text(L10n.string("history")).tag(1)
-                Text(L10n.string("maintenance")).tag(2)
+                if showMaintenance {
+                    Text(L10n.string("maintenance")).tag(2)
+                }
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
@@ -225,7 +228,7 @@ struct AssetDetailView: View {
                 detailsView
             } else if selectedTab == 1 {
                 HistoryView(itemType: "asset", itemId: currentAsset.id, apiClient: apiClient)
-            } else {
+            } else if showMaintenance {
                 MaintenanceTab(assetId: currentAsset.id, apiClient: apiClient)
             }
             Spacer(minLength: 0)
@@ -384,6 +387,9 @@ struct AssetDetailView: View {
         }
         .onChange(of: apiClient.assets.count) { _, _ in
             Task { await reloadAssignedRelations() }
+        }
+        .onChange(of: showMaintenance) { _, newValue in
+            if !newValue, selectedTab == 2 { selectedTab = 0 }
         }
         .ephemeralNotice($ephemeralNotice)
     }

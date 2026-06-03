@@ -184,7 +184,9 @@ struct ComponentDetailView: View {
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: 200)
             }
             if let _ = returnToTab, let onBack = onBackToPrevious {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -364,34 +366,19 @@ struct ComponentDetailView: View {
             } else {
                 ForEach(checkedOutRows) { row in
                     let fullAsset = row.assetId.flatMap { id in apiClient.assets.first(where: { $0.id == id }) }
-                    HStack(spacing: 8) {
-                        Button(action: {
-                            if let fullAsset { onOpenAsset?(fullAsset) }
-                        }) {
-                            AssignedAssetCard(
-                                asset: fullAsset,
-                                fallbackTitle: HTMLDecoder.decode(row.assetName ?? ""),
-                                fallbackTag: HTMLDecoder.decode(row.assetTag ?? ""),
-                                quantity: row.assignedQty
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(fullAsset == nil)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        if row.assignedPivotId != nil {
-                            Button {
-                                requestCheckin(for: row)
-                            } label: {
-                                Image(systemName: "arrow.down.to.line")
-                                    .font(.body.weight(.semibold))
-                                    .frame(width: 36, height: 36)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.green)
-                            .accessibilityLabel(L10n.string("check_in"))
-                        }
+                    Button(action: {
+                        if let fullAsset { onOpenAsset?(fullAsset) }
+                    }) {
+                        AssignedAssetCard(
+                            asset: fullAsset,
+                            fallbackTitle: HTMLDecoder.decode(row.assetName ?? ""),
+                            fallbackTag: HTMLDecoder.decode(row.assetTag ?? ""),
+                            quantity: row.assignedQty
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .disabled(fullAsset == nil)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contextMenu {
                         if row.assignedPivotId != nil {
                             Button(role: .destructive) {

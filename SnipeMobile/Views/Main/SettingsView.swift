@@ -21,6 +21,7 @@ struct SettingsView: View {
     @AppStorage("showLicensesTab") private var showLicensesTab: Bool = true
     @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
+    @AppStorage("showMaintenance") private var showMaintenance: Bool = true
 
     @State private var baseURL: String = ""
     @State private var apiToken: String = ""
@@ -53,8 +54,7 @@ struct SettingsView: View {
     }
 
     private var auditStatusLabel: String {
-        guard enableAuditSubtab else { return L10n.string("settings_status_off") }
-        return auditNotificationsEnabled
+        enableAuditSubtab
             ? L10n.string("settings_status_on")
             : L10n.string("settings_status_off")
     }
@@ -314,10 +314,16 @@ struct SettingsView: View {
                     value: auditStatusLabel
                 )
             }
+            SettingsToggleRow(
+                icon: "wrench.and.screwdriver.fill",
+                iconColor: .teal,
+                title: L10n.string("settings_maintenance"),
+                isOn: $showMaintenance
+            )
         } header: {
             Text(L10n.string("settings_features"))
         } footer: {
-            Text(L10n.string("audit_settings_compact_footer"))
+            Text(L10n.string("settings_maintenance_footer"))
         }
     }
 

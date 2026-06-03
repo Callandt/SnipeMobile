@@ -403,31 +403,17 @@ struct LicenseDetailView: View {
     private func seatCard(_ seat: SnipeITAPIClient.LicenseSeatRow, kind: SeatKind) -> some View {
         switch kind {
         case .assigned:
-            HStack(spacing: 8) {
-                seatRow(seat)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if seat.userCanCheckin != false {
-                    Button {
-                        requestCheckin(for: seat)
-                    } label: {
-                        Image(systemName: "arrow.down.to.line")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 36, height: 36)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.green)
-                    .accessibilityLabel(L10n.string("check_in"))
-                }
-            }
-            .contextMenu {
-                if seat.userCanCheckin != false {
-                    Button(role: .destructive) {
-                        requestCheckin(for: seat)
-                    } label: {
-                        Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
+            seatRow(seat)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contextMenu {
+                    if seat.userCanCheckin != false {
+                        Button(role: .destructive) {
+                            requestCheckin(for: seat)
+                        } label: {
+                            Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
+                        }
                     }
                 }
-            }
         case .free:
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")

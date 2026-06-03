@@ -383,6 +383,8 @@ enum L10n {
         "settings_connected": "Connected",
         "api_settings_short": "API",
         "audit_settings_compact_footer": "Show the audit tab in Hardware and get a daily reminder.",
+        "settings_maintenance": "Maintenance",
+        "settings_maintenance_footer": "Show the Audit tab in Hardware and the Maintenance tab in asset details.",
         "api_settings_compact_footer": "Sync assets, users and locations with your Snipe-IT server.",
         "connection_section_footer": "API connections to Snipe-IT and supported vendor services.",
         "settings_about": "About",
@@ -748,6 +750,8 @@ enum L10n {
         "settings_connected": "Connecté",
         "api_settings_short": "API",
         "audit_settings_compact_footer": "Affiche l'onglet audit dans Matériel et envoie un rappel quotidien.",
+        "settings_maintenance": "Maintenance",
+        "settings_maintenance_footer": "Affiche l'onglet Audit dans Matériel et l'onglet Maintenance dans les détails de l'actif.",
         "api_settings_compact_footer": "Synchronisez actifs, utilisateurs et emplacements avec votre serveur Snipe-IT.",
         "connection_section_footer": "Connexions API vers Snipe-IT et services tiers pris en charge.",
         "settings_about": "À propos",
@@ -1097,6 +1101,8 @@ enum L10n {
         "settings_connected": "Verbonden",
         "api_settings_short": "API",
         "audit_settings_compact_footer": "Toon de audit-tab in Hardware en krijg een dagelijkse herinnering.",
+        "settings_maintenance": "Onderhoud",
+        "settings_maintenance_footer": "Toon de Audit-tab in Hardware en de Onderhoud-tab in assetdetails.",
         "api_settings_compact_footer": "Synchroniseer assets, gebruikers en locaties met je Snipe-IT server.",
         "connection_section_footer": "API-verbindingen met Snipe-IT en ondersteunde leveranciersdiensten.",
         "settings_about": "Over",
@@ -1370,6 +1376,8 @@ enum L10n {
 
         // TODO: SPANISH TRANSLATION
 
+        "settings_maintenance": "Maintenance",
+        "settings_maintenance_footer": "Show the Audit tab in Hardware and the Maintenance tab in asset details.",
         "tab_assets": "Assets",
         "tab_licenses": "Licenses",
         "tab_consumables": "Consumables",

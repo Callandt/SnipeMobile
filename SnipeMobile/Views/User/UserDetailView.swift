@@ -52,6 +52,10 @@ struct UserDetailView: View {
                 if selectedTab == 0 {
                     ScrollView {
                         VStack(spacing: 12) {
+                            UserCardView(user: currentUser, useExplicitBackground: false)
+                                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .padding(.horizontal)
+
                             userInfoSection
 
                             if !userAssets.isEmpty {

@@ -1918,7 +1918,6 @@ struct DirectoryTab: View {
                 }
             }
             .navigationTitle(selectedSubmodule.localizedTitle)
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if enabledSubmodules.count > 1 {
                     ToolbarItem(placement: .navigationBarLeading) {

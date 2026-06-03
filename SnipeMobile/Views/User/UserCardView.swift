@@ -5,6 +5,16 @@ struct UserCardView: View {
     var useExplicitBackground: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 
+    private var cardTitle: String {
+        let name = user.decodedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { return name }
+        let first = user.decodedFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !first.isEmpty { return first }
+        let email = user.decodedEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !email.isEmpty { return email }
+        return L10n.string("user")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
@@ -13,12 +23,13 @@ struct UserCardView: View {
                     .foregroundStyle(.tertiary)
                     .frame(width: 36, height: 36)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(HTMLDecoder.decode(user.decodedName))
+                    Text(cardTitle)
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    if !user.decodedEmail.isEmpty {
-                        Text(HTMLDecoder.decode(user.decodedEmail))
+                        .lineLimit(2)
+                    if !user.decodedEmail.isEmpty, user.decodedEmail != cardTitle {
+                        Text(user.decodedEmail)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
