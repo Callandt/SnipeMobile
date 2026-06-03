@@ -1649,8 +1649,9 @@ class SnipeITAPIClient: ObservableObject {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
         do {
             return try await fetchAllPaginated(
-                path: "/api/v1/hardware/\(assetId)/maintenances",
-                as: AssetMaintenance.self
+                path: "/api/v1/maintenances",
+                as: AssetMaintenance.self,
+                extraQueryItems: [URLQueryItem(name: "asset_id", value: String(assetId))]
             )
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }

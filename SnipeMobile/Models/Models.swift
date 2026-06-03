@@ -625,4 +625,101 @@ struct LogMetaChange: Codable {
 struct ActivityFile: Codable {
     let url: String?
     let filename: String?
+}
+
+struct AssetMaintenance: Identifiable, Codable, Hashable {
+    let id: Int
+    let title: String
+    let assetMaintenanceType: String?
+    let supplier: Supplier?
+    let cost: String?
+    let notes: String?
+    let startDate: DateInfo?
+    let completionDate: DateInfo?
+    let isWarranty: Bool
+    let createdAt: DateInfo?
+    let updatedAt: DateInfo?
+    let completedBy: CreatedBy?
+
+    var decodedTitle: String { HTMLDecoder.decode(title) }
+    var decodedNotes: String { HTMLDecoder.decode(notes ?? "") }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, supplier, cost, notes
+        case assetMaintenanceType = "asset_maintenance_type"
+        case startDate = "start_date"
+        case completionDate = "completion_date"
+        case isWarranty = "is_warranty"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case completedBy = "completed_by"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        assetMaintenanceType = try? c.decodeIfPresent(String.self, forKey: .assetMaintenanceType)
+        supplier = try? c.decodeIfPresent(Supplier.self, forKey: .supplier)
+        cost = try? c.decodeIfPresent(String.self, forKey: .cost)
+        notes = try? c.decodeIfPresent(String.self, forKey: .notes)
+        startDate = try? c.decodeIfPresent(DateInfo.self, forKey: .startDate)
+        completionDate = try? c.decodeIfPresent(DateInfo.self, forKey: .completionDate)
+        isWarranty = (try? c.decodeIfPresent(Bool.self, forKey: .isWarranty)) ?? false
+        createdAt = try? c.decodeIfPresent(DateInfo.self, forKey: .createdAt)
+        updatedAt = try? c.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
+        completedBy = try? c.decodeIfPresent(CreatedBy.self, forKey: .completedBy)
+    }
+
+    static func == (lhs: AssetMaintenance, rhs: AssetMaintenance) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+struct MaintenancesResponse: Codable {
+    let total: Int?
+    let rows: [AssetMaintenance]
+}
+
+struct MaintenanceCreateRequest: Encodable {
+    let asset_id: Int
+    let name: String
+    let asset_maintenance_type: String?
+    let supplier_id: Int?
+    let cost: Double?
+    let notes: String?
+    let start_date: String
+    let completion_date: String?
+    let is_warranty: Bool
+}
+
+struct MaintenanceUpdateRequest: Encodable {
+    let name: String?
+    let asset_maintenance_type: String?
+    let supplier_id: Int?
+    let cost: Double?
+    let notes: String?
+    let start_date: String?
+    let completion_date: String?
+    let is_warranty: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case name, cost, notes
+        case asset_maintenance_type
+        case supplier_id
+        case start_date
+        case completion_date
+        case is_warranty
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(asset_maintenance_type, forKey: .asset_maintenance_type)
+        try c.encodeIfPresent(supplier_id, forKey: .supplier_id)
+        try c.encodeIfPresent(cost, forKey: .cost)
+        try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encodeIfPresent(start_date, forKey: .start_date)
+        try c.encodeIfPresent(completion_date, forKey: .completion_date)
+        try c.encodeIfPresent(is_warranty, forKey: .is_warranty)
+    }
 } 
