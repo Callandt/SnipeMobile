@@ -94,10 +94,6 @@ struct AssetDetailView: View {
         return apiClient.assets.first { $0.id == id }
     }
 
-    private var cachedChildAssetCount: Int {
-        apiClient.assets.filter { $0.assignedTo?.isAsset == true && $0.assignedTo?.id == currentAsset.id }.count
-    }
-
     private var computedWarrantyExpires: String? {
         guard
             let purchaseDateString = currentAsset.purchaseDate?.date,
@@ -386,7 +382,7 @@ struct AssetDetailView: View {
         .onChange(of: currentAsset.id) { _, _ in
             Task { await reloadAssignedRelations() }
         }
-        .onChange(of: cachedChildAssetCount) { _, _ in
+        .onChange(of: apiClient.assets.count) { _, _ in
             Task { await reloadAssignedRelations() }
         }
         .ephemeralNotice($ephemeralNotice)
