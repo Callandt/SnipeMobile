@@ -247,7 +247,7 @@ struct LicenseDetailView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             } else if seats.isEmpty {
-                Text(L10n.string("assigned_to_any"))
+                Text(L10n.string("assigned_to_none_license"))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -518,7 +518,6 @@ struct LicenseDetailView: View {
     @ViewBuilder
     private func copyableDetailRow(label: String, value: String, copyValue: String? = nil) -> some View {
         let toCopy = copyValue ?? value
-        // No spaces (serial/email/key): truncate instead of ugly wrap.
         let isSingleToken = !value.contains(" ")
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {

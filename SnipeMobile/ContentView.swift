@@ -175,6 +175,8 @@ struct ContentView: View {
     @State private var locationDetailTab: Int = 0
     @State private var accessoryDetailTab: Int = 0
     @State private var licenseDetailTab: Int = 0
+    @State private var consumableDetailTab: Int = 0
+    @State private var componentDetailTab: Int = 0
     @EnvironmentObject var appSettings: AppSettings
     @EnvironmentObject private var auditNotificationRouter: AuditNotificationRouter
     @State private var auditListFilter: AuditListFilter = .all
@@ -188,10 +190,13 @@ struct ContentView: View {
     @State private var pendingLocationToOpen: Location?
     @State private var pendingAccessoryToOpen: Accessory?
     @State private var pendingLicenseToOpen: License?
+    @State private var pendingConsumableToOpen: Consumable?
+    @State private var pendingComponentToOpen: Component?
     @State private var returnToTab: MainTab?
     @State private var hardwarePath = NavigationPath()
     @State private var accessoriesPath = NavigationPath()
     @State private var licensesPath = NavigationPath()
+    @State private var stockPath = NavigationPath()
     @State private var directoryPath = NavigationPath()
     /// Detail on stack. Tab bar stays visible.
     @State private var isDetailViewActive = false
@@ -270,7 +275,8 @@ struct ContentView: View {
             case .hardware: hardwarePath = NavigationPath()
             case .accessories: accessoriesPath = NavigationPath()
             case .directory: directoryPath = NavigationPath()
-            case .licenses, .stock:
+            case .stock: stockPath = NavigationPath()
+            case .licenses:
                 break
             }
         }
@@ -394,7 +400,8 @@ struct ContentView: View {
                 onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; hardwarePath = NavigationPath() } },
                 onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .hardware },
                 onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .hardware },
-                onOpenLicense: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .hardware }
+                onOpenLicense: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .hardware },
+                onOpenAccessory: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .hardware }
             )
         case .accessories:
             AccessoriesTab(
@@ -432,8 +439,21 @@ struct ContentView: View {
             )
         case .stock:
             StockTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                consumableDetailTab: $consumableDetailTab,
+                componentDetailTab: $componentDetailTab,
                 showingSettings: $showingSettings,
-                showingScanner: $showingScanner
+                showingScanner: $showingScanner,
+                navigationPath: $stockPath,
+                isDetailViewActive: $isDetailViewActive,
+                pendingConsumableToOpen: $pendingConsumableToOpen,
+                pendingComponentToOpen: $pendingComponentToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; stockPath = NavigationPath() } },
+                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .stock },
+                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .stock }
             )
         case .directory:
             DirectoryTab(
@@ -453,9 +473,11 @@ struct ContentView: View {
                 onOpenAssetFromUser: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory },
                 onOpenAccessoryFromUser: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .directory },
                 onOpenLicenseFromUser: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .directory },
+                onOpenConsumableFromUser: { pendingConsumableToOpen = $0; selectedTab = .stock; returnToTab = .directory },
                 onOpenLocationFromUser: { pendingLocationToOpen = $0 },
                 onOpenUserFromLocation: { pendingUserToOpen = $0 },
-                onOpenAssetFromLocation: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory }
+                onOpenAssetFromLocation: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory },
+                onOpenAccessoryFromLocation: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .directory }
             )
         }
     }
@@ -693,6 +715,7 @@ struct HardwareTab: View {
     var onOpenUser: (User) -> Void
     var onOpenLocation: (Location) -> Void
     var onOpenLicense: (License) -> Void
+    var onOpenAccessory: (Accessory) -> Void
 
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
@@ -921,7 +944,7 @@ struct HardwareTab: View {
             }
         }
         .navigationDestination(for: Asset.self) { asset in
-            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation, onOpenLicense: onOpenLicense)
+            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation, onOpenLicense: onOpenLicense, onOpenAccessory: onOpenAccessory)
         }
         .alert(L10n.string("delete_asset_confirm_title"), isPresented: $showDeleteConfirm) {
             Button(L10n.string("cancel"), role: .cancel) {
@@ -1378,15 +1401,29 @@ private struct LicensesContent: View {
 // MARK: - Stock Tab (consumables + components)
 
 struct StockTab: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var consumableDetailTab: Int
+    @Binding var componentDetailTab: Int
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
+    @Binding var navigationPath: NavigationPath
+    @Binding var isDetailViewActive: Bool
+    @Binding var pendingConsumableToOpen: Consumable?
+    @Binding var pendingComponentToOpen: Component?
+    @Binding var returnToTab: MainTab?
+    var onBackToPreviousTab: () -> Void
+    var onOpenUser: (User) -> Void
+    var onOpenAsset: (Asset) -> Void
 
     @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
     @AppStorage("stockSelectedSubmodule") private var selectedSubmoduleRaw: String = StockSubmodule.consumables.rawValue
 
-    @State private var searchText: String = ""
     @State private var showingComingSoon = false
+    @State private var showingAddConsumable = false
+    @State private var showingAddComponent = false
 
     private var enabledSubmodules: [StockSubmodule] {
         StockSubmodule.allCases.filter { isEnabled($0) }
@@ -1419,12 +1456,25 @@ struct StockTab: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ContentUnavailableView(
-                selectedSubmodule.localizedTitle,
-                systemImage: selectedSubmodule.icon,
-                description: Text(L10n.string("module_coming_soon"))
-            )
+        NavigationStack(path: $navigationPath) {
+            Group {
+                if selectedSubmodule == .consumables {
+                    ConsumablesContent(
+                        apiClient: apiClient,
+                        searchText: $searchText,
+                        isRefreshing: $isRefreshing,
+                        navigationPath: $navigationPath
+                    )
+                } else {
+                    ComponentsContent(
+                        apiClient: apiClient,
+                        searchText: $searchText,
+                        isRefreshing: $isRefreshing,
+                        navigationPath: $navigationPath
+                    )
+                }
+            }
+            .onAppear { isDetailViewActive = false }
             .navigationTitle(selectedSubmodule.localizedTitle)
             .toolbar {
                 if enabledSubmodules.count > 1 {
@@ -1437,7 +1487,13 @@ struct StockTab: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingComingSoon = true } label: {
+                    Button {
+                        if selectedSubmodule == .consumables {
+                            showingAddConsumable = true
+                        } else {
+                            showingAddComponent = true
+                        }
+                    } label: {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(addLabel)
@@ -1445,11 +1501,239 @@ struct StockTab: View {
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
             }
             .searchable(text: $searchText, prompt: searchPrompt)
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    if selectedSubmodule == .consumables {
+                        await apiClient.fetchConsumables()
+                    } else {
+                        await apiClient.fetchComponents()
+                    }
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
+            }
+            .navigationDestination(for: Consumable.self) { consumable in
+                ConsumableDetailView(
+                    consumable: consumable,
+                    apiClient: apiClient,
+                    selectedTab: $consumableDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    returnToTab: returnToTab,
+                    onBackToPrevious: onBackToPreviousTab,
+                    onOpenUser: onOpenUser
+                )
+            }
+            .navigationDestination(for: Component.self) { component in
+                ComponentDetailView(
+                    component: component,
+                    apiClient: apiClient,
+                    selectedTab: $componentDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    returnToTab: returnToTab,
+                    onBackToPrevious: onBackToPreviousTab,
+                    onOpenAsset: onOpenAsset
+                )
+            }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
                 Button(L10n.string("ok"), role: .cancel) { }
             } message: {
                 Text(L10n.string("module_coming_soon"))
+            }
+            .sheet(isPresented: $showingAddConsumable) {
+                AddConsumableSheet(
+                    apiClient: apiClient,
+                    isPresented: $showingAddConsumable,
+                    onCreated: { newId in
+                        Task {
+                            if let newId,
+                               let detailed = await apiClient.fetchConsumableDetails(consumableId: newId) {
+                                await MainActor.run {
+                                    navigationPath.append(detailed)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+            .sheet(isPresented: $showingAddComponent) {
+                AddComponentSheet(
+                    apiClient: apiClient,
+                    isPresented: $showingAddComponent,
+                    onCreated: { newId in
+                        Task {
+                            if let newId,
+                               let detailed = await apiClient.fetchComponentDetails(componentId: newId) {
+                                await MainActor.run {
+                                    navigationPath.append(detailed)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        }
+        .onChange(of: pendingConsumableToOpen) { _, new in
+            if let consumable = new {
+                navigationPath.append(consumable)
+                pendingConsumableToOpen = nil
+            }
+        }
+        .onChange(of: pendingComponentToOpen) { _, new in
+            if let component = new {
+                navigationPath.append(component)
+                pendingComponentToOpen = nil
+            }
+        }
+    }
+}
+
+private struct ConsumablesContent: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var navigationPath: NavigationPath
+
+    var filteredConsumables: [Consumable] {
+        if searchText.isEmpty { return apiClient.consumables }
+        let needle = searchText.lowercased()
+        return apiClient.consumables.filter {
+            $0.decodedName.lowercased().contains(needle) ||
+            $0.decodedItemNo.lowercased().contains(needle) ||
+            $0.decodedModelNumber.lowercased().contains(needle) ||
+            $0.decodedLocationName.lowercased().contains(needle) ||
+            $0.decodedManufacturerName.lowercased().contains(needle) ||
+            $0.decodedCategoryName.lowercased().contains(needle)
+        }
+    }
+
+    var body: some View {
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api_short"))
+                )
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView(L10n.string("loading_consumables"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apiClient.errorMessage != nil {
+                ScrollView {
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                        .frame(minHeight: 400)
+                }
+            } else {
+                List {
+                    Section {
+                        HStack {
+                            Label("\(apiClient.consumables.count)", systemImage: "shippingbox")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
+
+                    Section {
+                        ForEach(filteredConsumables) { consumable in
+                            Button {
+                                navigationPath.append(consumable)
+                            } label: {
+                                ConsumableCardView(consumable: consumable)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .listRowBackground(Color.clear)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(.compact)
+                .listSectionSeparator(.hidden)
+                .overlay {
+                    if filteredConsumables.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                        ContentUnavailableView(L10n.string("no_consumables"), systemImage: "shippingbox")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct ComponentsContent: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var navigationPath: NavigationPath
+
+    var filteredComponents: [Component] {
+        if searchText.isEmpty { return apiClient.components }
+        let needle = searchText.lowercased()
+        return apiClient.components.filter {
+            $0.decodedName.lowercased().contains(needle) ||
+            $0.decodedSerial.lowercased().contains(needle) ||
+            $0.decodedModelNumber.lowercased().contains(needle) ||
+            $0.decodedLocationName.lowercased().contains(needle) ||
+            $0.decodedManufacturerName.lowercased().contains(needle) ||
+            $0.decodedCategoryName.lowercased().contains(needle)
+        }
+    }
+
+    var body: some View {
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api_short"))
+                )
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView(L10n.string("loading_components"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apiClient.errorMessage != nil {
+                ScrollView {
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                        .frame(minHeight: 400)
+                }
+            } else {
+                List {
+                    Section {
+                        HStack {
+                            Label("\(apiClient.components.count)", systemImage: "cpu")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
+
+                    Section {
+                        ForEach(filteredComponents) { component in
+                            Button {
+                                navigationPath.append(component)
+                            } label: {
+                                ComponentCardView(component: component)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .listRowBackground(Color.clear)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(.compact)
+                .listSectionSeparator(.hidden)
+                .overlay {
+                    if filteredComponents.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                        ContentUnavailableView(L10n.string("no_components"), systemImage: "cpu")
+                    }
+                }
             }
         }
     }
@@ -1585,9 +1869,11 @@ struct DirectoryTab: View {
     var onOpenAssetFromUser: (Asset) -> Void
     var onOpenAccessoryFromUser: (Accessory) -> Void
     var onOpenLicenseFromUser: (License) -> Void
+    var onOpenConsumableFromUser: (Consumable) -> Void
     var onOpenLocationFromUser: (Location) -> Void
     var onOpenUserFromLocation: (User) -> Void
     var onOpenAssetFromLocation: (Asset) -> Void
+    var onOpenAccessoryFromLocation: (Accessory) -> Void
 
     @AppStorage("directorySelectedSubmodule") private var selectedSubmoduleRaw: String = DirectorySubmodule.users.rawValue
 
@@ -1665,10 +1951,10 @@ struct DirectoryTab: View {
                 }
             }
             .navigationDestination(for: User.self) { user in
-                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser, onOpenLicense: onOpenLicenseFromUser)
+                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser, onOpenLicense: onOpenLicenseFromUser, onOpenConsumable: onOpenConsumableFromUser)
             }
             .navigationDestination(for: Location.self) { location in
-                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUserFromLocation, onOpenAsset: onOpenAssetFromLocation)
+                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUserFromLocation, onOpenAsset: onOpenAssetFromLocation, onOpenAccessory: onOpenAccessoryFromLocation)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
         }

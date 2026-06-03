@@ -70,21 +70,15 @@ struct LicenseCheckoutSheet: View {
                     }
                 } else {
                     Section {
-                        TextField(L10n.string("search_assets"), text: $assetSearchText)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(filteredAssets, id: \.id) { asset in
-                                    LicenseAssetRow(asset: asset, isSelected: selectedAsset?.id == asset.id) {
-                                        selectedAsset = asset
-                                        selectedUser = nil
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 4)
-                                }
+                        CheckoutAssetPickerContent(
+                            searchText: $assetSearchText,
+                            assets: filteredAssets,
+                            selectedAssetId: selectedAsset?.id,
+                            onSelect: { asset in
+                                selectedAsset = asset
+                                selectedUser = nil
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .frame(maxHeight: 220)
+                        )
                     } header: {
                         Text(L10n.string("select_asset_short"))
                     }
@@ -117,6 +111,9 @@ struct LicenseCheckoutSheet: View {
                 Button(L10n.string("ok"), role: .cancel) {}
             } message: {
                 Text(errorMessage ?? "")
+            }
+            .onAppear {
+                if apiClient.assets.isEmpty { Task { await apiClient.fetchAssets() } }
             }
         }
     }
@@ -174,31 +171,5 @@ struct LicenseCheckoutSheet: View {
         }
         onSuccess?()
         isPresented = false
-    }
-}
-
-private struct LicenseAssetRow: View {
-    let asset: Asset
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(asset.decodedName.isEmpty ? asset.decodedAssetTag : asset.decodedName)
-                        .foregroundStyle(.primary)
-                    Text(asset.decodedAssetTag)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.tint)
-                }
-            }
-        }
-        .buttonStyle(.plain)
     }
 }

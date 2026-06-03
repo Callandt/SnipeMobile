@@ -11,6 +11,8 @@ class SnipeITAPIClient: ObservableObject {
     @Published var users: [User] = []
     @Published var accessories: [Accessory] = []
     @Published var licenses: [License] = []
+    @Published var consumables: [Consumable] = []
+    @Published var components: [Component] = []
     @Published var locations: [Location] = []
     @Published var companies: [Company] = []
     @Published var manufacturers: [Manufacturer] = []
@@ -159,6 +161,8 @@ class SnipeITAPIClient: ObservableObject {
                 self.users = []
                 self.accessories = []
                 self.licenses = []
+                self.consumables = []
+                self.components = []
                 self.locations = []
                 self.companies = []
                 self.manufacturers = []
@@ -199,6 +203,8 @@ class SnipeITAPIClient: ObservableObject {
         await fetchUsers()
         await fetchAccessories()
         await fetchLicenses()
+        await fetchConsumables()
+        await fetchComponents()
         await fetchLocations()
 
         await MainActor.run {
@@ -450,6 +456,522 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    func fetchConsumables() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            await MainActor.run { errorMessage = "Configure the API settings first." }
+            return
+        }
+
+        do {
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/consumables",
+                as: Consumable.self
+            ) else { return }
+            await MainActor.run {
+                self.consumables = rows
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Error fetching consumables: \(error.localizedDescription)"
+                #if DEBUG
+                print("Error details: \(error)")
+                #endif
+            }
+        }
+    }
+
+    func fetchConsumableDetails(consumableId: Int) async -> Consumable? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/consumables/\(consumableId)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else { return nil }
+
+            if let consumable = try? JSONDecoder().decode(Consumable.self, from: data) {
+                return consumable
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            if let payload = json["payload"] as? [String: Any],
+               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+               let consumable = try? JSONDecoder().decode(Consumable.self, from: payloadData) {
+                return consumable
+            }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    struct ConsumableUserRow: Decodable, Identifiable, Hashable {
+        let id = UUID()
+        let userId: Int?
+        let name: String?
+        let email: String?
+        let note: String?
+
+        private struct NestedUser: Decodable {
+            let id: Int?
+            let name: String?
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case user, note
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let user = try? container.decodeIfPresent(NestedUser.self, forKey: .user)
+            self.userId = user?.id
+            self.name = user?.name
+            self.email = nil
+            self.note = try? container.decodeIfPresent(String.self, forKey: .note)
+        }
+    }
+
+    /// Checked-out users (`GET /api/v1/consumables/{id}/users`).
+    func fetchConsumableCheckedOutList(consumableId: Int) async -> [ConsumableUserRow] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        do {
+            let rows = try await fetchAllPaginated(
+                path: "/api/v1/consumables/\(consumableId)/users",
+                as: ConsumableUserRow.self
+            )
+            return rows ?? []
+        } catch {
+            #if DEBUG
+            print("fetchConsumableCheckedOutList error: \(error)")
+            #endif
+            return []
+        }
+    }
+
+    func createConsumable(
+        name: String,
+        categoryId: Int,
+        quantity: Int,
+        minAmt: Int?,
+        itemNo: String?,
+        modelNumber: String?,
+        orderNumber: String?,
+        purchaseCost: String?,
+        purchaseDate: String?,
+        companyId: Int?,
+        locationId: Int?,
+        manufacturerId: Int?,
+        supplierId: Int?,
+        notes: String?
+    ) async -> (success: Bool, id: Int?) {
+        guard let url = URL(string: "\(baseURL)/api/v1/consumables") else { return (false, nil) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "name": name,
+            "category_id": categoryId,
+            "qty": quantity
+        ]
+        if let min = minAmt, min > 0 { body["min_amt"] = min }
+        if let v = itemNo, !v.isEmpty { body["item_no"] = v }
+        if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
+        if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
+        if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
+            body["purchase_cost"] = normalized
+        }
+        if let v = purchaseDate, !v.isEmpty { body["purchase_date"] = v }
+        if let v = companyId, v > 0 { body["company_id"] = v }
+        if let v = locationId, v > 0 { body["location_id"] = v }
+        if let v = manufacturerId, v > 0 { body["manufacturer_id"] = v }
+        if let v = supplierId, v > 0 { body["supplier_id"] = v }
+        if let v = notes, !v.isEmpty { body["notes"] = v }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Consumable created!" : "Create failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200,
+                   let payload = json?["payload"] as? [String: Any],
+                   let newId = payload["id"] as? Int {
+                    Task { await self.fetchConsumables() }
+                    return (true, newId)
+                }
+                return (false, nil)
+            }
+            return (false, nil)
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return (false, nil)
+        }
+    }
+
+    func updateConsumable(
+        consumableId: Int,
+        name: String,
+        categoryId: Int,
+        quantity: Int,
+        minAmt: Int?,
+        itemNo: String?,
+        modelNumber: String?,
+        orderNumber: String?,
+        purchaseCost: String?,
+        purchaseDate: String?,
+        companyId: Int?,
+        locationId: Int?,
+        manufacturerId: Int?,
+        supplierId: Int?,
+        notes: String?
+    ) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/consumables/\(consumableId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "name": name,
+            "category_id": categoryId,
+            "qty": quantity
+        ]
+        if let min = minAmt { body["min_amt"] = min }
+        if let v = itemNo, !v.isEmpty { body["item_no"] = v }
+        if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
+        if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
+        if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
+            body["purchase_cost"] = normalized
+        }
+        if let v = purchaseDate, !v.isEmpty { body["purchase_date"] = v }
+        if let v = companyId, v > 0 { body["company_id"] = v }
+        if let v = locationId, v > 0 { body["location_id"] = v }
+        if let v = manufacturerId, v > 0 { body["manufacturer_id"] = v }
+        if let v = supplierId, v > 0 { body["supplier_id"] = v }
+        if let v = notes { body["notes"] = v }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200 {
+                    Task { await self.fetchConsumables() }
+                    return true
+                }
+                return false
+            }
+            return false
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    func checkoutConsumable(consumableId: Int, userId: Int, note: String?) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/consumables/\(consumableId)/checkout") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["assigned_to": userId]
+        if let note, !note.isEmpty { body["note"] = note }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Check-out successful." : "Check-out failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                let isError = (json?["status"] as? String) == "error"
+                if httpResponse.statusCode == 200, !isError {
+                    Task { await self.fetchConsumables() }
+                    return true
+                }
+                return false
+            }
+            return false
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error checking out consumable: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    // MARK: - Components
+
+    func fetchComponents() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        do {
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/components",
+                as: Component.self
+            ) else { return }
+            await MainActor.run {
+                self.components = rows
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Error fetching components: \(error.localizedDescription)"
+                #if DEBUG
+                print("Error details: \(error)")
+                #endif
+            }
+        }
+    }
+
+    func fetchComponentDetails(componentId: Int) async -> Component? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentId)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else { return nil }
+
+            if let component = try? JSONDecoder().decode(Component.self, from: data) {
+                return component
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            if let payload = json["payload"] as? [String: Any],
+               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+               let component = try? JSONDecoder().decode(Component.self, from: payloadData) {
+                return component
+            }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    struct ComponentAssetRow: Decodable, Identifiable, Hashable {
+        let id = UUID()
+        let assignedPivotId: Int?
+        let assetId: Int?
+        let assetName: String?
+        let assetTag: String?
+        let assignedQty: Int?
+        let note: String?
+
+        private struct NestedAsset: Decodable {
+            let id: Int?
+            let name: String?
+            let assetTag: String?
+            enum CodingKeys: String, CodingKey {
+                case id, name
+                case assetTag = "asset_tag"
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case assignedPivotId = "assigned_pivot_id"
+            case name, note
+            case assignedQty = "assigned_qty"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.assignedPivotId = try? container.decodeIfPresent(Int.self, forKey: .assignedPivotId)
+            self.assignedQty = try? container.decodeIfPresent(Int.self, forKey: .assignedQty)
+            self.note = try? container.decodeIfPresent(String.self, forKey: .note)
+            let asset = try? container.decodeIfPresent(NestedAsset.self, forKey: .name)
+            self.assetId = asset?.id
+            self.assetName = asset?.name
+            self.assetTag = asset?.assetTag
+        }
+    }
+
+    /// Assets a component has been checked out to (`GET /api/v1/components/{id}/assets`).
+    func fetchComponentAssetsList(componentId: Int) async -> [ComponentAssetRow] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        do {
+            let rows = try await fetchAllPaginated(
+                path: "/api/v1/components/\(componentId)/assets",
+                as: ComponentAssetRow.self
+            )
+            return rows ?? []
+        } catch {
+            #if DEBUG
+            print("fetchComponentAssetsList error: \(error)")
+            #endif
+            return []
+        }
+    }
+
+    func createComponent(
+        name: String,
+        categoryId: Int,
+        quantity: Int,
+        minAmt: Int?,
+        serial: String?,
+        modelNumber: String?,
+        orderNumber: String?,
+        purchaseCost: String?,
+        purchaseDate: String?,
+        companyId: Int?,
+        locationId: Int?,
+        manufacturerId: Int?,
+        supplierId: Int?,
+        notes: String?
+    ) async -> (success: Bool, id: Int?) {
+        guard let url = URL(string: "\(baseURL)/api/v1/components") else { return (false, nil) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "name": name,
+            "category_id": categoryId,
+            "qty": quantity
+        ]
+        if let min = minAmt, min > 0 { body["min_amt"] = min }
+        if let v = serial, !v.isEmpty { body["serial"] = v }
+        if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
+        if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
+        if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
+            body["purchase_cost"] = normalized
+        }
+        if let v = purchaseDate, !v.isEmpty { body["purchase_date"] = v }
+        if let v = companyId, v > 0 { body["company_id"] = v }
+        if let v = locationId, v > 0 { body["location_id"] = v }
+        if let v = manufacturerId, v > 0 { body["manufacturer_id"] = v }
+        if let v = supplierId, v > 0 { body["supplier_id"] = v }
+        if let v = notes, !v.isEmpty { body["notes"] = v }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Component created!" : "Create failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200,
+                   let payload = json?["payload"] as? [String: Any],
+                   let newId = payload["id"] as? Int {
+                    Task { await self.fetchComponents() }
+                    return (true, newId)
+                }
+                return (false, nil)
+            }
+            return (false, nil)
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return (false, nil)
+        }
+    }
+
+    func updateComponent(
+        componentId: Int,
+        name: String,
+        categoryId: Int,
+        quantity: Int,
+        minAmt: Int?,
+        serial: String?,
+        modelNumber: String?,
+        orderNumber: String?,
+        purchaseCost: String?,
+        purchaseDate: String?,
+        companyId: Int?,
+        locationId: Int?,
+        manufacturerId: Int?,
+        supplierId: Int?,
+        notes: String?
+    ) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "name": name,
+            "category_id": categoryId,
+            "qty": quantity
+        ]
+        if let min = minAmt { body["min_amt"] = min }
+        if let v = serial, !v.isEmpty { body["serial"] = v }
+        if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
+        if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
+        if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
+            body["purchase_cost"] = normalized
+        }
+        if let v = purchaseDate, !v.isEmpty { body["purchase_date"] = v }
+        if let v = companyId, v > 0 { body["company_id"] = v }
+        if let v = locationId, v > 0 { body["location_id"] = v }
+        if let v = manufacturerId, v > 0 { body["manufacturer_id"] = v }
+        if let v = supplierId, v > 0 { body["supplier_id"] = v }
+        if let v = notes { body["notes"] = v }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                if httpResponse.statusCode == 200 {
+                    Task { await self.fetchComponents() }
+                    return true
+                }
+                return false
+            }
+            return false
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    func checkoutComponent(componentId: Int, assetId: Int, quantity: Int, note: String?) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentId)/checkout") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [
+            "assigned_to": assetId,
+            "assigned_qty": max(1, quantity)
+        ]
+        if let note, !note.isEmpty { body["note"] = note }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
+                    ?? json?["error"] as? String
+                    ?? (httpResponse.statusCode == 200 ? "Check-out successful." : "Check-out failed.")
+                await MainActor.run { self.lastApiMessage = msg }
+                let isError = (json?["status"] as? String) == "error"
+                if httpResponse.statusCode == 200, !isError {
+                    Task { await self.fetchComponents() }
+                    return true
+                }
+                return false
+            }
+            return false
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error checking out component: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
     /// Licenses assigned to a user. Returns full License objects (same shape as /api/v1/licenses rows).
     func fetchUserLicenses(userId: Int) async -> [License] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
@@ -472,9 +994,72 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Licenses checked out to a hardware asset. The endpoint returns seat rows referencing the
-    /// parent license id; we resolve them against the cached licenses list (and fall back to a
-    /// fetch by id when needed).
+    /// Consumables checked out to a user (`GET /api/v1/users/{id}/consumables`).
+    func fetchUserConsumables(userId: Int) async -> [Consumable] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        do {
+            let rows = try await fetchAllPaginated(
+                path: "/api/v1/users/\(userId)/consumables",
+                as: Consumable.self
+            )
+            return rows ?? []
+        } catch {
+            #if DEBUG
+            print("fetchUserConsumables error: \(error)")
+            #endif
+            return []
+        }
+    }
+
+    /// Accessories checked out to a hardware asset (`GET /hardware/{id}/assigned/accessories`).
+    func fetchAssetAccessories(assetId: Int) async -> [Accessory] {
+        await fetchAssignedAccessories(path: "/api/v1/hardware/\(assetId)/assigned/accessories")
+    }
+
+    /// Accessories checked out to a location (`GET /locations/{id}/assigned/accessories`).
+    func fetchLocationAccessories(locationId: Int) async -> [Accessory] {
+        await fetchAssignedAccessories(path: "/api/v1/locations/\(locationId)/assigned/accessories")
+    }
+
+    private func fetchAssignedAccessories(path: String) async -> [Accessory] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)\(path)") else { return [] }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return [] }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rows = json["rows"] as? [[String: Any]] else { return [] }
+
+            var ids: [Int] = []
+            var seen = Set<Int>()
+            for row in rows {
+                guard let accessoryDict = row["accessory"] as? [String: Any],
+                      let id = accessoryDict["id"] as? Int else { continue }
+                if seen.insert(id).inserted { ids.append(id) }
+            }
+
+            var results: [Accessory] = []
+            for id in ids {
+                if let cached = self.accessories.first(where: { $0.id == id }) {
+                    results.append(cached)
+                } else if let fetched = await self.fetchAccessoryDetails(accessoryId: id) {
+                    results.append(fetched)
+                }
+            }
+            return results
+        } catch {
+            return []
+        }
+    }
+
+    /// Licenses on a hardware asset. Seat rows reference the parent license id;
+    /// we resolve against the cached list (fetch by id as fallback).
     func fetchAssetLicenses(assetId: Int) async -> [License] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/licenses") else { return [] }
@@ -1805,18 +2390,48 @@ class SnipeITAPIClient: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Check-out successful." : "Check-out failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                return httpResponse.statusCode == 200
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+            #if DEBUG
+            let preview = String(data: data.prefix(600), encoding: .utf8) ?? ""
+            print("[SnipeMobile] POST /accessories/\(accessoryId)/checkout status=\(httpResponse.statusCode) body=\(preview)")
+            #endif
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                await MainActor.run {
+                    self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:])
+                        ?? "HTTP \(httpResponse.statusCode): \(preview)"
+                }
+                return false
             }
-            return false
+
+            if let json, let status = json["status"] as? String, status == "error" {
+                await MainActor.run {
+                    self.lastApiMessage = Self.extractApiErrorMessage(from: json) ?? "Check-out failed."
+                }
+                return false
+            }
+
+            let msg: String
+            if let str = json?["messages"] as? String, !str.isEmpty {
+                msg = str
+            } else if let dict = json?["messages"] as? [String: Any],
+                      let first = dict.values.first as? String, !first.isEmpty {
+                msg = first
+            } else if let dict = json?["messages"] as? [String: Any],
+                      let arr = dict.values.first as? [Any], let first = arr.first as? String {
+                msg = first
+            } else {
+                msg = "Check-out successful."
+            }
+            await MainActor.run { self.lastApiMessage = msg }
+            return true
         } catch {
             await MainActor.run {
                 self.lastApiMessage = "Error checking out accessory: \(error.localizedDescription)"
@@ -1898,6 +2513,9 @@ class SnipeITAPIClient: ObservableObject {
         let firstName: String?
         let lastName: String?
         let username: String?
+        let model: String?
+        let assetTag: String?
+        let serial: String?
         let createdBy: CreatedByCheckedOut?
         let createdAt: DateInfoCheckedOut?
         let deletedAt: String?
@@ -1907,10 +2525,21 @@ class SnipeITAPIClient: ObservableObject {
             case firstName = "first_name"
             case lastName = "last_name"
             case username
+            case model
+            case assetTag = "asset_tag"
+            case serial
             case createdBy = "created_by"
             case createdAt = "created_at"
             case deletedAt = "deleted_at"
         }
+
+        var decodedName: String { HTMLDecoder.decode(name ?? "") }
+        var decodedModel: String { HTMLDecoder.decode(model ?? "") }
+        var decodedAssetTag: String { HTMLDecoder.decode(assetTag ?? "") }
+
+        var isUser: Bool { type?.lowercased() == "user" }
+        var isLocation: Bool { type?.lowercased() == "location" }
+        var isAsset: Bool { type?.lowercased() == "asset" }
     }
 
     struct CreatedByCheckedOut: Codable, Hashable {

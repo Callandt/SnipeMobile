@@ -9,8 +9,9 @@ struct LocationDetailView: View {
     var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
-    @State private var assetDetailTab: Int = 0
-    @State private var userDetailTab: Int = 0
+    var onOpenAccessory: ((Accessory) -> Void)? = nil
+    @State private var locationAccessories: [Accessory] = []
+    @State private var isLoadingAccessories = false
 
     // Assets at this location.
     private var assetsAtLocation: [Asset] {
@@ -29,6 +30,7 @@ struct LocationDetailView: View {
             Picker("Select a tab", selection: $selectedTab) {
                 Text(L10n.string("users_count", usersAtLocation.count)).tag(0)
                 Text(L10n.string("assets_count", assetsAtLocation.count)).tag(1)
+                Text(L10n.string("accessories_count", locationAccessories.count)).tag(2)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
@@ -87,6 +89,40 @@ struct LocationDetailView: View {
                     .scrollContentBackground(.hidden)
                     .background(Color(.systemBackground))
                 }
+            } else {
+                if isLoadingAccessories {
+                    ProgressView(L10n.string("loading_accessories"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 16)
+                } else if locationAccessories.isEmpty {
+                    ContentUnavailableView(
+                        L10n.string("no_accessories"),
+                        systemImage: "mediastick",
+                        description: Text(L10n.string("no_accessories_location"))
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 16)
+                } else {
+                    List {
+                        Section {
+                            ForEach(locationAccessories) { accessory in
+                                Button { onOpenAccessory?(accessory) } label: {
+                                    assignedToStyleAccessoryRow(accessory: accessory)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                    .contentMargins(.top, 16, for: .scrollContent)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemBackground))
+                }
             }
         }
         .background(Color(.systemBackground))
@@ -122,6 +158,18 @@ struct LocationDetailView: View {
         }
         .onAppear {
             selectedTab = 0
+            reloadAccessories()
+        }
+        .onChange(of: location.id) { _, _ in
+            reloadAccessories()
+        }
+    }
+
+    private func reloadAccessories() {
+        Task {
+            isLoadingAccessories = true
+            locationAccessories = await apiClient.fetchLocationAccessories(locationId: location.id)
+            isLoadingAccessories = false
         }
     }
 
@@ -167,6 +215,34 @@ struct LocationDetailView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private func assignedToStyleAccessoryRow(accessory: Accessory) -> some View {
+        HStack {
+            Image(systemName: "mediastick")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(accessory.decodedName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if !accessory.decodedCategoryName.isEmpty {
+                    Text(accessory.decodedCategoryName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .padding()
         .background(Color(.systemGray6))

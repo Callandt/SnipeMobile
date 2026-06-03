@@ -10,8 +10,10 @@ struct AssetDetailView: View {
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
     var onOpenLicense: ((License) -> Void)? = nil
+    var onOpenAccessory: ((Accessory) -> Void)? = nil
     @State private var userId: String = ""
     @State private var assetLicenses: [License] = []
+    @State private var assetAccessories: [Accessory] = []
     @Environment(\.dismiss) var dismiss
     @State private var hasLoggedAppearance = false
     @State private var copyNotification: String?
@@ -307,7 +309,10 @@ struct AssetDetailView: View {
                 }
             }
             Task {
-                assetLicenses = await apiClient.fetchAssetLicenses(assetId: currentAsset.id)
+                async let licenses = apiClient.fetchAssetLicenses(assetId: currentAsset.id)
+                async let accessories = apiClient.fetchAssetAccessories(assetId: currentAsset.id)
+                assetLicenses = await licenses
+                assetAccessories = await accessories
             }
             selectedModelId = currentAsset.model?.id ?? 0
             // Date init
@@ -597,6 +602,23 @@ struct AssetDetailView: View {
                             }
                             .padding(.top, 5)
                         }
+
+                        if !assetAccessories.isEmpty {
+                            VStack(alignment: .leading, spacing: 15) {
+                                Text(L10n.string("tab_accessories"))
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                VStack(spacing: 12) {
+                                    ForEach(assetAccessories) { accessory in
+                                        Button { onOpenAccessory?(accessory) } label: {
+                                            assetAccessoryRow(accessory: accessory)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.top, 5)
+                        }
                         // Date fields
                         let hasAnyDate =
                             (currentAsset.purchaseDate?.formatted?.isEmpty == false) ||
@@ -722,10 +744,34 @@ struct AssetDetailView: View {
         .cornerRadius(12)
     }
 
+    private func assetAccessoryRow(accessory: Accessory) -> some View {
+        HStack {
+            Image(systemName: "mediastick")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(accessory.decodedName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if !accessory.decodedCategoryName.isEmpty {
+                    Text(accessory.decodedCategoryName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
     @ViewBuilder
     private func copyableDetailRow(label: String, value: String, copyValue: String? = nil) -> some View {
         let toCopy = copyValue ?? value
-        // No spaces (serial/email/key): truncate instead of ugly wrap.
         let isSingleToken = !value.contains(" ")
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {

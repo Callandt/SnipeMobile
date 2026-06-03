@@ -179,11 +179,12 @@ struct AssetCheckoutSheet: View {
             }
             await MainActor.run {
                 isSaving = false
-                resultMessage = apiClient.lastApiMessage ?? (success ? L10n.string("checkout_success") : L10n.string("checkout_failed"))
-                showResult = true
                 if success {
-                    isPresented = false
                     onSuccess?()
+                    isPresented = false
+                } else {
+                    resultMessage = apiClient.lastApiMessage ?? L10n.string("checkout_failed")
+                    showResult = true
                 }
             }
         }

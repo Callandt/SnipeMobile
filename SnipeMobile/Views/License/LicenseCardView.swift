@@ -5,17 +5,8 @@ struct LicenseCardView: View {
     var useExplicitBackground: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 
-    private var seatsLine: String? {
-        let total = license.seats
-        let free = license.freeSeatsCount ?? license.remaining
-        if let total, let free {
-            return String(format: L10n.string("license_seats_summary"), free, total)
-        }
-        if let total {
-            return String(format: L10n.string("license_seats_total"), total)
-        }
-        return nil
-    }
+    private var totalSeats: Int? { license.seats }
+    private var freeSeats: Int? { license.freeSeatsCount ?? license.remaining }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -34,21 +25,20 @@ struct LicenseCardView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    if let seatsLine {
-                        Text(seatsLine)
+                    if let expiration = license.expirationDate?.formatted, !expiration.isEmpty {
+                        Text(String(format: L10n.string("expires_value"), expiration))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
-                if let expiration = license.expirationDate?.formatted, !expiration.isEmpty {
+                if let total = totalSeats, let free = freeSeats {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(L10n.string("expires"))
+                        Text("\(free)/\(total)")
+                            .font(.headline)
+                            .foregroundStyle(free <= 0 ? .red : .primary)
+                        Text(L10n.string("license_seats_free"))
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        Text(expiration)
-                            .font(.caption)
-                            .fontWeight(.medium)
                             .foregroundStyle(.secondary)
                     }
                 }

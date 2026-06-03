@@ -556,6 +556,293 @@ struct AccessoriesResponse: Codable {
     let rows: [Accessory]
 }
 
+struct Consumable: Identifiable, Codable, Hashable {
+    let id: Int
+    let name: String
+    let image: String?
+    let itemNo: String?
+    let modelNumber: String?
+    let category: Category?
+    let company: Company?
+    let location: Location?
+    let manufacturer: Manufacturer?
+    let supplier: Supplier?
+
+    let qty: Int?
+    let minAmt: Int?
+    let remaining: Int?
+    let orderNumber: String?
+    let purchaseCost: String?
+    let purchaseDate: String?
+    let notes: String?
+
+    let decodedName: String
+    let decodedItemNo: String
+    let decodedModelNumber: String
+    let decodedLocationName: String
+    let decodedManufacturerName: String
+    let decodedCategoryName: String
+    let decodedCompanyName: String
+
+    init(
+        id: Int,
+        name: String,
+        image: String? = nil,
+        itemNo: String? = nil,
+        modelNumber: String? = nil,
+        category: Category? = nil,
+        company: Company? = nil,
+        location: Location? = nil,
+        manufacturer: Manufacturer? = nil,
+        supplier: Supplier? = nil,
+        qty: Int? = nil,
+        minAmt: Int? = nil,
+        remaining: Int? = nil,
+        orderNumber: String? = nil,
+        purchaseCost: String? = nil,
+        purchaseDate: String? = nil,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.image = image
+        self.itemNo = itemNo
+        self.modelNumber = modelNumber
+        self.category = category
+        self.company = company
+        self.location = location
+        self.manufacturer = manufacturer
+        self.supplier = supplier
+        self.qty = qty
+        self.minAmt = minAmt
+        self.remaining = remaining
+        self.orderNumber = orderNumber
+        self.purchaseCost = purchaseCost
+        self.purchaseDate = purchaseDate
+        self.notes = notes
+        self.decodedName = HTMLDecoder.decode(name)
+        self.decodedItemNo = HTMLDecoder.decode(itemNo ?? "")
+        self.decodedModelNumber = HTMLDecoder.decode(modelNumber ?? "")
+        self.decodedLocationName = HTMLDecoder.decode(location?.name ?? "")
+        self.decodedManufacturerName = HTMLDecoder.decode(manufacturer?.name ?? "")
+        self.decodedCategoryName = HTMLDecoder.decode(category?.name ?? "")
+        self.decodedCompanyName = HTMLDecoder.decode(company?.name ?? "")
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, image
+        case itemNo = "item_no"
+        case modelNumber = "model_number"
+        case category, company, location, manufacturer, supplier
+        case qty
+        case minAmt = "min_amt"
+        case remaining
+        case orderNumber = "order_number"
+        case purchaseCost = "purchase_cost"
+        case purchaseDate = "purchase_date"
+        case notes
+    }
+
+    static func == (lhs: Consumable, rhs: Consumable) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+extension Consumable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(Int.self, forKey: .id)
+        let name = try container.decode(String.self, forKey: .name)
+        let image = try? container.decodeIfPresent(String.self, forKey: .image)
+        let itemNo = try? container.decodeIfPresent(String.self, forKey: .itemNo)
+        let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
+        let category = try? container.decodeIfPresent(Category.self, forKey: .category)
+        let company = try? container.decodeIfPresent(Company.self, forKey: .company)
+        let location = try? container.decodeIfPresent(Location.self, forKey: .location)
+        let manufacturer = try? container.decodeIfPresent(Manufacturer.self, forKey: .manufacturer)
+        let supplier = try? container.decodeIfPresent(Supplier.self, forKey: .supplier)
+        let qty = try? container.decodeIfPresent(Int.self, forKey: .qty)
+        let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
+        let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
+        let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
+        let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
+        let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
+        let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+
+        self.init(
+            id: id,
+            name: name,
+            image: image ?? nil,
+            itemNo: itemNo ?? nil,
+            modelNumber: modelNumber ?? nil,
+            category: category ?? nil,
+            company: company ?? nil,
+            location: location ?? nil,
+            manufacturer: manufacturer ?? nil,
+            supplier: supplier ?? nil,
+            qty: qty ?? nil,
+            minAmt: minAmt ?? nil,
+            remaining: remaining ?? nil,
+            orderNumber: orderNumber ?? nil,
+            purchaseCost: purchaseCost ?? nil,
+            purchaseDate: purchaseDate ?? nil,
+            notes: notes ?? nil
+        )
+    }
+}
+
+struct ConsumablesResponse: Codable {
+    let total: Int
+    let rows: [Consumable]
+}
+
+struct Component: Identifiable, Codable, Hashable {
+    let id: Int
+    let name: String
+    let image: String?
+    let serial: String?
+    let modelNumber: String?
+    let category: Category?
+    let company: Company?
+    let location: Location?
+    let manufacturer: Manufacturer?
+    let supplier: Supplier?
+
+    let qty: Int?
+    let minAmt: Int?
+    let remaining: Int?
+    let orderNumber: String?
+    let purchaseCost: String?
+    let purchaseDate: String?
+    let notes: String?
+
+    let decodedName: String
+    let decodedSerial: String
+    let decodedModelNumber: String
+    let decodedLocationName: String
+    let decodedManufacturerName: String
+    let decodedCategoryName: String
+    let decodedCompanyName: String
+
+    init(
+        id: Int,
+        name: String,
+        image: String? = nil,
+        serial: String? = nil,
+        modelNumber: String? = nil,
+        category: Category? = nil,
+        company: Company? = nil,
+        location: Location? = nil,
+        manufacturer: Manufacturer? = nil,
+        supplier: Supplier? = nil,
+        qty: Int? = nil,
+        minAmt: Int? = nil,
+        remaining: Int? = nil,
+        orderNumber: String? = nil,
+        purchaseCost: String? = nil,
+        purchaseDate: String? = nil,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.image = image
+        self.serial = serial
+        self.modelNumber = modelNumber
+        self.category = category
+        self.company = company
+        self.location = location
+        self.manufacturer = manufacturer
+        self.supplier = supplier
+        self.qty = qty
+        self.minAmt = minAmt
+        self.remaining = remaining
+        self.orderNumber = orderNumber
+        self.purchaseCost = purchaseCost
+        self.purchaseDate = purchaseDate
+        self.notes = notes
+        self.decodedName = HTMLDecoder.decode(name)
+        self.decodedSerial = HTMLDecoder.decode(serial ?? "")
+        self.decodedModelNumber = HTMLDecoder.decode(modelNumber ?? "")
+        self.decodedLocationName = HTMLDecoder.decode(location?.name ?? "")
+        self.decodedManufacturerName = HTMLDecoder.decode(manufacturer?.name ?? "")
+        self.decodedCategoryName = HTMLDecoder.decode(category?.name ?? "")
+        self.decodedCompanyName = HTMLDecoder.decode(company?.name ?? "")
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, image, serial
+        case modelNumber = "model_number"
+        case category, company, location, manufacturer, supplier
+        case qty
+        case minAmt = "min_amt"
+        case remaining
+        case orderNumber = "order_number"
+        case purchaseCost = "purchase_cost"
+        case purchaseDate = "purchase_date"
+        case notes
+    }
+
+    static func == (lhs: Component, rhs: Component) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+extension Component {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(Int.self, forKey: .id)
+        let name = try container.decode(String.self, forKey: .name)
+        let image = try? container.decodeIfPresent(String.self, forKey: .image)
+        let serial = try? container.decodeIfPresent(String.self, forKey: .serial)
+        let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
+        let category = try? container.decodeIfPresent(Category.self, forKey: .category)
+        let company = try? container.decodeIfPresent(Company.self, forKey: .company)
+        let location = try? container.decodeIfPresent(Location.self, forKey: .location)
+        let manufacturer = try? container.decodeIfPresent(Manufacturer.self, forKey: .manufacturer)
+        let supplier = try? container.decodeIfPresent(Supplier.self, forKey: .supplier)
+        let qty = try? container.decodeIfPresent(Int.self, forKey: .qty)
+        let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
+        let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
+        let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
+        let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
+        let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
+        let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+
+        self.init(
+            id: id,
+            name: name,
+            image: image ?? nil,
+            serial: serial ?? nil,
+            modelNumber: modelNumber ?? nil,
+            category: category ?? nil,
+            company: company ?? nil,
+            location: location ?? nil,
+            manufacturer: manufacturer ?? nil,
+            supplier: supplier ?? nil,
+            qty: qty ?? nil,
+            minAmt: minAmt ?? nil,
+            remaining: remaining ?? nil,
+            orderNumber: orderNumber ?? nil,
+            purchaseCost: purchaseCost ?? nil,
+            purchaseDate: purchaseDate ?? nil,
+            notes: notes ?? nil
+        )
+    }
+}
+
+struct ComponentsResponse: Codable {
+    let total: Int
+    let rows: [Component]
+}
+
 struct License: Identifiable, Codable, Hashable {
     let id: Int
     let name: String

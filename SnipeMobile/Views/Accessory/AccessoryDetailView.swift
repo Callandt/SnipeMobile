@@ -210,32 +210,8 @@ struct AccessoryDetailView: View {
                 }
             }
         }
-        .onAppear {
-            Task {
-                isLoading = true
-                checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
-                if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id),
-                   let image = fullAccessory.image,
-                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    detailImageURL = image
-                }
-                isLoading = false
-            }
-        }
-        .onChange(of: accessory.id) {
-            Task {
-                isLoading = true
-                checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
-                if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id),
-                   let image = fullAccessory.image,
-                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    detailImageURL = image
-                } else {
-                    detailImageURL = nil
-                }
-                isLoading = false
-            }
-        }
+        .onAppear { reloadCheckedOut(clearImageWhenAbsent: false) }
+        .onChange(of: accessory.id) { reloadCheckedOut(clearImageWhenAbsent: true) }
         .sheet(isPresented: $showEditSheet) {
             AccessoryEditSheet(apiClient: apiClient, accessory: currentAccessory, isPresented: $showEditSheet, onSuccess: {
                 Task { await apiClient.fetchAccessories() }
@@ -297,10 +273,21 @@ struct AccessoryDetailView: View {
 
     @ViewBuilder
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label).bold()
-            Spacer()
-            Text(value).foregroundColor(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Text(label).bold()
+                Spacer(minLength: 8)
+                Text(value)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).bold()
+                Text(value)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -330,7 +317,151 @@ struct AccessoryDetailView: View {
         return rows
     }
 
-    // Assigned To. Same as Hardware.
+    private var displayedCheckoutRows: [SnipeITAPIClient.AccessoryCheckedOutRow] {
+        checkedOutRows.filter { $0.assignedTo?.id != nil }
+    }
+
+    private func reloadCheckedOut(clearImageWhenAbsent: Bool) {
+        Task {
+            isLoading = true
+            if apiClient.assets.isEmpty {
+                await apiClient.fetchAssets()
+            }
+            checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+            if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id),
+               let image = fullAccessory.image,
+               !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                detailImageURL = image
+            } else if clearImageWhenAbsent {
+                detailImageURL = nil
+            }
+            isLoading = false
+        }
+    }
+
+    private func openAssignee(for row: SnipeITAPIClient.AccessoryCheckedOutRow) {
+        guard let assigned = row.assignedTo, let id = assigned.id else {
+            checkinTarget = row
+            return
+        }
+        if assigned.isUser, let fullUser = apiClient.users.first(where: { $0.id == id }) {
+            onOpenUser?(fullUser)
+        } else if assigned.isLocation, let fullLocation = apiClient.locations.first(where: { $0.id == id }) {
+            onOpenLocation?(fullLocation)
+        } else if assigned.isAsset, let fullAsset = apiClient.assets.first(where: { $0.id == id }) {
+            onOpenAsset?(fullAsset)
+        } else {
+            checkinTarget = row
+        }
+    }
+
+    @ViewBuilder
+    private func checkedOutRowLabel(for row: SnipeITAPIClient.AccessoryCheckedOutRow) -> some View {
+        if let assigned = row.assignedTo {
+        if assigned.isUser {
+            let fullUser = assigned.id.flatMap { id in apiClient.users.first(where: { $0.id == id }) }
+            HStack {
+                Image(systemName: "person.circle")
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(fullUser?.decodedName ?? assigned.decodedName)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    if let email = fullUser?.decodedEmail, !email.isEmpty {
+                        Text(email)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if canNavigateAssignee(assigned) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } else if assigned.isLocation {
+            HStack {
+                Image(systemName: "mappin.and.ellipse")
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(assigned.decodedName)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    if let note = row.note, !note.isEmpty {
+                        Text(note)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if canNavigateAssignee(assigned) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } else if assigned.isAsset {
+            let fullAsset = assigned.id.flatMap { id in apiClient.assets.first(where: { $0.id == id }) }
+            let title = fullAsset.map { $0.decodedModelName.isEmpty ? $0.decodedName : $0.decodedModelName }
+                ?? (assigned.decodedModel.isEmpty ? assigned.decodedName : assigned.decodedModel)
+            let tag = fullAsset?.decodedAssetTag ?? assigned.decodedAssetTag
+            let assignee = fullAsset?.decodedAssignedToName ?? ""
+            HStack {
+                Image(systemName: "laptopcomputer")
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title.isEmpty ? L10n.string("asset") : title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    if !tag.isEmpty {
+                        Text(String(format: L10n.string("tag_label"), tag))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !assignee.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.circle")
+                                .font(.caption)
+                            Text(assignee)
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if canNavigateAssignee(assigned) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } else {
+            HStack {
+                Image(systemName: "questionmark.circle")
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 30, height: 30)
+                Text(assigned.decodedName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+        }
+        }
+    }
+
+    private func canNavigateAssignee(_ assigned: SnipeITAPIClient.AssignedToCheckedOut) -> Bool {
+        guard let id = assigned.id else { return false }
+        if assigned.isUser { return apiClient.users.contains(where: { $0.id == id }) }
+        if assigned.isLocation { return apiClient.locations.contains(where: { $0.id == id }) }
+        if assigned.isAsset { return apiClient.assets.contains(where: { $0.id == id }) }
+        return false
+    }
+
+    // Assigned to user, location, or asset.
     var checkedOutSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text(L10n.string("assigned_to"))
@@ -340,83 +471,22 @@ struct AccessoryDetailView: View {
                 ProgressView(L10n.string("loading_assigned"))
                     .frame(maxWidth: .infinity)
                     .padding()
+            } else if displayedCheckoutRows.isEmpty {
+                Text(L10n.string("assigned_to_none_accessory"))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding()
             } else {
-                let activeRows = checkedOutRows.filter { $0.availableActions?.checkin == true }
-                if activeRows.isEmpty {
-                    Text(L10n.string("assigned_to_any"))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                } else {
-                    ForEach(activeRows) { row in
-                        Button(action: {
-                            if row.assignedTo?.type == "user", let id = row.assignedTo?.id,
-                               let fullUser = apiClient.users.first(where: { $0.id == id }) {
-                                onOpenUser?(fullUser)
-                            } else if row.assignedTo?.type == "location", let id = row.assignedTo?.id,
-                                      let fullLocation = apiClient.locations.first(where: { $0.id == id }) {
-                                onOpenLocation?(fullLocation)
-                            } else {
-                                checkinTarget = row
-                            }
-                        }) {
-                            if row.assignedTo?.type == "user",
-                               let assigned = row.assignedTo,
-                               let id = assigned.id,
-                               assigned.name != nil,
-                               assigned.firstName != nil,
-                               let fullUser = apiClient.users.first(where: { $0.id == id }) {
-                                HStack {
-                                    Image(systemName: "person.circle")
-                                        .foregroundStyle(.tertiary)
-                                        .frame(width: 30, height: 30)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(fullUser.decodedName)
-                                            .font(.headline)
-                                            .foregroundStyle(.primary)
-                                        if !fullUser.decodedEmail.isEmpty {
-                                            Text(fullUser.decodedEmail)
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        if !fullUser.decodedLocationName.isEmpty {
-                                            Text(fullUser.decodedLocationName)
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            } else if row.assignedTo?.type == "location" {
-                                HStack {
-                                    Image(systemName: "mappin.and.ellipse")
-                                        .foregroundStyle(.tertiary)
-                                        .frame(width: 30, height: 30)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(row.assignedTo?.name ?? "")
-                                            .font(.headline)
-                                            .foregroundStyle(.primary)
-                                        if let note = row.note, !note.isEmpty {
-                                            Text(note)
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                        .contextMenu {
+                ForEach(displayedCheckoutRows) { row in
+                    Button(action: { openAssignee(for: row) }) {
+                        checkedOutRowLabel(for: row)
+                    }
+                    .buttonStyle(.plain)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .contextMenu {
+                        if row.availableActions?.checkin == true {
                             Button(role: .destructive) {
                                 checkinTarget = row
                             } label: {

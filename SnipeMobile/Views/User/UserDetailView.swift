@@ -11,6 +11,7 @@ struct UserDetailView: View {
     var onOpenAccessory: ((Accessory) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
     var onOpenLicense: ((License) -> Void)? = nil
+    var onOpenConsumable: ((Consumable) -> Void)? = nil
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
     @StateObject private var accessoryHistoryViewModel = HistoryViewModel()
@@ -19,6 +20,7 @@ struct UserDetailView: View {
     @State private var assetDetailTab: Int = 0
     @State private var detailImageURL: String? = nil
     @State private var userLicenses: [License] = []
+    @State private var userConsumables: [Consumable] = []
 
     private var currentUser: User {
         apiClient.users.first { $0.id == user.id } ?? user
@@ -163,6 +165,31 @@ struct UserDetailView: View {
         .cornerRadius(12)
     }
 
+    private func assignedToStyleConsumableRow(consumable: Consumable) -> some View {
+        HStack {
+            Image(systemName: "shippingbox")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(consumable.decodedName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if !consumable.decodedCategoryName.isEmpty {
+                    Text(consumable.decodedCategoryName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
     private func assignedToStyleLicenseRow(license: License) -> some View {
         HStack {
             Image(systemName: "doc.text.fill")
@@ -201,6 +228,28 @@ struct UserDetailView: View {
                             onOpenLicense?(license)
                         } label: {
                             assignedToStyleLicenseRow(license: license)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    @ViewBuilder
+    private var assignedConsumablesSection: some View {
+        if !userConsumables.isEmpty {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(L10n.string("tab_consumables"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                VStack(spacing: 12) {
+                    ForEach(userConsumables) { consumable in
+                        Button {
+                            onOpenConsumable?(consumable)
+                        } label: {
+                            assignedToStyleConsumableRow(consumable: consumable)
                         }
                         .buttonStyle(.plain)
                     }
@@ -315,6 +364,8 @@ struct UserDetailView: View {
                         }
 
                         assignedLicensesSection
+
+                        assignedConsumablesSection
                     }
                     .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
                     .padding(.top, 16)
@@ -398,6 +449,9 @@ struct UserDetailView: View {
             }
             Task {
                 userLicenses = await apiClient.fetchUserLicenses(userId: user.id)
+            }
+            Task {
+                userConsumables = await apiClient.fetchUserConsumables(userId: user.id)
             }
         }
     }

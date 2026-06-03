@@ -392,12 +392,16 @@ struct MainSplitView: View {
     @State private var selectedAsset: Asset?
     @State private var selectedAccessory: Accessory?
     @State private var selectedLicense: License?
+    @State private var selectedConsumable: Consumable?
+    @State private var selectedComponent: Component?
     @State private var selectedUser: User?
     @State private var selectedLocation: Location?
     @State private var showSettings = false
     @State private var showAddAsset = false
     @State private var showAddAccessory = false
     @State private var showAddLicense = false
+    @State private var showAddConsumable = false
+    @State private var showAddComponent = false
     @State private var showComingSoonAlert = false
     @State private var showScanner = false
     @State private var scannedAssetId: Int?
@@ -411,6 +415,8 @@ struct MainSplitView: View {
     @State private var selectedAssetDetailTab: Int = 0
     @State private var selectedAccessoryDetailTab: Int = 0
     @State private var selectedLicenseDetailTab: Int = 0
+    @State private var selectedConsumableDetailTab: Int = 0
+    @State private var selectedComponentDetailTab: Int = 0
     @State private var selectedUserDetailTab: Int = 0
     @State private var selectedLocationDetailTab: Int = 0
     @AppStorage("showAccessoriesTab") private var showAccessoriesTab: Bool = true
@@ -526,6 +532,30 @@ struct MainSplitView: View {
             $0.decodedCategoryName.lowercased().contains(needle) ||
             $0.decodedLicenseName.lowercased().contains(needle) ||
             $0.decodedLicenseEmail.lowercased().contains(needle)
+        }
+    }
+    var filteredConsumables: [Consumable] {
+        if searchText.isEmpty { return apiClient.consumables }
+        let needle = searchText.lowercased()
+        return apiClient.consumables.filter {
+            $0.decodedName.lowercased().contains(needle) ||
+            $0.decodedItemNo.lowercased().contains(needle) ||
+            $0.decodedModelNumber.lowercased().contains(needle) ||
+            $0.decodedLocationName.lowercased().contains(needle) ||
+            $0.decodedManufacturerName.lowercased().contains(needle) ||
+            $0.decodedCategoryName.lowercased().contains(needle)
+        }
+    }
+    var filteredComponents: [Component] {
+        if searchText.isEmpty { return apiClient.components }
+        let needle = searchText.lowercased()
+        return apiClient.components.filter {
+            $0.decodedName.lowercased().contains(needle) ||
+            $0.decodedSerial.lowercased().contains(needle) ||
+            $0.decodedModelNumber.lowercased().contains(needle) ||
+            $0.decodedLocationName.lowercased().contains(needle) ||
+            $0.decodedManufacturerName.lowercased().contains(needle) ||
+            $0.decodedCategoryName.lowercased().contains(needle)
         }
     }
     var filteredUsers: [User] {
@@ -650,6 +680,8 @@ struct MainSplitView: View {
             selectedAsset = nil
             selectedAccessory = nil
             selectedLicense = nil
+            selectedConsumable = nil
+            selectedComponent = nil
             selectedUser = nil
             selectedLocation = nil
         }
@@ -658,6 +690,12 @@ struct MainSplitView: View {
         }
         .onChange(of: selectedAccessory?.id) { _, _ in
             selectedAccessoryDetailTab = 0
+        }
+        .onChange(of: selectedConsumable?.id) { _, _ in
+            selectedConsumableDetailTab = 0
+        }
+        .onChange(of: selectedComponent?.id) { _, _ in
+            selectedComponentDetailTab = 0
         }
         .onChange(of: selectedUser?.id) { _, _ in
             selectedUserDetailTab = 0
@@ -694,6 +732,40 @@ struct MainSplitView: View {
                            let detailed = await apiClient.fetchLicenseDetails(licenseId: newId) {
                             await MainActor.run {
                                 selectedLicense = detailed
+                            }
+                        }
+                    }
+                }
+            )
+            .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAddConsumable) {
+            AddConsumableSheet(
+                apiClient: apiClient,
+                isPresented: $showAddConsumable,
+                onCreated: { newId in
+                    Task {
+                        if let newId,
+                           let detailed = await apiClient.fetchConsumableDetails(consumableId: newId) {
+                            await MainActor.run {
+                                selectedConsumable = detailed
+                            }
+                        }
+                    }
+                }
+            )
+            .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAddComponent) {
+            AddComponentSheet(
+                apiClient: apiClient,
+                isPresented: $showAddComponent,
+                onCreated: { newId in
+                    Task {
+                        if let newId,
+                           let detailed = await apiClient.fetchComponentDetails(componentId: newId) {
+                            await MainActor.run {
+                                selectedComponent = detailed
                             }
                         }
                     }
@@ -971,7 +1043,15 @@ struct MainSplitView: View {
                 }
                 if selectedSection == .stock {
                     ToolbarItem(placement: .primaryAction) {
-                        Button(action: { showComingSoonAlert = true }) {
+                        Button(action: {
+                            if stockSelectedSubmodule == .consumables {
+                                showAddConsumable = true
+                            } else if stockSelectedSubmodule == .components {
+                                showAddComponent = true
+                            } else {
+                                showComingSoonAlert = true
+                            }
+                        }) {
                             Image(systemName: "plus.circle")
                         }
                         .accessibilityLabel(L10n.string("add"))
@@ -1079,6 +1159,17 @@ struct MainSplitView: View {
                         selectedLicenseDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         selectedSection = .licenses
+                    },
+                    onOpenAccessory: { [apiClient] accessory in
+                        let resolved = apiClient.accessories.first(where: { $0.id == accessory.id }) ?? accessory
+                        selectedAccessory = resolved
+                        selectedAsset = nil
+                        selectedLicense = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAccessoryDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .accessories
                     }
                 )
             } else {
@@ -1177,11 +1268,69 @@ struct MainSplitView: View {
                 )
             }
         case .stock:
-            ContentUnavailableView(
-                stockSelectedSubmodule.localizedTitle,
-                systemImage: stockSelectedSubmodule.icon,
-                description: Text(L10n.string("module_coming_soon"))
-            )
+            if stockSelectedSubmodule == .consumables {
+                if let consumable = selectedConsumable {
+                    ConsumableDetailView(
+                        consumable: consumable,
+                        apiClient: apiClient,
+                        selectedTab: $selectedConsumableDetailTab,
+                        isDetailViewActive: $isDetailViewActive,
+                        onOpenUser: { [apiClient] user in
+                            let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
+                            selectedUser = resolved
+                            selectedAsset = nil
+                            selectedAccessory = nil
+                            selectedLicense = nil
+                            selectedConsumable = nil
+                            selectedLocation = nil
+                            selectedUserDetailTab = 0
+                            skipClearSelectionOnSectionChange = true
+                            directorySelectedRaw = DirectorySubmodule.users.rawValue
+                            selectedSection = .directory
+                        }
+                    )
+                } else {
+                    ContentUnavailableView(
+                        L10n.string("select_consumable"),
+                        systemImage: "shippingbox",
+                        description: Text(L10n.string("select_consumable_desc"))
+                    )
+                }
+            } else if stockSelectedSubmodule == .components {
+                if let component = selectedComponent {
+                    ComponentDetailView(
+                        component: component,
+                        apiClient: apiClient,
+                        selectedTab: $selectedComponentDetailTab,
+                        isDetailViewActive: $isDetailViewActive,
+                        onOpenAsset: { [apiClient] asset in
+                            let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
+                            selectedAsset = resolved
+                            selectedAccessory = nil
+                            selectedLicense = nil
+                            selectedConsumable = nil
+                            selectedComponent = nil
+                            selectedUser = nil
+                            selectedLocation = nil
+                            selectedAssetDetailTab = 0
+                            skipClearSelectionOnSectionChange = true
+                            selectedSection = .hardware
+                        }
+                    )
+                } else {
+                    ContentUnavailableView(
+                        L10n.string("select_component"),
+                        systemImage: "cpu",
+                        description: Text(L10n.string("select_component_desc"))
+                    )
+                }
+            } else {
+                ContentUnavailableView(
+                    stockSelectedSubmodule.localizedTitle,
+                    systemImage: stockSelectedSubmodule.icon,
+                    description: Text(L10n.string("module_coming_soon"))
+                )
+            }
         case .directory:
             ipadDirectoryDetail
         }
@@ -1240,6 +1389,19 @@ struct MainSplitView: View {
                         selectedLicenseDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         selectedSection = .licenses
+                    },
+                    onOpenConsumable: { [apiClient] consumable in
+                        let resolved = apiClient.consumables.first(where: { $0.id == consumable.id }) ?? consumable
+                        selectedConsumable = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedLicense = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedConsumableDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        stockSelectedRaw = StockSubmodule.consumables.rawValue
+                        selectedSection = .stock
                     }
                 )
             } else {
@@ -1277,6 +1439,17 @@ struct MainSplitView: View {
                         selectedAssetDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         selectedSection = .hardware
+                    },
+                    onOpenAccessory: { [apiClient] accessory in
+                        let resolved = apiClient.accessories.first(where: { $0.id == accessory.id }) ?? accessory
+                        selectedAccessory = resolved
+                        selectedAsset = nil
+                        selectedLicense = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAccessoryDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .accessories
                     }
                 )
             } else {
@@ -1322,12 +1495,18 @@ struct MainSplitView: View {
                 case .licenses:
                     ipadLicenseList
                 case .stock:
-                    ContentUnavailableView(
-                        stockSelectedSubmodule.localizedTitle,
-                        systemImage: stockSelectedSubmodule.icon,
-                        description: Text(L10n.string("module_coming_soon"))
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if stockSelectedSubmodule == .consumables {
+                        ipadConsumableList
+                    } else if stockSelectedSubmodule == .components {
+                        ipadComponentList
+                    } else {
+                        ContentUnavailableView(
+                            stockSelectedSubmodule.localizedTitle,
+                            systemImage: stockSelectedSubmodule.icon,
+                            description: Text(L10n.string("module_coming_soon"))
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 case .directory:
                     ipadDirectoryList
                 }
@@ -1605,6 +1784,78 @@ struct MainSplitView: View {
             if apiClient.isConfigured {
                 isRefreshing = true
                 await apiClient.fetchLicenses()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
+    }
+
+    private var ipadConsumableList: some View {
+        List {
+            ForEach(filteredConsumables) { consumable in
+                let isSelected = selectedConsumable?.id == consumable.id
+                Button {
+                    selectedConsumable = consumable
+                } label: {
+                    ConsumableCardView(consumable: consumable, useExplicitBackground: true)
+                        .overlay {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+        .overlay {
+            if filteredConsumables.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(L10n.string("no_consumables"), systemImage: "shippingbox")
+            }
+        }
+    }
+
+    private var ipadComponentList: some View {
+        List {
+            ForEach(filteredComponents) { component in
+                let isSelected = selectedComponent?.id == component.id
+                Button {
+                    selectedComponent = component
+                } label: {
+                    ComponentCardView(component: component, useExplicitBackground: true)
+                        .overlay {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+        .overlay {
+            if filteredComponents.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(L10n.string("no_components"), systemImage: "cpu")
+            }
+        }
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchConsumables()
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }

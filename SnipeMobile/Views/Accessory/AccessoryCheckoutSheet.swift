@@ -11,10 +11,12 @@ struct AccessoryCheckoutSheet: View {
     @State private var showResult: Bool = false
     @State private var resultMessage: String = ""
     @State private var userSearchText: String = ""
-    @State private var selectedUser: User? = nil
-    @State private var selectedTab: Int = 0
+    @State private var assetSearchText: String = ""
     @State private var locationSearchText: String = ""
+    @State private var selectedUser: User? = nil
+    @State private var selectedAsset: Asset? = nil
     @State private var selectedLocation: Location? = nil
+    @State private var selectedTab: Int = 0
 
     var body: some View {
         NavigationStack {
@@ -23,6 +25,7 @@ struct AccessoryCheckoutSheet: View {
                     Picker("", selection: $selectedTab) {
                         Text(L10n.string("user")).tag(0)
                         Text(L10n.string("location")).tag(1)
+                        Text(L10n.string("asset")).tag(2)
                     }
                     .pickerStyle(.segmented)
                 }
@@ -34,8 +37,8 @@ struct AccessoryCheckoutSheet: View {
                             LazyVStack(spacing: 0) {
                                 ForEach(filteredUsers) { user in
                                     UserRow(user: user, isSelected: selectedUser?.id == user.id) {
+                                        clearSelection()
                                         selectedUser = user
-                                        selectedLocation = nil
                                     }
                                     .padding(.vertical, 8)
                                     .padding(.horizontal, 4)
@@ -48,15 +51,15 @@ struct AccessoryCheckoutSheet: View {
                     } header: {
                         Text(L10n.string("select_user_short"))
                     }
-                } else {
+                } else if selectedTab == 1 {
                     Section {
                         TextField(L10n.string("search_locations"), text: $locationSearchText)
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 ForEach(filteredLocations) { location in
                                     LocationRow(location: location, isSelected: selectedLocation?.id == location.id) {
+                                        clearSelection()
                                         selectedLocation = location
-                                        selectedUser = nil
                                     }
                                     .padding(.vertical, 8)
                                     .padding(.horizontal, 4)
@@ -68,6 +71,20 @@ struct AccessoryCheckoutSheet: View {
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     } header: {
                         Text(L10n.string("select_location_short"))
+                    }
+                } else {
+                    Section {
+                        CheckoutAssetPickerContent(
+                            searchText: $assetSearchText,
+                            assets: filteredAssets,
+                            selectedAssetId: selectedAsset?.id,
+                            onSelect: { asset in
+                                clearSelection()
+                                selectedAsset = asset
+                            }
+                        )
+                    } header: {
+                        Text(L10n.string("select_asset_short"))
                     }
                 }
 
@@ -93,9 +110,12 @@ struct AccessoryCheckoutSheet: View {
                         ProgressView()
                     } else {
                         Button(L10n.string("check_out")) { handleCheckout() }
-                            .disabled(selectedTab == 0 ? selectedUser == nil : selectedLocation == nil)
+                            .disabled(!canConfirm)
                     }
                 }
+            }
+            .onAppear {
+                if apiClient.assets.isEmpty { Task { await apiClient.fetchAssets() } }
             }
             .alert(L10n.string("result"), isPresented: $showResult) {
                 Button(L10n.string("ok"), role: .cancel) { }
@@ -103,6 +123,20 @@ struct AccessoryCheckoutSheet: View {
                 Text(resultMessage)
             }
         }
+    }
+
+    private var canConfirm: Bool {
+        switch selectedTab {
+        case 0: return selectedUser != nil
+        case 1: return selectedLocation != nil
+        default: return selectedAsset != nil
+        }
+    }
+
+    private func clearSelection() {
+        selectedUser = nil
+        selectedLocation = nil
+        selectedAsset = nil
     }
 
     var filteredUsers: [User] {
@@ -124,25 +158,47 @@ struct AccessoryCheckoutSheet: View {
             .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
     }
 
+    var filteredAssets: [Asset] {
+        apiClient.assets
+            .filter {
+                assetSearchText.isEmpty ||
+                $0.decodedName.localizedCaseInsensitiveContains(assetSearchText) ||
+                $0.decodedAssetTag.localizedCaseInsensitiveContains(assetSearchText) ||
+                $0.decodedModelName.localizedCaseInsensitiveContains(assetSearchText) ||
+                $0.decodedSerial.localizedCaseInsensitiveContains(assetSearchText)
+            }
+            .sorted { $0.decodedAssetTag.localizedCaseInsensitiveCompare($1.decodedAssetTag) == .orderedAscending }
+    }
+
     func handleCheckout() {
         isSaving = true
         Task {
-            var body: [String: Any] = ["note": notes]
+            var body: [String: Any] = ["checkout_qty": 1]
+            let trimmedNote = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedNote.isEmpty { body["note"] = trimmedNote }
+
             var success = false
             if selectedTab == 0, let user = selectedUser {
-                body["assigned_to"] = user.id
+                body["checkout_to_type"] = "user"
+                body["assigned_user"] = user.id
                 success = await apiClient.checkoutAccessoryCustom(accessoryId: accessory.id, body: body)
             } else if selectedTab == 1, let location = selectedLocation {
+                body["checkout_to_type"] = "location"
                 body["assigned_location"] = location.id
+                success = await apiClient.checkoutAccessoryCustom(accessoryId: accessory.id, body: body)
+            } else if selectedTab == 2, let asset = selectedAsset {
+                body["checkout_to_type"] = "asset"
+                body["assigned_asset"] = asset.id
                 success = await apiClient.checkoutAccessoryCustom(accessoryId: accessory.id, body: body)
             }
             await MainActor.run {
                 isSaving = false
-                resultMessage = apiClient.lastApiMessage ?? (success ? L10n.string("checkout_success") : L10n.string("checkout_failed"))
-                showResult = true
                 if success {
-                    isPresented = false
                     onSuccess?()
+                    isPresented = false
+                } else {
+                    resultMessage = apiClient.lastApiMessage ?? L10n.string("checkout_failed")
+                    showResult = true
                 }
             }
         }
