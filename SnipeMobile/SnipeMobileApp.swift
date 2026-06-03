@@ -1368,7 +1368,6 @@ struct MainSplitView: View {
                 UserDetailView(
                     user: user,
                     apiClient: apiClient,
-                    selectedTab: $selectedUserDetailTab,
                     isDetailViewActive: $isDetailViewActive,
                     onOpenAsset: { [apiClient] asset in
                         let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
@@ -1440,7 +1439,6 @@ struct MainSplitView: View {
                 LocationDetailView(
                     location: location,
                     apiClient: apiClient,
-                    selectedTab: $selectedLocationDetailTab,
                     isDetailViewActive: $isDetailViewActive,
                     onOpenUser: { [apiClient] user in
                         let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user

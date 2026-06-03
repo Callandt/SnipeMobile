@@ -20,9 +20,6 @@ struct AssetDetailView: View {
     @State private var assignedChildAssets: [Asset] = []
     @Environment(\.dismiss) var dismiss
     @State private var hasLoggedAppearance = false
-    @State private var copyNotification: String?
-    @State private var showCopyNotification = false
-    @State private var userDetailTab: Int = 0
     @State private var showEditSheet = false
     @State private var editName: String = ""
     @State private var editAssetTag: String = ""
@@ -58,11 +55,9 @@ struct AssetDetailView: View {
     @State private var showEolDate: Bool = false
     @State private var showUserPicker = false
     @State private var selectedCheckoutUserId: Int? = nil
-    @State private var showCheckInOutResult = false
-    @State private var checkInOutSuccess = false
-    @State private var checkInOutMessage = ""
     @State private var showCheckoutSheet = false
     @State private var detailImageURL: String? = nil
+    @State private var ephemeralNotice: EphemeralNotice?
 
     /// From apiClient or passed in.
     private var currentAsset: Asset {
@@ -251,11 +246,15 @@ struct AssetDetailView: View {
                     Button(action: {
                         Task {
                             let success = await apiClient.checkinAsset(assetId: currentAsset.id)
-                            checkInOutSuccess = success
-                            checkInOutMessage = success ? "Check-in successful!" : (apiClient.errorMessage ?? "Check-in failed.")
-                            showCheckInOutResult = true
                             if success {
+                                presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
                                 await reloadAssignedRelations()
+                            } else {
+                                presentEphemeralNotice(
+                                    $ephemeralNotice,
+                                    apiClient.errorMessage ?? L10n.string("checkin_failed"),
+                                    isError: true
+                                )
                             }
                         }
                     }) {
@@ -380,6 +379,7 @@ struct AssetDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: {
+                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
                 Task { await reloadAssignedRelations() }
             })
         }
@@ -389,9 +389,7 @@ struct AssetDetailView: View {
         .onChange(of: cachedChildAssetCount) { _, _ in
             Task { await reloadAssignedRelations() }
         }
-        .alert(isPresented: $showCheckInOutResult) {
-            Alert(title: Text(checkInOutSuccess ? L10n.string("success") : L10n.string("error")), message: Text(checkInOutMessage), dismissButton: .default(Text(L10n.string("ok"))))
-        }
+        .ephemeralNotice($ephemeralNotice)
     }
 
     private func reloadAssignedRelations() async {
@@ -470,24 +468,6 @@ struct AssetDetailView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 20) {
-                if showCopyNotification, let text = copyNotification {
-                    Text(L10n.string("copied", text))
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
-                        .background(Color.blue.opacity(0.8))
-                        .cornerRadius(8)
-                        .transition(.opacity)
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation {
-                                    showCopyNotification = false
-                                }
-                            }
-                        }
-                }
-                
                 ScrollView {
                     VStack(spacing: 15) {
                         if let imageURL = resolvedImageURL {
@@ -780,10 +760,6 @@ struct AssetDetailView: View {
         .contextMenu {
             Button(action: {
                 UIPasteboard.general.string = toCopy
-                withAnimation {
-                    copyNotification = label
-                    showCopyNotification = true
-                }
             }) {
                 Label(L10n.string("copy"), systemImage: "doc.on.doc")
             }

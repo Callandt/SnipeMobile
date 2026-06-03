@@ -19,6 +19,7 @@ struct AccessoryDetailView: View {
     @State private var showCheckinError = false
     @State private var isCheckingIn = false
     @State private var detailImageURL: String? = nil
+    @State private var ephemeralNotice: EphemeralNotice?
 
     /// From apiClient or passed in.
     private var currentAccessory: Accessory {
@@ -219,6 +220,7 @@ struct AccessoryDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             AccessoryCheckoutSheet(apiClient: apiClient, accessory: currentAccessory, isPresented: $showCheckoutSheet, onSuccess: {
+                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
                 Task {
                     checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
                 }
@@ -249,6 +251,7 @@ struct AccessoryDetailView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        .ephemeralNotice($ephemeralNotice)
     }
 
     private func checkinConfirmMessage(for row: SnipeITAPIClient.AccessoryCheckedOutRow) -> String {
@@ -264,7 +267,9 @@ struct AccessoryDetailView: View {
         checkinTarget = nil
         isCheckingIn = true
         let success = await executeAccessoryCheckin(checkedoutId: checkedoutId)
-        if !success {
+        if success {
+            presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
+        } else {
             checkinErrorMessage = L10n.string("checkin_failed")
             showCheckinError = true
         }
@@ -417,7 +422,8 @@ struct AccessoryDetailView: View {
                     .contextMenu {
                         if row.availableActions?.checkin == true {
                             Button(role: .destructive) {
-                                checkinTarget = row
+                                let target = row
+                                DispatchQueue.main.async { checkinTarget = target }
                             } label: {
                                 Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
                             }

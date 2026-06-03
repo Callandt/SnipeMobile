@@ -171,8 +171,6 @@ struct ContentView: View {
     @State private var isRefreshing: Bool = false
     @State private var hasLoadedInitialAssets: Bool = false
     @State private var assetDetailTab: Int = 0
-    @State private var userDetailTab: Int = 0
-    @State private var locationDetailTab: Int = 0
     @State private var accessoryDetailTab: Int = 0
     @State private var licenseDetailTab: Int = 0
     @State private var consumableDetailTab: Int = 0
@@ -461,8 +459,6 @@ struct ContentView: View {
                 apiClient: apiClient,
                 searchText: $searchText,
                 isRefreshing: $isRefreshing,
-                userDetailTab: $userDetailTab,
-                locationDetailTab: $locationDetailTab,
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 navigationPath: $directoryPath,
@@ -1863,8 +1859,6 @@ struct DirectoryTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
-    @Binding var userDetailTab: Int
-    @Binding var locationDetailTab: Int
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
     @Binding var navigationPath: NavigationPath
@@ -1918,8 +1912,13 @@ struct DirectoryTab: View {
                     )
                 }
             }
-            .onAppear { isDetailViewActive = false }
+            .onAppear {
+                if navigationPath.isEmpty {
+                    isDetailViewActive = false
+                }
+            }
             .navigationTitle(selectedSubmodule.localizedTitle)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if enabledSubmodules.count > 1 {
                     ToolbarItem(placement: .navigationBarLeading) {
@@ -1958,29 +1957,33 @@ struct DirectoryTab: View {
                 }
             }
             .navigationDestination(for: User.self) { user in
-                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser, onOpenLicense: onOpenLicenseFromUser, onOpenConsumable: onOpenConsumableFromUser)
+                UserDetailView(user: user, apiClient: apiClient, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser, onOpenLicense: onOpenLicenseFromUser, onOpenConsumable: onOpenConsumableFromUser)
+                    .id(user.id)
             }
             .navigationDestination(for: Location.self) { location in
-                LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUserFromLocation, onOpenAsset: onOpenAssetFromLocation, onOpenAccessory: onOpenAccessoryFromLocation)
+                LocationDetailView(location: location, apiClient: apiClient, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUserFromLocation, onOpenAsset: onOpenAssetFromLocation, onOpenAccessory: onOpenAccessoryFromLocation)
+                    .id(location.id)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
         }
         .onChange(of: pendingUserToOpen) { _, new in
-            if let user = new {
+            guard let user = new else { return }
+            pendingUserToOpen = nil
+            DispatchQueue.main.async {
                 if selectedSubmoduleRaw != DirectorySubmodule.users.rawValue {
                     selectedSubmoduleRaw = DirectorySubmodule.users.rawValue
                 }
                 navigationPath.append(user)
-                pendingUserToOpen = nil
             }
         }
         .onChange(of: pendingLocationToOpen) { _, new in
-            if let location = new {
+            guard let location = new else { return }
+            pendingLocationToOpen = nil
+            DispatchQueue.main.async {
                 if selectedSubmoduleRaw != DirectorySubmodule.locations.rawValue {
                     selectedSubmoduleRaw = DirectorySubmodule.locations.rawValue
                 }
                 navigationPath.append(location)
-                pendingLocationToOpen = nil
             }
         }
     }
@@ -2127,11 +2130,23 @@ private struct LocationsContent: View {
 
 struct TabBarMinimizeBehaviorModifier: ViewModifier {
     let isDetailVisible: Bool
+    @State private var deferredDetailVisible = false
+
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.tabBarMinimizeBehavior(isDetailVisible ? .never : .onScrollDown)
-        } else {
-            content
+        Group {
+            if #available(iOS 26.0, *) {
+                content.tabBarMinimizeBehavior(deferredDetailVisible ? .never : .onScrollDown)
+            } else {
+                content
+            }
+        }
+        .onAppear {
+            deferredDetailVisible = isDetailVisible
+        }
+        .onChange(of: isDetailVisible) { _, visible in
+            DispatchQueue.main.async {
+                deferredDetailVisible = visible
+            }
         }
     }
 }

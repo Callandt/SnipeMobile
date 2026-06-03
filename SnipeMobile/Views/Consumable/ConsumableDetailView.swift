@@ -14,6 +14,7 @@ struct ConsumableDetailView: View {
     @State private var showCheckoutSheet: Bool = false
     @State private var showEditSheet: Bool = false
     @State private var detailImageURL: String? = nil
+    @State private var ephemeralNotice: EphemeralNotice?
 
     private var currentConsumable: Consumable {
         apiClient.consumables.first { $0.id == consumable.id } ?? consumable
@@ -207,11 +208,13 @@ struct ConsumableDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             ConsumableCheckoutSheet(apiClient: apiClient, consumable: currentConsumable, isPresented: $showCheckoutSheet, onSuccess: {
+                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
                 Task {
                     checkedOutRows = await apiClient.fetchConsumableCheckedOutList(consumableId: consumable.id)
                 }
             })
         }
+        .ephemeralNotice($ephemeralNotice)
     }
 
     private func reload() {

@@ -3,7 +3,6 @@ import SwiftUI
 struct UserDetailView: View {
     let user: User
     @ObservedObject var apiClient: SnipeITAPIClient
-    @Binding var selectedTab: Int
     @Binding var isDetailViewActive: Bool
     var returnToTab: MainTab? = nil
     var onBackToPrevious: (() -> Void)? = nil
@@ -12,8 +11,7 @@ struct UserDetailView: View {
     var onOpenLocation: ((Location) -> Void)? = nil
     var onOpenLicense: ((License) -> Void)? = nil
     var onOpenConsumable: ((Consumable) -> Void)? = nil
-    @State private var copyNotification: String?
-    @State private var showCopyNotification = false
+    @State private var selectedTab = 0
     @State private var detailImageURL: String? = nil
     @State private var userAssets: [Asset] = []
     @State private var userAccessories: [Accessory] = []
@@ -50,28 +48,6 @@ struct UserDetailView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
                 .padding(.bottom, 2)
-
-                if showCopyNotification, let text = copyNotification {
-                    VStack {
-                        Text(L10n.string("copied", text))
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding(.vertical, 5)
-                            .padding(.horizontal, 10)
-                            .background(Color.blue.opacity(0.8))
-                            .cornerRadius(8)
-                            .transition(.opacity)
-                            .onAppear {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation {
-                                        showCopyNotification = false
-                                    }
-                                }
-                            }
-                        Spacer()
-                    }
-                    .padding(.top, 4)
-                }
 
                 if selectedTab == 0 {
                     ScrollView {
@@ -131,31 +107,7 @@ struct UserDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-            if showCopyNotification, let text = copyNotification {
-                VStack {
-                    Text(L10n.string("copied", text))
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 10)
-                        .background(Color.blue.opacity(0.8))
-                        .cornerRadius(8)
-                        .transition(.opacity)
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation {
-                                    showCopyNotification = false
-                                }
-                            }
-                        }
-                    Spacer()
-                }
-                .padding(.top, 8)
-            }
         }
-        .onAppear { isDetailViewActive = true }
-        .onDisappear { isDetailViewActive = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(returnToTab != nil)
@@ -184,21 +136,17 @@ struct UserDetailView: View {
                 }
             }
         }
-        .onAppear {
-            selectedTab = 0
-            reloadAssignedItems()
-            Task {
-                if let fullUser = await apiClient.fetchUserDetails(userId: user.id),
-                   let image = fullUser.image,
-                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    detailImageURL = image
-                } else {
-                    detailImageURL = nil
-                }
+        .task(id: user.id) {
+            DispatchQueue.main.async { isDetailViewActive = true }
+            defer { isDetailViewActive = false }
+            await reloadAssignedItems()
+            if let fullUser = await apiClient.fetchUserDetails(userId: user.id),
+               let image = fullUser.image,
+               !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                detailImageURL = image
+            } else {
+                detailImageURL = nil
             }
-        }
-        .onChange(of: user.id) { _, _ in
-            reloadAssignedItems()
         }
     }
 
@@ -276,17 +224,15 @@ struct UserDetailView: View {
         .padding(.horizontal)
     }
 
-    private func reloadAssignedItems() {
-        Task {
-            async let assets = apiClient.fetchUserAssets(userId: user.id)
-            async let accessories = apiClient.fetchUserAccessories(userId: user.id)
-            async let licenses = apiClient.fetchUserLicenses(userId: user.id)
-            async let consumables = apiClient.fetchUserConsumables(userId: user.id)
-            userAssets = mergeCached(await assets, from: apiClient.assets, id: \.id)
-            userAccessories = mergeCached(await accessories, from: apiClient.accessories, id: \.id)
-            userLicenses = mergeCached(await licenses, from: apiClient.licenses, id: \.id)
-            userConsumables = mergeCached(await consumables, from: apiClient.consumables, id: \.id)
-        }
+    private func reloadAssignedItems() async {
+        async let assets = apiClient.fetchUserAssets(userId: user.id)
+        async let accessories = apiClient.fetchUserAccessories(userId: user.id)
+        async let licenses = apiClient.fetchUserLicenses(userId: user.id)
+        async let consumables = apiClient.fetchUserConsumables(userId: user.id)
+        userAssets = mergeCached(await assets, from: apiClient.assets, id: \.id)
+        userAccessories = mergeCached(await accessories, from: apiClient.accessories, id: \.id)
+        userLicenses = mergeCached(await licenses, from: apiClient.licenses, id: \.id)
+        userConsumables = mergeCached(await consumables, from: apiClient.consumables, id: \.id)
     }
 
     private func mergeCached<T>(_ items: [T], from cache: [T], id: KeyPath<T, Int>) -> [T] {
@@ -312,10 +258,6 @@ struct UserDetailView: View {
 
             Button(action: {
                 UIPasteboard.general.string = value
-                withAnimation {
-                    copyNotification = label
-                    showCopyNotification = true
-                }
             }) {
                 Image(systemName: "doc.on.doc")
                     .foregroundColor(.blue)

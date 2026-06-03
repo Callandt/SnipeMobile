@@ -20,8 +20,7 @@ struct LicenseDetailView: View {
     @State private var isCheckingIn = false
     @State private var showEditSheet = false
     @State private var showCheckoutSheet = false
-    @State private var copyNotification: String?
-    @State private var showCopyNotification = false
+    @State private var ephemeralNotice: EphemeralNotice?
 
     private var canCheckout: Bool {
         let free = currentLicense.freeSeatsCount ?? currentLicense.remaining ?? 0
@@ -46,16 +45,6 @@ struct LicenseDetailView: View {
             if selectedTab == 0 {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        if showCopyNotification, let text = copyNotification {
-                            Text(L10n.string("copied", text))
-                                .font(.caption)
-                                .foregroundColor(.white)
-                                .padding(.vertical, 5)
-                                .padding(.horizontal, 10)
-                                .background(Color.blue.opacity(0.8))
-                                .cornerRadius(8)
-                                .transition(.opacity)
-                        }
                         Text(L10n.string("license_info"))
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -122,6 +111,7 @@ struct LicenseDetailView: View {
                 availableSeats: seats,
                 isPresented: $showCheckoutSheet,
                 onSuccess: {
+                    presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
                     Task { await loadDetail() }
                 }
             )
@@ -159,6 +149,32 @@ struct LicenseDetailView: View {
         .task(id: license.id) {
             await loadDetail()
         }
+        .confirmationDialog(
+            checkinConfirmTitle,
+            isPresented: Binding(get: { checkinTarget != nil }, set: { if !$0 { checkinTarget = nil } }),
+            titleVisibility: .visible,
+            presenting: checkinTarget
+        ) { seat in
+            Button(L10n.string("check_in"), role: .destructive) {
+                Task { await performCheckin(seat: seat) }
+            }
+            Button(L10n.string("cancel"), role: .cancel) {}
+        } message: { seat in
+            Text(checkinConfirmMessage(for: seat))
+        }
+        .alert(L10n.string("checkin_failed"), isPresented: $showCheckinError) {
+            Button(L10n.string("ok"), role: .cancel) {}
+        } message: {
+            Text(checkinErrorMessage ?? "")
+        }
+        .overlay {
+            if isCheckingIn {
+                ProgressView()
+                    .padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .ephemeralNotice($ephemeralNotice)
     }
 
     private func loadDetail() async {
@@ -186,7 +202,7 @@ struct LicenseDetailView: View {
                     }
                     if showProductKey {
                         Button {
-                            copy(value: key, label: L10n.string("product_key"))
+                            copy(value: key)
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }
@@ -288,30 +304,12 @@ struct LicenseDetailView: View {
             }
         }
         .padding(.horizontal)
-        .confirmationDialog(
-            checkinConfirmTitle,
-            isPresented: Binding(get: { checkinTarget != nil }, set: { if !$0 { checkinTarget = nil } }),
-            titleVisibility: .visible,
-            presenting: checkinTarget
-        ) { seat in
-            Button(L10n.string("check_in"), role: .destructive) {
-                Task { await performCheckin(seat: seat) }
-            }
-            Button(L10n.string("cancel"), role: .cancel) {}
-        } message: { seat in
-            Text(checkinConfirmMessage(for: seat))
-        }
-        .alert(L10n.string("checkin_failed"), isPresented: $showCheckinError) {
-            Button(L10n.string("ok"), role: .cancel) {}
-        } message: {
-            Text(checkinErrorMessage ?? "")
-        }
-        .overlay {
-            if isCheckingIn {
-                ProgressView()
-                    .padding(20)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-            }
+    }
+
+    private func requestCheckin(for seat: SnipeITAPIClient.LicenseSeatRow) {
+        // Wait until the context menu has fully dismissed before presenting the dialog.
+        DispatchQueue.main.async {
+            checkinTarget = seat
         }
     }
 
@@ -340,17 +338,21 @@ struct LicenseDetailView: View {
     private func performCheckin(seat: SnipeITAPIClient.LicenseSeatRow) async {
         checkinTarget = nil
         isCheckingIn = true
+        defer { isCheckingIn = false }
+
         let error = await apiClient.checkinLicenseSeat(licenseId: license.id, seatId: seat.id)
         if let error {
             checkinErrorMessage = error
             showCheckinError = true
-        } else {
-            seats = await apiClient.fetchLicenseSeats(licenseId: license.id)
-            if let detailed = await apiClient.fetchLicenseDetails(licenseId: license.id) {
-                fullLicense = detailed
-            }
+            return
         }
-        isCheckingIn = false
+
+        presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        seats = await apiClient.fetchLicenseSeats(licenseId: license.id)
+        if let detailed = await apiClient.fetchLicenseDetails(licenseId: license.id) {
+            fullLicense = detailed
+        }
     }
 
     private enum SeatKind {
@@ -401,15 +403,31 @@ struct LicenseDetailView: View {
     private func seatCard(_ seat: SnipeITAPIClient.LicenseSeatRow, kind: SeatKind) -> some View {
         switch kind {
         case .assigned:
-            seatRow(seat)
-                .contextMenu {
+            HStack(spacing: 8) {
+                seatRow(seat)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if seat.userCanCheckin != false {
+                    Button {
+                        requestCheckin(for: seat)
+                    } label: {
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 36, height: 36)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.green)
+                    .accessibilityLabel(L10n.string("check_in"))
+                }
+            }
+            .contextMenu {
+                if seat.userCanCheckin != false {
                     Button(role: .destructive) {
-                        checkinTarget = seat
+                        requestCheckin(for: seat)
                     } label: {
                         Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
                     }
-                    .disabled(seat.userCanCheckin == false)
                 }
+            }
         case .free:
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
@@ -515,22 +533,15 @@ struct LicenseDetailView: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button {
-                copy(value: toCopy, label: label)
+                copy(value: toCopy)
             } label: {
                 Label(L10n.string("copy"), systemImage: "doc.on.doc")
             }
         }
     }
 
-    private func copy(value: String, label: String) {
+    private func copy(value: String) {
         UIPasteboard.general.string = value
-        withAnimation {
-            copyNotification = label
-            showCopyNotification = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { showCopyNotification = false }
-        }
     }
 
     private func licenseInfoRows() -> [AnyView] {

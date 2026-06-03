@@ -27,6 +27,9 @@ class SnipeITAPIClient: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var statusLabels: [StatusLabel] = []
 
+    /// Asset ids to re-fetch by id after bulk list sync (avoids stale status/assignment).
+    private var assetsPendingDetailRefresh: Set<Int> = []
+
     /// Progress of an ongoing paginated fetch. `total` is -1 if unknown.
     @Published var loadingProgress: (current: Int, total: Int)? = nil
 
@@ -265,12 +268,33 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func refreshAssetInCache(assetId: Int, responseJSON: [String: Any]? = nil) async {
+        assetsPendingDetailRefresh.insert(assetId)
         if let json = responseJSON {
             mergeAssetFromResponseJSON(json)
         }
         if let details = await fetchHardwareDetails(assetId: assetId) {
             applyUpdatedAsset(details)
         }
+    }
+
+    /// Re-apply per-asset detail after bulk `/hardware` list sync overwrote checkout state.
+    private func reconcilePendingAssetDetails() async {
+        let ids = assetsPendingDetailRefresh
+        guard !ids.isEmpty else { return }
+        for id in ids {
+            if let details = await fetchHardwareDetails(assetId: id) {
+                applyUpdatedAsset(details)
+            }
+        }
+        assetsPendingDetailRefresh.subtract(ids)
+    }
+
+    /// Deployed status id for checkout when the UI does not expose a status picker.
+    private func deployedStatusIdForCheckout() async -> Int? {
+        if statusLabels.isEmpty {
+            await fetchStatusLabels()
+        }
+        return statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployed" })?.id
     }
 
     func refreshAccessoryInCache(accessoryId: Int) async {
@@ -322,6 +346,9 @@ class SnipeITAPIClient: ObservableObject {
                     if myGen == self.fetchAssetsGeneration {
                         self.assets = assets
                     }
+                }
+                if myGen == fetchAssetsGeneration {
+                    await reconcilePendingAssetDetails()
                 }
             } catch {
                 await MainActor.run {
@@ -1054,6 +1081,40 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    /// Checks a component back in from an asset. `componentAssetId` is the pivot id
+    /// (`assigned_pivot_id`) from `GET /components/{id}/assets`, not the component id.
+    /// Returns nil on success, otherwise an error message.
+    func checkinComponent(componentId: Int, componentAssetId: Int, quantity: Int) async -> String? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
+        guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentAssetId)/checkin") else {
+            return "Invalid URL."
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let body: [String: Any] = ["checkin_qty": max(1, quantity)]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return "No response." }
+            guard (200...299).contains(http.statusCode) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                return "HTTP \(http.statusCode): \(preview)"
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let status = json["status"] as? String, status == "error" {
+                return Self.extractApiErrorMessage(from: json) ?? "Check-in failed."
+            }
+            await refreshComponentInCache(componentId: componentId)
+            syncAllInBackground()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     /// Licenses assigned to a user. Returns full License objects (same shape as /api/v1/licenses rows).
     func fetchUserLicenses(userId: Int) async -> [License] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
@@ -1093,20 +1154,28 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Consumables checked out to a user (`GET /api/v1/users/{id}/consumables`).
+
     func fetchUserConsumables(userId: Int) async -> [Consumable] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
-        do {
-            let rows = try await fetchAllPaginated(
-                path: "/api/v1/users/\(userId)/consumables",
-                as: Consumable.self
-            )
-            return rows ?? []
-        } catch {
-            #if DEBUG
-            print("fetchUserConsumables error: \(error)")
-            #endif
-            return []
+        if consumables.isEmpty {
+            await fetchConsumables()
+        }
+
+        let candidates = consumables.filter { consumable in
+            guard let qty = consumable.qty, let remaining = consumable.remaining else { return false }
+            return remaining < qty
+        }
+
+        var results: [Consumable] = []
+        for consumable in candidates {
+            let rows = await fetchConsumableCheckedOutList(consumableId: consumable.id)
+            if rows.contains(where: { $0.userId == userId }) {
+                results.append(consumable)
+            }
+        }
+
+        return results.sorted {
+            $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
         }
     }
 
@@ -1591,8 +1660,10 @@ class SnipeITAPIClient: ObservableObject {
             guard let http = response as? HTTPURLResponse else { return "No response." }
 
             #if DEBUG
-            let preview = String(data: data.prefix(600), encoding: .utf8) ?? ""
-            print("[SnipeMobile] PUT /licenses/\(licenseId)/seats/\(seatId) status=\(http.statusCode) body=\(preview)")
+            if !(200...299).contains(http.statusCode) {
+                let preview = String(data: data.prefix(600), encoding: .utf8) ?? ""
+                print("[SnipeMobile] PUT /licenses/\(licenseId)/seats/\(seatId) status=\(http.statusCode) body=\(preview)")
+            }
             #endif
 
             guard (200...299).contains(http.statusCode) else {
@@ -1740,7 +1811,11 @@ class SnipeITAPIClient: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        var checkoutBody = body
+        if checkoutBody["status_id"] == nil, let statusId = await deployedStatusIdForCheckout() {
+            checkoutBody["status_id"] = statusId
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: checkoutBody)
         do {
             let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {

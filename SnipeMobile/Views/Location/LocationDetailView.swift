@@ -3,13 +3,13 @@ import SwiftUI
 struct LocationDetailView: View {
     let location: Location
     @ObservedObject var apiClient: SnipeITAPIClient
-    @Binding var selectedTab: Int
     @Binding var isDetailViewActive: Bool
     var returnToTab: MainTab? = nil
     var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
+    @State private var selectedTab = 0
     @State private var locationAccessories: [Accessory] = []
     @State private var locationAssets: [Asset] = []
     @State private var isLoadingAccessories = false
@@ -110,8 +110,6 @@ struct LocationDetailView: View {
             }
         }
         .background(Color(.systemBackground))
-        .onAppear { isDetailViewActive = true }
-        .onDisappear { isDetailViewActive = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(returnToTab != nil)
@@ -140,25 +138,22 @@ struct LocationDetailView: View {
                 }
             }
         }
-        .onAppear {
+        .task(id: location.id) {
             selectedTab = 0
-            reloadAssignedItems()
-        }
-        .onChange(of: location.id) { _, _ in
-            reloadAssignedItems()
+            DispatchQueue.main.async { isDetailViewActive = true }
+            defer { isDetailViewActive = false }
+            await reloadAssignedItems()
         }
     }
 
-    private func reloadAssignedItems() {
-        Task {
-            isLoadingAssets = true
-            isLoadingAccessories = true
-            async let assets = apiClient.fetchLocationAssets(locationId: location.id)
-            async let accessories = apiClient.fetchLocationAccessories(locationId: location.id)
-            locationAssets = await assets
-            locationAccessories = await accessories
-            isLoadingAssets = false
-            isLoadingAccessories = false
-        }
+    private func reloadAssignedItems() async {
+        isLoadingAssets = true
+        isLoadingAccessories = true
+        async let assets = apiClient.fetchLocationAssets(locationId: location.id)
+        async let accessories = apiClient.fetchLocationAccessories(locationId: location.id)
+        locationAssets = await assets
+        locationAccessories = await accessories
+        isLoadingAssets = false
+        isLoadingAccessories = false
     }
 }

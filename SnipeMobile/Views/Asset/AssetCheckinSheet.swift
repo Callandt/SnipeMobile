@@ -7,8 +7,7 @@ struct AssetCheckinSheet: View {
 
     @State private var notes: String = ""
     @State private var isSaving: Bool = false
-    @State private var showResult: Bool = false
-    @State private var resultMessage: String = ""
+    @State private var ephemeralNotice: EphemeralNotice?
     @State private var selectedStatusId: Int? = nil
     @State private var name: String = ""
     @State private var selectedLocationId: Int? = nil
@@ -79,11 +78,7 @@ struct AssetCheckinSheet: View {
                     selectedStatusId = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" })?.id
                 }
             }
-            .alert(L10n.string("result"), isPresented: $showResult) {
-                Button(L10n.string("ok"), role: .cancel) { }
-            } message: {
-                Text(resultMessage)
-            }
+            .ephemeralNotice($ephemeralNotice)
         }
     }
 
@@ -98,9 +93,18 @@ struct AssetCheckinSheet: View {
             let success = await apiClient.checkinAssetCustom(assetId: asset.id, body: body)
             await MainActor.run {
                 isSaving = false
-                resultMessage = apiClient.lastApiMessage ?? (success ? L10n.string("checkin_success") : L10n.string("checkin_failed"))
-                showResult = true
-                if success { isPresented = false }
+                if success {
+                    presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        isPresented = false
+                    }
+                } else {
+                    presentEphemeralNotice(
+                        $ephemeralNotice,
+                        apiClient.lastApiMessage ?? L10n.string("checkin_failed"),
+                        isError: true
+                    )
+                }
             }
         }
     }

@@ -14,6 +14,11 @@ struct ComponentDetailView: View {
     @State private var showCheckoutSheet: Bool = false
     @State private var showEditSheet: Bool = false
     @State private var detailImageURL: String? = nil
+    @State private var ephemeralNotice: EphemeralNotice?
+    @State private var checkinTarget: SnipeITAPIClient.ComponentAssetRow?
+    @State private var checkinErrorMessage: String?
+    @State private var showCheckinError = false
+    @State private var isCheckingIn = false
 
     private var currentComponent: Component {
         apiClient.components.first { $0.id == component.id } ?? component
@@ -207,11 +212,75 @@ struct ComponentDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             ComponentCheckoutSheet(apiClient: apiClient, component: currentComponent, isPresented: $showCheckoutSheet, onSuccess: {
+                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
                 Task {
                     checkedOutRows = await apiClient.fetchComponentAssetsList(componentId: component.id)
                 }
             })
         }
+        .confirmationDialog(
+            L10n.string("checkin_confirm_title"),
+            isPresented: Binding(get: { checkinTarget != nil }, set: { if !$0 { checkinTarget = nil } }),
+            titleVisibility: .visible,
+            presenting: checkinTarget
+        ) { row in
+            Button(L10n.string("check_in"), role: .destructive) {
+                Task { await performCheckin(row: row) }
+            }
+            Button(L10n.string("cancel"), role: .cancel) {}
+        } message: { row in
+            Text(checkinConfirmMessage(for: row))
+        }
+        .alert(L10n.string("checkin_failed"), isPresented: $showCheckinError) {
+            Button(L10n.string("ok"), role: .cancel) {}
+        } message: {
+            Text(checkinErrorMessage ?? "")
+        }
+        .overlay {
+            if isCheckingIn {
+                ProgressView()
+                    .padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .ephemeralNotice($ephemeralNotice)
+    }
+
+    private func checkinConfirmMessage(for row: SnipeITAPIClient.ComponentAssetRow) -> String {
+        let name = HTMLDecoder.decode(row.assetName ?? "")
+        if name.isEmpty {
+            return L10n.string("checkin_generic_confirm_message")
+        }
+        return String(format: L10n.string("checkin_user_confirm_message"), name)
+    }
+
+    private func requestCheckin(for row: SnipeITAPIClient.ComponentAssetRow) {
+        DispatchQueue.main.async { checkinTarget = row }
+    }
+
+    private func performCheckin(row: SnipeITAPIClient.ComponentAssetRow) async {
+        checkinTarget = nil
+        guard let pivotId = row.assignedPivotId else {
+            checkinErrorMessage = L10n.string("checkin_failed")
+            showCheckinError = true
+            return
+        }
+        isCheckingIn = true
+        defer { isCheckingIn = false }
+
+        let error = await apiClient.checkinComponent(
+            componentId: component.id,
+            componentAssetId: pivotId,
+            quantity: row.assignedQty ?? 1
+        )
+        if let error {
+            checkinErrorMessage = error
+            showCheckinError = true
+            return
+        }
+        presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        checkedOutRows = await apiClient.fetchComponentAssetsList(componentId: component.id)
     }
 
     private func reload() {
@@ -295,18 +364,43 @@ struct ComponentDetailView: View {
             } else {
                 ForEach(checkedOutRows) { row in
                     let fullAsset = row.assetId.flatMap { id in apiClient.assets.first(where: { $0.id == id }) }
-                    Button(action: {
-                        if let fullAsset { onOpenAsset?(fullAsset) }
-                    }) {
-                        AssignedAssetCard(
-                            asset: fullAsset,
-                            fallbackTitle: HTMLDecoder.decode(row.assetName ?? ""),
-                            fallbackTag: HTMLDecoder.decode(row.assetTag ?? ""),
-                            quantity: row.assignedQty
-                        )
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            if let fullAsset { onOpenAsset?(fullAsset) }
+                        }) {
+                            AssignedAssetCard(
+                                asset: fullAsset,
+                                fallbackTitle: HTMLDecoder.decode(row.assetName ?? ""),
+                                fallbackTag: HTMLDecoder.decode(row.assetTag ?? ""),
+                                quantity: row.assignedQty
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(fullAsset == nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if row.assignedPivotId != nil {
+                            Button {
+                                requestCheckin(for: row)
+                            } label: {
+                                Image(systemName: "arrow.down.to.line")
+                                    .font(.body.weight(.semibold))
+                                    .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.green)
+                            .accessibilityLabel(L10n.string("check_in"))
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .disabled(fullAsset == nil)
+                    .contextMenu {
+                        if row.assignedPivotId != nil {
+                            Button(role: .destructive) {
+                                requestCheckin(for: row)
+                            } label: {
+                                Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
+                            }
+                        }
+                    }
                 }
             }
         }
