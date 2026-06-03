@@ -391,11 +391,13 @@ struct MainSplitView: View {
     @State private var selectedSection: MainTab = .hardware
     @State private var selectedAsset: Asset?
     @State private var selectedAccessory: Accessory?
+    @State private var selectedLicense: License?
     @State private var selectedUser: User?
     @State private var selectedLocation: Location?
     @State private var showSettings = false
     @State private var showAddAsset = false
     @State private var showAddAccessory = false
+    @State private var showAddLicense = false
     @State private var showComingSoonAlert = false
     @State private var showScanner = false
     @State private var scannedAssetId: Int?
@@ -408,6 +410,7 @@ struct MainSplitView: View {
     @State private var showTodayOnlyOverride = false
     @State private var selectedAssetDetailTab: Int = 0
     @State private var selectedAccessoryDetailTab: Int = 0
+    @State private var selectedLicenseDetailTab: Int = 0
     @State private var selectedUserDetailTab: Int = 0
     @State private var selectedLocationDetailTab: Int = 0
     @AppStorage("showAccessoriesTab") private var showAccessoriesTab: Bool = true
@@ -512,6 +515,17 @@ struct MainSplitView: View {
             $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
             $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
             $0.decodedAssignedToName.lowercased().contains(searchText.lowercased())
+        }
+    }
+    var filteredLicenses: [License] {
+        if searchText.isEmpty { return apiClient.licenses }
+        let needle = searchText.lowercased()
+        return apiClient.licenses.filter {
+            $0.decodedName.lowercased().contains(needle) ||
+            $0.decodedManufacturerName.lowercased().contains(needle) ||
+            $0.decodedCategoryName.lowercased().contains(needle) ||
+            $0.decodedLicenseName.lowercased().contains(needle) ||
+            $0.decodedLicenseEmail.lowercased().contains(needle)
         }
     }
     var filteredUsers: [User] {
@@ -635,6 +649,7 @@ struct MainSplitView: View {
             }
             selectedAsset = nil
             selectedAccessory = nil
+            selectedLicense = nil
             selectedUser = nil
             selectedLocation = nil
         }
@@ -668,6 +683,23 @@ struct MainSplitView: View {
         .sheet(isPresented: $showAddAccessory) {
             AddAccessorySheet(apiClient: apiClient, isPresented: $showAddAccessory)
                 .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showAddLicense) {
+            AddLicenseSheet(
+                apiClient: apiClient,
+                isPresented: $showAddLicense,
+                onCreated: { newId in
+                    Task {
+                        if let newId,
+                           let detailed = await apiClient.fetchLicenseDetails(licenseId: newId) {
+                            await MainActor.run {
+                                selectedLicense = detailed
+                            }
+                        }
+                    }
+                }
+            )
+            .presentationDetents([.large])
         }
         .sheet(isPresented: $showScanner, onDismiss: scannerDismiss) {
             ZoomableQRScannerView(
@@ -929,7 +961,15 @@ struct MainSplitView: View {
                         .accessibilityLabel(L10n.string("add_accessory"))
                     }
                 }
-                if selectedSection == .licenses || selectedSection == .stock {
+                if selectedSection == .licenses {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(action: { showAddLicense = true }) {
+                            Image(systemName: "plus.circle")
+                        }
+                        .accessibilityLabel(L10n.string("add_license"))
+                    }
+                }
+                if selectedSection == .stock {
                     ToolbarItem(placement: .primaryAction) {
                         Button(action: { showComingSoonAlert = true }) {
                             Image(systemName: "plus.circle")
@@ -960,9 +1000,7 @@ struct MainSplitView: View {
     }
 
     private var comingSoonMessage: String {
-        selectedSection == .directory
-            ? L10n.string("add_coming_soon")
-            : L10n.string("module_coming_soon")
+        L10n.string("module_coming_soon")
     }
 
     private var comboAwareSectionTitle: String {
@@ -1012,6 +1050,7 @@ struct MainSplitView: View {
                         selectedUser = resolved
                         selectedAsset = nil
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedLocation = nil
                         selectedUserDetailTab = 0
                         skipClearSelectionOnSectionChange = true
@@ -1023,11 +1062,23 @@ struct MainSplitView: View {
                         selectedLocation = resolved
                         selectedAsset = nil
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedUser = nil
                         selectedLocationDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         directorySelectedRaw = DirectorySubmodule.locations.rawValue
                         selectedSection = .directory
+                    },
+                    onOpenLicense: { [apiClient] license in
+                        let resolved = apiClient.licenses.first(where: { $0.id == license.id }) ?? license
+                        selectedLicense = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedLicenseDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .licenses
                     }
                 )
             } else {
@@ -1049,6 +1100,7 @@ struct MainSplitView: View {
                         selectedUser = resolved
                         selectedAsset = nil
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedLocation = nil
                         selectedUserDetailTab = 0
                         skipClearSelectionOnSectionChange = true
@@ -1059,6 +1111,7 @@ struct MainSplitView: View {
                         let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
                         selectedAsset = resolved
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedUser = nil
                         selectedLocation = nil
                         selectedAssetDetailTab = 0
@@ -1070,6 +1123,7 @@ struct MainSplitView: View {
                         selectedLocation = resolved
                         selectedAsset = nil
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedUser = nil
                         selectedLocationDetailTab = 0
                         skipClearSelectionOnSectionChange = true
@@ -1085,11 +1139,43 @@ struct MainSplitView: View {
                 )
             }
         case .licenses:
-            ContentUnavailableView(
-                L10n.string("tab_licenses"),
-                systemImage: "doc.text.fill",
-                description: Text(L10n.string("module_coming_soon"))
-            )
+            if let license = selectedLicense {
+                LicenseDetailView(
+                    license: license,
+                    apiClient: apiClient,
+                    selectedTab: $selectedLicenseDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenUser: { [apiClient] user in
+                        let resolved = apiClient.users.first(where: { $0.id == user.id }) ?? user
+                        selectedUser = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedLicense = nil
+                        selectedLocation = nil
+                        selectedUserDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        directorySelectedRaw = DirectorySubmodule.users.rawValue
+                        selectedSection = .directory
+                    },
+                    onOpenAsset: { [apiClient] asset in
+                        let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
+                        selectedAsset = resolved
+                        selectedAccessory = nil
+                        selectedLicense = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedAssetDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .hardware
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    L10n.string("select_license"),
+                    systemImage: "doc.text.fill",
+                    description: Text("Choose a license from the list")
+                )
+            }
         case .stock:
             ContentUnavailableView(
                 stockSelectedSubmodule.localizedTitle,
@@ -1115,6 +1201,7 @@ struct MainSplitView: View {
                         let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
                         selectedAsset = resolved
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedUser = nil
                         selectedLocation = nil
                         selectedAssetDetailTab = 0
@@ -1125,6 +1212,7 @@ struct MainSplitView: View {
                         let resolved = apiClient.accessories.first(where: { $0.id == accessory.id }) ?? accessory
                         selectedAccessory = resolved
                         selectedAsset = nil
+                        selectedLicense = nil
                         selectedUser = nil
                         selectedLocation = nil
                         selectedAccessoryDetailTab = 0
@@ -1136,10 +1224,22 @@ struct MainSplitView: View {
                         selectedLocation = resolved
                         selectedAsset = nil
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedUser = nil
                         selectedLocationDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         directorySelectedRaw = DirectorySubmodule.locations.rawValue
+                    },
+                    onOpenLicense: { [apiClient] license in
+                        let resolved = apiClient.licenses.first(where: { $0.id == license.id }) ?? license
+                        selectedLicense = resolved
+                        selectedAsset = nil
+                        selectedAccessory = nil
+                        selectedUser = nil
+                        selectedLocation = nil
+                        selectedLicenseDetailTab = 0
+                        skipClearSelectionOnSectionChange = true
+                        selectedSection = .licenses
                     }
                 )
             } else {
@@ -1161,6 +1261,7 @@ struct MainSplitView: View {
                         selectedUser = resolved
                         selectedAsset = nil
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedLocation = nil
                         selectedUserDetailTab = 0
                         skipClearSelectionOnSectionChange = true
@@ -1170,6 +1271,7 @@ struct MainSplitView: View {
                         let resolved = apiClient.assets.first(where: { $0.id == asset.id }) ?? asset
                         selectedAsset = resolved
                         selectedAccessory = nil
+                        selectedLicense = nil
                         selectedUser = nil
                         selectedLocation = nil
                         selectedAssetDetailTab = 0
@@ -1218,12 +1320,7 @@ struct MainSplitView: View {
                 case .accessories:
                     ipadAccessoryList
                 case .licenses:
-                    ContentUnavailableView(
-                        L10n.string("tab_licenses"),
-                        systemImage: "doc.text.fill",
-                        description: Text(L10n.string("module_coming_soon"))
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ipadLicenseList
                 case .stock:
                     ContentUnavailableView(
                         stockSelectedSubmodule.localizedTitle,
@@ -1468,6 +1565,46 @@ struct MainSplitView: View {
             if apiClient.isConfigured {
                 isRefreshing = true
                 await apiClient.fetchPrimaryThenBackground()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
+    }
+
+    private var ipadLicenseList: some View {
+        List {
+            ForEach(filteredLicenses) { license in
+                let isSelected = selectedLicense?.id == license.id
+                Button {
+                    selectedLicense = license
+                } label: {
+                    LicenseCardView(license: license, useExplicitBackground: true)
+                        .overlay {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(.compact)
+        .listSectionSeparator(.hidden)
+        .overlay {
+            if filteredLicenses.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                ContentUnavailableView(L10n.string("no_licenses"), systemImage: "doc.text.fill")
+            }
+        }
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchLicenses()
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }

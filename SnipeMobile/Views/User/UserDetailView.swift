@@ -10,6 +10,7 @@ struct UserDetailView: View {
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
+    var onOpenLicense: ((License) -> Void)? = nil
     @State private var copyNotification: String?
     @State private var showCopyNotification = false
     @StateObject private var accessoryHistoryViewModel = HistoryViewModel()
@@ -17,6 +18,7 @@ struct UserDetailView: View {
     @State private var userActivity: [Activity] = []
     @State private var assetDetailTab: Int = 0
     @State private var detailImageURL: String? = nil
+    @State private var userLicenses: [License] = []
 
     private var currentUser: User {
         apiClient.users.first { $0.id == user.id } ?? user
@@ -161,6 +163,53 @@ struct UserDetailView: View {
         .cornerRadius(12)
     }
 
+    private func assignedToStyleLicenseRow(license: License) -> some View {
+        HStack {
+            Image(systemName: "doc.text.fill")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(license.decodedName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if !license.decodedManufacturerName.isEmpty {
+                    Text(license.decodedManufacturerName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    @ViewBuilder
+    private var assignedLicensesSection: some View {
+        if !userLicenses.isEmpty {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(L10n.string("tab_licenses"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                VStack(spacing: 12) {
+                    ForEach(userLicenses) { license in
+                        Button {
+                            onOpenLicense?(license)
+                        } label: {
+                            assignedToStyleLicenseRow(license: license)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -264,6 +313,8 @@ struct UserDetailView: View {
                             }
                             .padding(.horizontal)
                         }
+
+                        assignedLicensesSection
                     }
                     .padding(.bottom, 1) // Prevents scrollview from overlapping tab bar
                     .padding(.top, 16)
@@ -344,6 +395,9 @@ struct UserDetailView: View {
                 } else {
                     detailImageURL = nil
                 }
+            }
+            Task {
+                userLicenses = await apiClient.fetchUserLicenses(userId: user.id)
             }
         }
     }

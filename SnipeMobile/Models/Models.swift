@@ -556,6 +556,181 @@ struct AccessoriesResponse: Codable {
     let rows: [Accessory]
 }
 
+struct License: Identifiable, Codable, Hashable {
+    let id: Int
+    let name: String
+    let productKey: String?
+    let licenseName: String?
+    let licenseEmail: String?
+    let serial: String?
+    let seats: Int?
+    let freeSeatsCount: Int?
+    let remaining: Int?
+    let minAmt: Int?
+    let reassignable: Bool?
+    let maintained: Bool?
+    let category: Category?
+    let manufacturer: Manufacturer?
+    let supplier: Supplier?
+    let company: Company?
+    let notes: String?
+    let orderNumber: String?
+    let purchaseOrder: String?
+    let purchaseCost: String?
+    let purchaseDate: DateInfo?
+    let expirationDate: DateInfo?
+    let terminationDate: DateInfo?
+    let createdAt: DateInfo?
+    let updatedAt: DateInfo?
+
+    let decodedName: String
+    let decodedLicenseName: String
+    let decodedLicenseEmail: String
+    let decodedManufacturerName: String
+    let decodedCategoryName: String
+    let decodedSupplierName: String
+    let decodedCompanyName: String
+    let decodedNotes: String
+    let decodedProductKey: String
+
+    init(
+        id: Int,
+        name: String,
+        productKey: String? = nil,
+        licenseName: String? = nil,
+        licenseEmail: String? = nil,
+        serial: String? = nil,
+        seats: Int? = nil,
+        freeSeatsCount: Int? = nil,
+        remaining: Int? = nil,
+        minAmt: Int? = nil,
+        reassignable: Bool? = nil,
+        maintained: Bool? = nil,
+        category: Category? = nil,
+        manufacturer: Manufacturer? = nil,
+        supplier: Supplier? = nil,
+        company: Company? = nil,
+        notes: String? = nil,
+        orderNumber: String? = nil,
+        purchaseOrder: String? = nil,
+        purchaseCost: String? = nil,
+        purchaseDate: DateInfo? = nil,
+        expirationDate: DateInfo? = nil,
+        terminationDate: DateInfo? = nil,
+        createdAt: DateInfo? = nil,
+        updatedAt: DateInfo? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.productKey = productKey
+        self.licenseName = licenseName
+        self.licenseEmail = licenseEmail
+        self.serial = serial
+        self.seats = seats
+        self.freeSeatsCount = freeSeatsCount
+        self.remaining = remaining
+        self.minAmt = minAmt
+        self.reassignable = reassignable
+        self.maintained = maintained
+        self.category = category
+        self.manufacturer = manufacturer
+        self.supplier = supplier
+        self.company = company
+        self.notes = notes
+        self.orderNumber = orderNumber
+        self.purchaseOrder = purchaseOrder
+        self.purchaseCost = purchaseCost
+        self.purchaseDate = purchaseDate
+        self.expirationDate = expirationDate
+        self.terminationDate = terminationDate
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.decodedName = HTMLDecoder.decode(name)
+        self.decodedLicenseName = HTMLDecoder.decode(licenseName ?? "")
+        self.decodedLicenseEmail = HTMLDecoder.decode(licenseEmail ?? "")
+        self.decodedManufacturerName = HTMLDecoder.decode(manufacturer?.name ?? "")
+        self.decodedCategoryName = HTMLDecoder.decode(category?.name ?? "")
+        self.decodedSupplierName = HTMLDecoder.decode(supplier?.name ?? "")
+        self.decodedCompanyName = HTMLDecoder.decode(company?.name ?? "")
+        self.decodedNotes = HTMLDecoder.decode(notes ?? "")
+        self.decodedProductKey = HTMLDecoder.decode(productKey ?? "")
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case productKey = "product_key"
+        case licenseName = "license_name"
+        case licenseEmail = "license_email"
+        case serial
+        case seats
+        case freeSeatsCount = "free_seats_count"
+        case remaining
+        case minAmt = "min_amt"
+        case reassignable, maintained
+        case category, manufacturer, supplier, company
+        case notes
+        case orderNumber = "order_number"
+        case purchaseOrder = "purchase_order"
+        case purchaseCost = "purchase_cost"
+        case purchaseDate = "purchase_date"
+        case expirationDate = "expiration_date"
+        case terminationDate = "termination_date"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    static func == (lhs: License, rhs: License) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+extension License {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(Int.self, forKey: .id)
+        let name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        let productKey = try? container.decodeIfPresent(String.self, forKey: .productKey)
+        let licenseName = try? container.decodeIfPresent(String.self, forKey: .licenseName)
+        let licenseEmail = try? container.decodeIfPresent(String.self, forKey: .licenseEmail)
+        let serial = try? container.decodeIfPresent(String.self, forKey: .serial)
+        let seats = try? container.decodeIfPresent(Int.self, forKey: .seats)
+        let freeSeatsCount = try? container.decodeIfPresent(Int.self, forKey: .freeSeatsCount)
+        let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
+        let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
+        let reassignable = try? container.decodeIfPresent(Bool.self, forKey: .reassignable)
+        let maintained = try? container.decodeIfPresent(Bool.self, forKey: .maintained)
+        let category = try? container.decodeIfPresent(Category.self, forKey: .category)
+        let manufacturer = try? container.decodeIfPresent(Manufacturer.self, forKey: .manufacturer)
+        let supplier = try? container.decodeIfPresent(Supplier.self, forKey: .supplier)
+        let company = try? container.decodeIfPresent(Company.self, forKey: .company)
+        let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+        let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
+        let purchaseOrder = try? container.decodeIfPresent(String.self, forKey: .purchaseOrder)
+        let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
+        let purchaseDate = try? container.decodeIfPresent(DateInfo.self, forKey: .purchaseDate)
+        let expirationDate = try? container.decodeIfPresent(DateInfo.self, forKey: .expirationDate)
+        let terminationDate = try? container.decodeIfPresent(DateInfo.self, forKey: .terminationDate)
+        let createdAt = try? container.decodeIfPresent(DateInfo.self, forKey: .createdAt)
+        let updatedAt = try? container.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
+
+        self.init(
+            id: id, name: name, productKey: productKey, licenseName: licenseName,
+            licenseEmail: licenseEmail, serial: serial, seats: seats,
+            freeSeatsCount: freeSeatsCount, remaining: remaining, minAmt: minAmt,
+            reassignable: reassignable, maintained: maintained, category: category,
+            manufacturer: manufacturer, supplier: supplier, company: company,
+            notes: notes, orderNumber: orderNumber, purchaseOrder: purchaseOrder,
+            purchaseCost: purchaseCost, purchaseDate: purchaseDate,
+            expirationDate: expirationDate, terminationDate: terminationDate,
+            createdAt: createdAt, updatedAt: updatedAt
+        )
+    }
+}
+
+struct LicensesResponse: Codable {
+    let total: Int?
+    let rows: [License]
+}
+
 struct CheckoutResponse: Codable {
     let status: String
     let messages: String

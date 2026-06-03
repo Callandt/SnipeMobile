@@ -10,6 +10,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var assets: [Asset] = []
     @Published var users: [User] = []
     @Published var accessories: [Accessory] = []
+    @Published var licenses: [License] = []
     @Published var locations: [Location] = []
     @Published var companies: [Company] = []
     @Published var manufacturers: [Manufacturer] = []
@@ -157,6 +158,7 @@ class SnipeITAPIClient: ObservableObject {
                 self.assets = []
                 self.users = []
                 self.accessories = []
+                self.licenses = []
                 self.locations = []
                 self.companies = []
                 self.manufacturers = []
@@ -196,6 +198,7 @@ class SnipeITAPIClient: ObservableObject {
         await fetchAssets()
         await fetchUsers()
         await fetchAccessories()
+        await fetchLicenses()
         await fetchLocations()
 
         await MainActor.run {
@@ -421,6 +424,358 @@ class SnipeITAPIClient: ObservableObject {
                 #endif
             }
         }
+    }
+
+    func fetchLicenses() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            await MainActor.run { errorMessage = "Configure the API settings first." }
+            return
+        }
+
+        do {
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/licenses",
+                as: License.self
+            ) else { return }
+            await MainActor.run {
+                self.licenses = rows
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Error fetching licenses: \(error.localizedDescription)"
+                #if DEBUG
+                print("Error details: \(error)")
+                #endif
+            }
+        }
+    }
+
+    /// Licenses assigned to a user. Returns full License objects (same shape as /api/v1/licenses rows).
+    func fetchUserLicenses(userId: Int) async -> [License] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/users/\(userId)/licenses") else { return [] }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return [] }
+            if let decoded = try? JSONDecoder().decode(LicensesResponse.self, from: data) {
+                return decoded.rows
+            }
+            return []
+        } catch {
+            return []
+        }
+    }
+
+    /// Licenses checked out to a hardware asset. The endpoint returns seat rows referencing the
+    /// parent license id; we resolve them against the cached licenses list (and fall back to a
+    /// fetch by id when needed).
+    func fetchAssetLicenses(assetId: Int) async -> [License] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/licenses") else { return [] }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return [] }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rows = json["rows"] as? [[String: Any]] else { return [] }
+
+            var ids: [Int] = []
+            var seen = Set<Int>()
+            for row in rows {
+                guard let licenseDict = row["license"] as? [String: Any],
+                      let id = licenseDict["id"] as? Int else { continue }
+                if seen.insert(id).inserted { ids.append(id) }
+            }
+
+            var results: [License] = []
+            for id in ids {
+                if let cached = self.licenses.first(where: { $0.id == id }) {
+                    results.append(cached)
+                } else if let fetched = await self.fetchLicenseDetails(licenseId: id) {
+                    results.append(fetched)
+                }
+            }
+            return results
+        } catch {
+            return []
+        }
+    }
+
+    func fetchLicenseDetails(licenseId: Int) async -> License? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else { return nil }
+
+            if let license = try? JSONDecoder().decode(License.self, from: data) {
+                return license
+            }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+
+            if let payload = json["payload"] as? [String: Any],
+               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+               let license = try? JSONDecoder().decode(License.self, from: payloadData) {
+                return license
+            }
+
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    struct LicenseSeatRow: Codable, Identifiable {
+        let id: Int
+        let licenseId: Int?
+        let assignedUser: AssignedTo?
+        let assignedAsset: LicenseSeatAsset?
+        let location: Location?
+        let userCanCheckin: Bool?
+        let userCanCheckout: Bool?
+        let reassignable: Bool?
+        /// True when the seat is permanently used (unreassignable_seat) or the license is inactive.
+        let disabled: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case licenseId = "license_id"
+            case assignedUser = "assigned_user"
+            case assignedAsset = "assigned_asset"
+            case location
+            case userCanCheckin = "user_can_checkin"
+            case userCanCheckout = "user_can_checkout"
+            case reassignable
+            case disabled
+        }
+    }
+
+    struct LicenseSeatAsset: Codable, Hashable {
+        let id: Int
+        let name: String?
+    }
+
+    func fetchLicenseSeats(licenseId: Int) async -> [LicenseSeatRow] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        do {
+            let rows = try await fetchAllPaginated(
+                path: "/api/v1/licenses/\(licenseId)/seats",
+                as: LicenseSeatRow.self
+            )
+            return rows ?? []
+        } catch {
+            #if DEBUG
+            // Silently ignore cancellations (happen when navigating away).
+            let nsError = error as NSError
+            let isCancelled = nsError.code == NSURLErrorCancelled || error is CancellationError
+            if !isCancelled {
+                print("fetchLicenseSeats error: \(error)")
+            }
+            #endif
+            return []
+        }
+    }
+
+    /// Assigns a license seat to a user (`assigned_to`) or asset (`asset_id`).
+    /// Returns nil on success, otherwise a user-facing error message.
+    func checkoutLicenseSeat(licenseId: Int, seatId: Int, userId: Int?, assetId: Int?, note: String?) async -> String? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
+        guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)/seats/\(seatId)") else {
+            return "Invalid URL."
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        // Send only one of assigned_to / asset_id (the `prohibits` rule rejects both being present).
+        var body: [String: Any] = [:]
+        if let userId { body["assigned_to"] = userId } else if let assetId { body["asset_id"] = assetId }
+        if let note, !note.isEmpty { body["note"] = note }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return "No response." }
+
+            #if DEBUG
+            let bodyPreview = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
+            let resPreview = String(data: data.prefix(600), encoding: .utf8) ?? ""
+            print("[SnipeMobile] PUT /licenses/\(licenseId)/seats/\(seatId) (checkout) sent=\(bodyPreview) status=\(http.statusCode) body=\(resPreview)")
+            #endif
+
+            guard (200...299).contains(http.statusCode) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                return "HTTP \(http.statusCode): \(preview)"
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let status = json["status"] as? String, status == "error" {
+                return Self.extractApiErrorMessage(from: json) ?? "Check-out failed."
+            }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Creates a new license. Returns the new id on success, otherwise an error message via `lastApiMessage`.
+    func createLicense(body: [String: Any]) async -> (success: Bool, id: Int?, message: String?) {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return (false, nil, "API not configured.") }
+        guard let url = URL(string: "\(baseURL)/api/v1/licenses") else {
+            return (false, nil, "Invalid URL.")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return (false, nil, "No response.") }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+            guard (200...299).contains(http.statusCode) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                return (false, nil, "HTTP \(http.statusCode): \(preview)")
+            }
+            if let json, let status = json["status"] as? String, status == "error" {
+                if let messages = json["messages"] as? [String: Any],
+                   let first = messages.values.first as? [Any], let msg = first.first as? String {
+                    return (false, nil, msg)
+                }
+                if let messages = json["messages"] as? [String: Any],
+                   let first = messages.values.first as? String {
+                    return (false, nil, first)
+                }
+                return (false, nil, (json["messages"] as? String) ?? "Create failed.")
+            }
+            let newId = (json?["payload"] as? [String: Any])?["id"] as? Int
+            Task { await self.fetchLicenses() }
+            return (true, newId, nil)
+        } catch {
+            return (false, nil, error.localizedDescription)
+        }
+    }
+
+    /// Updates the editable fields of a license. Returns nil on success, otherwise an error message.
+    func updateLicense(licenseId: Int, body: [String: Any]) async -> String? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
+        guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)") else {
+            return "Invalid URL."
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return "No response." }
+            guard (200...299).contains(http.statusCode) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                return "HTTP \(http.statusCode): \(preview)"
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let status = json["status"] as? String, status == "error" {
+                if let messages = json["messages"] as? [String: Any],
+                   let first = messages.values.first as? [Any], let msg = first.first as? String {
+                    return msg
+                }
+                if let messages = json["messages"] as? [String: Any],
+                   let first = messages.values.first as? String {
+                    return first
+                }
+                return (json["messages"] as? String) ?? "Save failed."
+            }
+            // Refresh the cached list in the background.
+            Task { await self.fetchLicenses() }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Frees a license seat. Returns nil on success, otherwise an error message.
+    func checkinLicenseSeat(licenseId: Int, seatId: Int) async -> String? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
+        guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)/seats/\(seatId)") else {
+            return "Invalid URL."
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let body: [String: Any] = ["assigned_to": NSNull(), "asset_id": NSNull()]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return "No response." }
+
+            #if DEBUG
+            let preview = String(data: data.prefix(600), encoding: .utf8) ?? ""
+            print("[SnipeMobile] PUT /licenses/\(licenseId)/seats/\(seatId) status=\(http.statusCode) body=\(preview)")
+            #endif
+
+            guard (200...299).contains(http.statusCode) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                return "HTTP \(http.statusCode): \(preview)"
+            }
+            // Snipe-IT returns 200 with status="error" on validation failures.
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let status = json["status"] as? String, status == "error" {
+                return Self.extractApiErrorMessage(from: json) ?? "Check-in failed."
+            }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Pulls a user-facing message out of a Snipe-IT error payload.
+    /// `messages` may be a plain string, a dict of field → string, or field → [string].
+    static func extractApiErrorMessage(from json: [String: Any]) -> String? {
+        if let str = json["messages"] as? String, !str.isEmpty { return str }
+        if let dict = json["messages"] as? [String: Any] {
+            for value in dict.values {
+                if let s = value as? String, !s.isEmpty { return s }
+                if let arr = value as? [Any], let s = arr.first as? String, !s.isEmpty { return s }
+            }
+        }
+        if let str = json["error"] as? String, !str.isEmpty { return str }
+        return nil
     }
 
     func fetchLocations() async {

@@ -12,11 +12,12 @@ struct AccessoryDetailView: View {
     var onOpenLocation: ((Location) -> Void)? = nil
     @State private var checkedOutRows: [SnipeITAPIClient.AccessoryCheckedOutRow] = []
     @State private var isLoading = true
-    @State private var showCheckinSheet: Bool = false
     @State private var showCheckoutSheet: Bool = false
     @State private var showEditSheet: Bool = false
     @State private var checkinTarget: SnipeITAPIClient.AccessoryCheckedOutRow? = nil
-    @State private var checkinResult: String? = nil
+    @State private var checkinErrorMessage: String?
+    @State private var showCheckinError = false
+    @State private var isCheckingIn = false
     @State private var detailImageURL: String? = nil
 
     /// From apiClient or passed in.
@@ -152,7 +153,6 @@ struct AccessoryDetailView: View {
                         let active = checkedOutRows.filter { $0.availableActions?.checkin == true }
                         if let first = active.first {
                             checkinTarget = first
-                            showCheckinSheet = true
                         }
                     }) {
                         Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
@@ -248,40 +248,51 @@ struct AccessoryDetailView: View {
                 }
             })
         }
-        .sheet(isPresented: $showCheckinSheet) {
-            VStack(spacing: 24) {
-                Text("Check In Accessory")
-                    .font(.title2).bold()
-                    .padding(.top, 24)
-                if let target = checkinTarget {
-                    Text("Do you want to check in this accessory from \(target.assignedTo?.name ?? "")?")
-                        .multilineTextAlignment(.center)
-                }
-                HStack(spacing: 20) {
-                    Button("Cancel") { showCheckinSheet = false }
-                        .foregroundColor(.secondary)
-                    Button("Check In") {
-                        Task {
-                            let success = await checkinAccessory(checkedoutId: checkinTarget?.id)
-                            checkinResult = success ? "Accessory checked in!" : "Check-in failed."
-                            showCheckinSheet = false
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.green)
-                    .cornerRadius(8)
-                }
-                if let result = checkinResult {
-                    Text(result)
-                        .foregroundColor(result.contains("failed") ? .red : .green)
-                        .padding(.top, 8)
-                }
-                Spacer()
+        .confirmationDialog(
+            L10n.string("checkin_confirm_title"),
+            isPresented: Binding(get: { checkinTarget != nil }, set: { if !$0 { checkinTarget = nil } }),
+            titleVisibility: .visible,
+            presenting: checkinTarget
+        ) { _ in
+            Button(L10n.string("check_in"), role: .destructive) {
+                Task { await performCheckin() }
             }
-            .padding()
+            Button(L10n.string("cancel"), role: .cancel) {}
+        } message: { row in
+            Text(checkinConfirmMessage(for: row))
         }
+        .alert(L10n.string("checkin_failed"), isPresented: $showCheckinError) {
+            Button(L10n.string("ok"), role: .cancel) {}
+        } message: {
+            Text(checkinErrorMessage ?? "")
+        }
+        .overlay {
+            if isCheckingIn {
+                ProgressView()
+                    .padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private func checkinConfirmMessage(for row: SnipeITAPIClient.AccessoryCheckedOutRow) -> String {
+        let name = row.assignedTo?.name ?? ""
+        if name.isEmpty {
+            return L10n.string("checkin_generic_confirm_message")
+        }
+        return String(format: L10n.string("checkin_user_confirm_message"), name)
+    }
+
+    private func performCheckin() async {
+        guard let target = checkinTarget else { return }
+        checkinTarget = nil
+        isCheckingIn = true
+        let success = await checkinAccessory(checkedoutId: target.id)
+        if !success {
+            checkinErrorMessage = L10n.string("checkin_failed")
+            showCheckinError = true
+        }
+        isCheckingIn = false
     }
 
     @ViewBuilder
@@ -347,7 +358,6 @@ struct AccessoryDetailView: View {
                                 onOpenLocation?(fullLocation)
                             } else {
                                 checkinTarget = row
-                                showCheckinSheet = true
                             }
                         }) {
                             if row.assignedTo?.type == "user",
@@ -407,9 +417,10 @@ struct AccessoryDetailView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(12)
                         .contextMenu {
-                            Button(L10n.string("check_in")) {
+                            Button(role: .destructive) {
                                 checkinTarget = row
-                                showCheckinSheet = true
+                            } label: {
+                                Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
                             }
                         }
                     }

@@ -9,7 +9,9 @@ struct AssetDetailView: View {
     var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
+    var onOpenLicense: ((License) -> Void)? = nil
     @State private var userId: String = ""
+    @State private var assetLicenses: [License] = []
     @Environment(\.dismiss) var dismiss
     @State private var hasLoggedAppearance = false
     @State private var copyNotification: String?
@@ -304,6 +306,9 @@ struct AssetDetailView: View {
                     detailImageURL = image
                 }
             }
+            Task {
+                assetLicenses = await apiClient.fetchAssetLicenses(assetId: currentAsset.id)
+            }
             selectedModelId = currentAsset.model?.id ?? 0
             // Date init
             let formatter = DateFormatter()
@@ -575,6 +580,23 @@ struct AssetDetailView: View {
                             }
                             .padding(.top, 5)
                         }
+
+                        if !assetLicenses.isEmpty {
+                            VStack(alignment: .leading, spacing: 15) {
+                                Text(L10n.string("tab_licenses"))
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                VStack(spacing: 12) {
+                                    ForEach(assetLicenses) { license in
+                                        Button { onOpenLicense?(license) } label: {
+                                            assetLicenseRow(license: license)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.top, 5)
+                        }
                         // Date fields
                         let hasAnyDate =
                             (currentAsset.purchaseDate?.formatted?.isEmpty == false) ||
@@ -675,13 +697,53 @@ struct AssetDetailView: View {
         value.replacingOccurrences(of: ".", with: "")
     }
 
+    private func assetLicenseRow(license: License) -> some View {
+        HStack {
+            Image(systemName: "doc.text.fill")
+                .foregroundStyle(.tertiary)
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(license.decodedName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if !license.decodedManufacturerName.isEmpty {
+                    Text(license.decodedManufacturerName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
     @ViewBuilder
     private func copyableDetailRow(label: String, value: String, copyValue: String? = nil) -> some View {
         let toCopy = copyValue ?? value
-        HStack {
-            Text(label).bold()
-            Spacer()
-            Text(value)
+        // No spaces (serial/email/key): truncate instead of ugly wrap.
+        let isSingleToken = !value.contains(" ")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Text(label).bold()
+                Spacer(minLength: 8)
+                Text(value)
+                    .lineLimit(1)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).bold()
+                Text(value)
+                    .lineLimit(isSingleToken ? 1 : nil)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
             Button(action: {
                 UIPasteboard.general.string = toCopy
                 withAnimation {
@@ -689,9 +751,7 @@ struct AssetDetailView: View {
                     showCopyNotification = true
                 }
             }) {
-                Image(systemName: "doc.on.doc")
-                    .foregroundColor(.blue)
-                    .imageScale(.small)
+                Label(L10n.string("copy"), systemImage: "doc.on.doc")
             }
         }
     }

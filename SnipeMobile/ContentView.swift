@@ -174,6 +174,7 @@ struct ContentView: View {
     @State private var userDetailTab: Int = 0
     @State private var locationDetailTab: Int = 0
     @State private var accessoryDetailTab: Int = 0
+    @State private var licenseDetailTab: Int = 0
     @EnvironmentObject var appSettings: AppSettings
     @EnvironmentObject private var auditNotificationRouter: AuditNotificationRouter
     @State private var auditListFilter: AuditListFilter = .all
@@ -186,9 +187,11 @@ struct ContentView: View {
     @State private var pendingAssetToOpen: Asset?
     @State private var pendingLocationToOpen: Location?
     @State private var pendingAccessoryToOpen: Accessory?
+    @State private var pendingLicenseToOpen: License?
     @State private var returnToTab: MainTab?
     @State private var hardwarePath = NavigationPath()
     @State private var accessoriesPath = NavigationPath()
+    @State private var licensesPath = NavigationPath()
     @State private var directoryPath = NavigationPath()
     /// Detail on stack. Tab bar stays visible.
     @State private var isDetailViewActive = false
@@ -390,7 +393,8 @@ struct ContentView: View {
                 showTodayOnlyOverride: $showTodayOnlyOverride,
                 onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; hardwarePath = NavigationPath() } },
                 onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .hardware },
-                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .hardware }
+                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .hardware },
+                onOpenLicense: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .hardware }
             )
         case .accessories:
             AccessoriesTab(
@@ -412,8 +416,19 @@ struct ContentView: View {
             )
         case .licenses:
             LicensesTab(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                licenseDetailTab: $licenseDetailTab,
                 showingSettings: $showingSettings,
-                showingScanner: $showingScanner
+                showingScanner: $showingScanner,
+                navigationPath: $licensesPath,
+                isDetailViewActive: $isDetailViewActive,
+                pendingLicenseToOpen: $pendingLicenseToOpen,
+                returnToTab: $returnToTab,
+                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; licensesPath = NavigationPath() } },
+                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .licenses },
+                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .licenses }
             )
         case .stock:
             StockTab(
@@ -437,6 +452,7 @@ struct ContentView: View {
                 onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; directoryPath = NavigationPath() } },
                 onOpenAssetFromUser: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory },
                 onOpenAccessoryFromUser: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .directory },
+                onOpenLicenseFromUser: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .directory },
                 onOpenLocationFromUser: { pendingLocationToOpen = $0 },
                 onOpenUserFromLocation: { pendingUserToOpen = $0 },
                 onOpenAssetFromLocation: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory }
@@ -676,6 +692,7 @@ struct HardwareTab: View {
     var onBackToPreviousTab: () -> Void
     var onOpenUser: (User) -> Void
     var onOpenLocation: (Location) -> Void
+    var onOpenLicense: (License) -> Void
 
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
@@ -904,7 +921,7 @@ struct HardwareTab: View {
             }
         }
         .navigationDestination(for: Asset.self) { asset in
-            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation)
+            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation, onOpenLicense: onOpenLicense)
         }
         .alert(L10n.string("delete_asset_confirm_title"), isPresented: $showDeleteConfirm) {
             Button(L10n.string("cancel"), role: .cancel) {
@@ -1198,25 +1215,38 @@ struct AccessoriesTab: View {
     }
 }
 
-// MARK: - Licenses Tab (placeholder)
+// MARK: - Licenses Tab
 
 struct LicensesTab: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var licenseDetailTab: Int
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
-    @State private var searchText: String = ""
-    @State private var showingComingSoon = false
+    @Binding var navigationPath: NavigationPath
+    @Binding var isDetailViewActive: Bool
+    @Binding var pendingLicenseToOpen: License?
+    @Binding var returnToTab: MainTab?
+    var onBackToPreviousTab: () -> Void
+    var onOpenUser: (User) -> Void
+    var onOpenAsset: (Asset) -> Void
+
+    @State private var showingAddLicense = false
 
     var body: some View {
-        NavigationStack {
-            ContentUnavailableView(
-                L10n.string("tab_licenses"),
-                systemImage: "doc.text.fill",
-                description: Text(L10n.string("module_coming_soon"))
+        NavigationStack(path: $navigationPath) {
+            LicensesContent(
+                apiClient: apiClient,
+                searchText: $searchText,
+                isRefreshing: $isRefreshing,
+                navigationPath: $navigationPath
             )
+            .onAppear { isDetailViewActive = false }
             .navigationTitle(L10n.string("tab_licenses"))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingComingSoon = true } label: {
+                    Button { showingAddLicense = true } label: {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(L10n.string("add_license"))
@@ -1224,11 +1254,122 @@ struct LicensesTab: View {
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
             }
             .searchable(text: $searchText, prompt: L10n.string("search_licenses"))
+            .refreshable {
+                if apiClient.isConfigured {
+                    isRefreshing = true
+                    await apiClient.fetchLicenses()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    isRefreshing = false
+                }
+            }
+            .navigationDestination(for: License.self) { license in
+                LicenseDetailView(
+                    license: license,
+                    apiClient: apiClient,
+                    selectedTab: $licenseDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    returnToTab: returnToTab,
+                    onBackToPrevious: onBackToPreviousTab,
+                    onOpenUser: onOpenUser,
+                    onOpenAsset: onOpenAsset
+                )
+            }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
-                Button(L10n.string("ok"), role: .cancel) { }
-            } message: {
-                Text(L10n.string("module_coming_soon"))
+            .sheet(isPresented: $showingAddLicense) {
+                AddLicenseSheet(
+                    apiClient: apiClient,
+                    isPresented: $showingAddLicense,
+                    onCreated: { newId in
+                        Task {
+                            if let newId,
+                               let detailed = await apiClient.fetchLicenseDetails(licenseId: newId) {
+                                await MainActor.run {
+                                    navigationPath.append(detailed)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        }
+        .onChange(of: pendingLicenseToOpen) { _, new in
+            if let license = new {
+                navigationPath.append(license)
+                pendingLicenseToOpen = nil
+            }
+        }
+    }
+}
+
+private struct LicensesContent: View {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var searchText: String
+    @Binding var isRefreshing: Bool
+    @Binding var navigationPath: NavigationPath
+
+    var filteredLicenses: [License] {
+        if searchText.isEmpty { return apiClient.licenses }
+        let needle = searchText.lowercased()
+        return apiClient.licenses.filter {
+            $0.decodedName.lowercased().contains(needle) ||
+            $0.decodedManufacturerName.lowercased().contains(needle) ||
+            $0.decodedCategoryName.lowercased().contains(needle) ||
+            $0.decodedLicenseName.lowercased().contains(needle) ||
+            $0.decodedLicenseEmail.lowercased().contains(needle)
+        }
+    }
+
+    var body: some View {
+        Group {
+            if !apiClient.isConfigured {
+                ContentUnavailableView(
+                    L10n.string("no_data_yet"),
+                    systemImage: "link.badge.plus",
+                    description: Text(L10n.string("configure_api_short"))
+                )
+            } else if apiClient.isLoading && !isRefreshing {
+                ProgressView(L10n.string("loading_licenses"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apiClient.errorMessage != nil {
+                ScrollView {
+                    ContentUnavailableView(L10n.string("error"), systemImage: "exclamationmark.triangle", description: Text(apiClient.errorMessage ?? ""))
+                        .frame(minHeight: 400)
+                }
+            } else {
+                List {
+                    Section {
+                        HStack {
+                            Label("\(apiClient.licenses.count)", systemImage: "doc.text.fill")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
+
+                    Section {
+                        ForEach(filteredLicenses) { license in
+                            Button {
+                                navigationPath.append(license)
+                            } label: {
+                                LicenseCardView(license: license)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .listRowBackground(Color.clear)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(.compact)
+                .listSectionSeparator(.hidden)
+                .overlay {
+                    if filteredLicenses.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                        ContentUnavailableView(L10n.string("no_licenses"), systemImage: "doc.text.fill")
+                    }
+                }
             }
         }
     }
@@ -1443,6 +1584,7 @@ struct DirectoryTab: View {
     var onBackToPreviousTab: () -> Void
     var onOpenAssetFromUser: (Asset) -> Void
     var onOpenAccessoryFromUser: (Accessory) -> Void
+    var onOpenLicenseFromUser: (License) -> Void
     var onOpenLocationFromUser: (Location) -> Void
     var onOpenUserFromLocation: (User) -> Void
     var onOpenAssetFromLocation: (Asset) -> Void
@@ -1512,7 +1654,7 @@ struct DirectoryTab: View {
             .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
                 Button(L10n.string("ok"), role: .cancel) { }
             } message: {
-                Text(L10n.string("add_coming_soon"))
+                Text(L10n.string("module_coming_soon"))
             }
             .refreshable {
                 if apiClient.isConfigured {
@@ -1523,7 +1665,7 @@ struct DirectoryTab: View {
                 }
             }
             .navigationDestination(for: User.self) { user in
-                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser)
+                UserDetailView(user: user, apiClient: apiClient, selectedTab: $userDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser, onOpenLicense: onOpenLicenseFromUser)
             }
             .navigationDestination(for: Location.self) { location in
                 LocationDetailView(location: location, apiClient: apiClient, selectedTab: $locationDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUserFromLocation, onOpenAsset: onOpenAssetFromLocation)
