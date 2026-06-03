@@ -210,6 +210,7 @@ struct AssetDetailView: View {
             Picker("Details", selection: $selectedTab) {
                 Text(L10n.string("details")).tag(0)
                 Text(L10n.string("history")).tag(1)
+                Text(L10n.string("maintenance")).tag(2)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
@@ -218,8 +219,10 @@ struct AssetDetailView: View {
 
             if selectedTab == 0 {
                 detailsView
-            } else {
+            } else if selectedTab == 1 {
                 HistoryView(itemType: "asset", itemId: currentAsset.id, apiClient: apiClient)
+            } else {
+                MaintenanceTab(assetId: currentAsset.id, apiClient: apiClient)
             }
             Spacer(minLength: 0)
             HStack(spacing: 12) {
