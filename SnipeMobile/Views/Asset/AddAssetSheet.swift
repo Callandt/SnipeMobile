@@ -24,6 +24,7 @@ struct AddAssetSheet: View {
     @State private var hasEolDate = false
     @State private var warrantyMonths = ""
     @State private var byod = false
+    @State private var selectedImage: UIImage?
     @State private var customFields: [String: String] = [:]
     @State private var displayedFieldDefinitions: [SnipeITAPIClient.FieldDefinition] = []
     @State private var isSaving = false
@@ -59,6 +60,7 @@ struct AddAssetSheet: View {
             Form {
                 generalSection
                 purchaseSection
+                AssetPhotoSection(selectedImage: $selectedImage)
                 notesSection
                 customFieldsSection
             }
@@ -388,7 +390,7 @@ struct AddAssetSheet: View {
             #if DEBUG
             print("AddAssetSheet.saveAsset: model_id=\(selectedModelId), status_id=\(selectedStatusId)")
             #endif
-            let success = await apiClient.createAsset(req)
+            let success = await apiClient.createAsset(req, image: selectedImage)
             if success {
                 // Already inserted in memory by createAsset; sync the rest in the
                 // background so the sheet can close right away.

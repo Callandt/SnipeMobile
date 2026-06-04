@@ -21,6 +21,7 @@ struct UserEditSheet: View {
 
     @State private var selectedCompanyId: Int = 0
     @State private var selectedLocationId: Int = 0
+    @State private var selectedGroupIds: Set<Int> = []
 
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -109,6 +110,13 @@ struct UserEditSheet: View {
                     emptyOption: (0, L10n.string("choose_location"))
                 )
             }
+            if !apiClient.groups.isEmpty {
+                MultiSelectPickerRow(
+                    title: L10n.string("groups"),
+                    items: apiClient.groups.map { (value: $0.id, label: $0.decodedName) },
+                    selection: $selectedGroupIds
+                )
+            }
         }
     }
 
@@ -118,9 +126,11 @@ struct UserEditSheet: View {
             SecureField(L10n.string("new_password_optional"), text: $password)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
+                .textContentType(.newPassword)
             SecureField(L10n.string("password_confirmation"), text: $passwordConfirmation)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
+                .textContentType(.newPassword)
         }
     }
 
@@ -145,11 +155,12 @@ struct UserEditSheet: View {
         activated = user.activated ?? true
         selectedCompanyId = user.company?.id ?? 0
         selectedLocationId = user.location?.id ?? 0
+        selectedGroupIds = Set(user.groups.map { $0.id })
 
         if apiClient.companies.isEmpty { Task { await apiClient.fetchCompanies() } }
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }
+        if apiClient.groups.isEmpty { Task { await apiClient.fetchGroups() } }
 
-        // Pull fresh details so fields not present in the list payload are populated.
         Task {
             if let detailed = await apiClient.fetchUserDetails(userId: user.id) {
                 await MainActor.run {
@@ -163,6 +174,7 @@ struct UserEditSheet: View {
                     if let act = detailed.activated { activated = act }
                     if selectedCompanyId == 0, let cid = detailed.company?.id { selectedCompanyId = cid }
                     if selectedLocationId == 0, let lid = detailed.location?.id { selectedLocationId = lid }
+                    if selectedGroupIds.isEmpty { selectedGroupIds = Set(detailed.groups.map { $0.id }) }
                 }
             }
         }
@@ -190,6 +202,7 @@ struct UserEditSheet: View {
         ]
         body["company_id"] = selectedCompanyId > 0 ? selectedCompanyId : NSNull()
         body["location_id"] = selectedLocationId > 0 ? selectedLocationId : NSNull()
+        body["groups"] = Array(selectedGroupIds)
         if !password.isEmpty {
             body["password"] = password
             body["password_confirmation"] = passwordConfirmation

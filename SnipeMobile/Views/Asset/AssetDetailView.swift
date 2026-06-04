@@ -57,6 +57,7 @@ struct AssetDetailView: View {
     @State private var selectedCheckoutUserId: Int? = nil
     @State private var showCheckoutSheet = false
     @State private var detailImageURL: String? = nil
+    @State private var imageDisplayToken = UUID()
     @State private var ephemeralNotice: EphemeralNotice?
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
 
@@ -66,18 +67,34 @@ struct AssetDetailView: View {
     }
 
     private var resolvedImageURL: URL? {
-        let rawValue = (detailImageURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-            ? detailImageURL!
-            : (currentAsset.image?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
-        guard !rawValue.isEmpty else { return nil }
+        let fromCache = currentAsset.image?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fromDetail = detailImageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // Cache first; detail fetch may add image URL.
+        let rawValue = fromCache.isEmpty ? fromDetail : fromCache
+        let cacheBuster = currentAsset.updatedAt?.datetime ?? currentAsset.updatedAt?.date
+        return Self.snipeImageURL(baseURL: apiClient.baseURL, path: rawValue, cacheBuster: cacheBuster)
+    }
 
-        if let absolute = URL(string: rawValue), absolute.scheme != nil {
-            return absolute
+    private static func snipeImageURL(baseURL: String, path: String, cacheBuster: String?) -> URL? {
+        guard !path.isEmpty else { return nil }
+        let base: URL?
+        if let absolute = URL(string: path), absolute.scheme != nil {
+            base = absolute
+        } else if path.hasPrefix("/") {
+            base = URL(string: "\(baseURL)\(path)")
+        } else {
+            base = nil
         }
-        if rawValue.hasPrefix("/") {
-            return URL(string: "\(apiClient.baseURL)\(rawValue)")
+        guard let base else { return nil }
+        guard let cacheBuster, !cacheBuster.isEmpty,
+              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return base
         }
-        return nil
+        var query = components.queryItems ?? []
+        query.removeAll { $0.name == "v" }
+        query.append(URLQueryItem(name: "v", value: cacheBuster))
+        components.queryItems = query
+        return components.url ?? base
     }
 
     private var assignedUser: User? {
@@ -376,6 +393,11 @@ struct AssetDetailView: View {
         .sheet(isPresented: $showEditSheet) {
             editSheet
         }
+        .onChange(of: showEditSheet) { _, isShowing in
+            if !isShowing {
+                Task { await refreshDetailImage() }
+            }
+        }
         .sheet(isPresented: $showCheckoutSheet) {
             AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: {
                 presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
@@ -392,6 +414,17 @@ struct AssetDetailView: View {
             if !newValue, selectedTab == 2 { selectedTab = 0 }
         }
         .ephemeralNotice($ephemeralNotice)
+    }
+
+    private func refreshDetailImage() async {
+        guard let full = await apiClient.fetchHardwareDetails(assetId: currentAsset.id) else { return }
+        apiClient.applyUpdatedAsset(full)
+        if let image = full.image?.trimmingCharacters(in: .whitespacesAndNewlines), !image.isEmpty {
+            detailImageURL = image
+        } else {
+            detailImageURL = nil
+        }
+        imageDisplayToken = UUID()
     }
 
     private func reloadAssignedRelations() async {
@@ -498,6 +531,7 @@ struct AssetDetailView: View {
                                         EmptyView()
                                     }
                                 }
+                                .id(imageDisplayToken)
                             }
                             .padding()
                             .background(Color(.systemGray6))

@@ -100,6 +100,7 @@ struct LicenseDetailView: View {
                 license: currentLicense,
                 isPresented: $showEditSheet,
                 onSuccess: {
+                    fullLicense = nil
                     Task { await loadDetail() }
                 }
             )

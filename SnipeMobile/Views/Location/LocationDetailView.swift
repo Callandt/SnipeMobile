@@ -15,6 +15,7 @@ struct LocationDetailView: View {
     @State private var locationAssets: [Asset] = []
     @State private var isLoadingAccessories = false
     @State private var isLoadingAssets = false
+    @State private var hasLoadedAssignedItems = false
 
     // Users at this location.
     private var usersAtLocation: [User] {
@@ -25,17 +26,77 @@ struct LocationDetailView: View {
         apiClient.locations.first { $0.id == location.id } ?? location
     }
 
+    private func cleaned(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    private var detailRows: [(label: String, value: String)] {
+        let loc = currentLocation
+        var rows: [(String, String)] = []
+        if let parentName = cleaned(loc.parent?.name) {
+            rows.append((L10n.string("parent_location"), HTMLDecoder.decode(parentName)))
+        }
+        if let address = cleaned(loc.address) {
+            rows.append((L10n.string("address"), address))
+        }
+        if let address2 = cleaned(loc.address2) {
+            rows.append((L10n.string("address2"), address2))
+        }
+        if let zip = cleaned(loc.zip) {
+            rows.append((L10n.string("zip"), zip))
+        }
+        if let city = cleaned(loc.city) {
+            rows.append((L10n.string("city"), city))
+        }
+        if let state = cleaned(loc.state) {
+            rows.append((L10n.string("state"), state))
+        }
+        if let country = cleaned(loc.country) {
+            rows.append((L10n.string("country"), country))
+        }
+        if let currency = cleaned(loc.currency) {
+            rows.append((L10n.string("currency"), currency))
+        }
+        return rows
+    }
+
+    private var assetsTabTitle: String {
+        hasLoadedAssignedItems
+            ? L10n.string("assets_count", locationAssets.count)
+            : L10n.string("tab_assets")
+    }
+
+    private var accessoriesTabTitle: String {
+        hasLoadedAssignedItems
+            ? L10n.string("accessories_count", locationAccessories.count)
+            : L10n.string("tab_accessories")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            LocationCardView(location: currentLocation, useExplicitBackground: false)
-                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            if !detailRows.isEmpty {
+                Text(L10n.string("location_details"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
+
+                VStack(alignment: .leading, spacing: 15) {
+                    ForEach(detailRows, id: \.label) { row in
+                        copyableDetailRow(label: row.label, value: row.value)
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
                 .padding(.horizontal)
-                .padding(.top, 12)
+            }
 
             Picker("Select a tab", selection: $selectedTab) {
                 Text(L10n.string("users_count", usersAtLocation.count)).tag(0)
-                Text(L10n.string("assets_count", locationAssets.count)).tag(1)
-                Text(L10n.string("accessories_count", locationAccessories.count)).tag(2)
+                Text(assetsTabTitle).tag(1)
+                Text(accessoriesTabTitle).tag(2)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
@@ -125,7 +186,7 @@ struct LocationDetailView: View {
         .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text(location.decodedName)
+                Text(currentLocation.decodedName)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
@@ -160,26 +221,61 @@ struct LocationDetailView: View {
                 location: currentLocation,
                 isPresented: $showEditSheet,
                 onSuccess: {
-                    Task { await apiClient.fetchLocations() }
+                    Task {
+                        await apiClient.fetchLocations()
+                        await reloadAssignedItems()
+                    }
                 }
             )
         }
         .task(id: location.id) {
             selectedTab = 0
+            hasLoadedAssignedItems = false
             DispatchQueue.main.async { isDetailViewActive = true }
             defer { isDetailViewActive = false }
             await reloadAssignedItems()
         }
     }
 
+    @ViewBuilder
+    private func copyableDetailRow(label: String, value: String) -> some View {
+        let isSingleToken = !value.contains(" ")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Text(label).bold()
+                Spacer(minLength: 8)
+                Text(value)
+                    .lineLimit(1)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).bold()
+                Text(value)
+                    .lineLimit(isSingleToken ? 1 : nil)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button(action: {
+                UIPasteboard.general.string = value
+            }) {
+                Label(L10n.string("copy"), systemImage: "doc.on.doc")
+            }
+        }
+    }
+
     private func reloadAssignedItems() async {
         isLoadingAssets = true
         isLoadingAccessories = true
+        defer {
+            isLoadingAssets = false
+            isLoadingAccessories = false
+            hasLoadedAssignedItems = true
+        }
         async let assets = apiClient.fetchLocationAssets(locationId: location.id)
         async let accessories = apiClient.fetchLocationAccessories(locationId: location.id)
         locationAssets = await assets
         locationAccessories = await accessories
-        isLoadingAssets = false
-        isLoadingAccessories = false
     }
 }

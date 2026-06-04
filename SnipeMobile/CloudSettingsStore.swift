@@ -34,7 +34,8 @@ private let lastSeenWipeAtKey = "lastSeenWipeAt"
 final class CloudSettingsStore {
     static let shared = CloudSettingsStore()
 
-    private let store = NSUbiquitousKeyValueStore.default
+    // Lazy: no KVS touch without iCloud (avoids "No account" log spam).
+    private lazy var store = NSUbiquitousKeyValueStore.default
     private let defaults = UserDefaults.standard
 
     /// iCloud sync on. Default true.
@@ -42,7 +43,6 @@ final class CloudSettingsStore {
         defaults.object(forKey: useCloudSyncKey) as? Bool ?? true
     }
 
-    /// Has iCloud account. Avoids no-account errors.
     private var isICloudAvailable: Bool {
         FileManager.default.ubiquityIdentityToken != nil
     }
@@ -65,6 +65,7 @@ final class CloudSettingsStore {
     }
 
     private init() {
+        guard isICloudAvailable else { return }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(ubiquitousStoreDidChange(_:)),
@@ -73,14 +74,12 @@ final class CloudSettingsStore {
         )
     }
 
-    /// Pull iCloud into UserDefaults at launch. New device gets synced config.
     func mergeFromCloud() {
         guard useCloudSync, isICloudAvailable else { return }
         _ = store.synchronize()
         mergeCloudValuesIntoUserDefaults()
     }
 
-    /// Push UserDefaults to iCloud. Call after saving API config.
     func pushToCloud() {
         guard useCloudSync, isICloudAvailable else { return }
         copyRelevantDefaultsToStore()
@@ -292,7 +291,6 @@ final class CloudSettingsStore {
         performLocalWipe(rememberWipeAt: timestamp)
     }
 
-    /// Wipe local state and remember the timestamp to avoid re-wiping when iCloud echoes back.
     private func performLocalWipe(rememberWipeAt timestamp: TimeInterval) {
         KeychainSecretStore.wipeAll()
 

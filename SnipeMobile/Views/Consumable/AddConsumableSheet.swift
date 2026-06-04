@@ -48,8 +48,8 @@ struct AddConsumableSheet: View {
             .onAppear(perform: setupOnAppear)
             .alert(L10n.string("result"), isPresented: $showResult) {
                 Button(L10n.string("ok")) {
-                    if lastCreatedId != nil {
-                        onCreated?(lastCreatedId)
+                    if let id = lastCreatedId {
+                        onCreated?(id)
                         isPresented = false
                     }
                 }
@@ -87,7 +87,7 @@ struct AddConsumableSheet: View {
             TextField(L10n.string("name"), text: $name)
             AdaptivePickerRow(
                 title: L10n.string("category"),
-                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                items: apiClient.categories(for: "consumable").map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedCategoryId,
                 emptyOption: (0, L10n.string("choose_category"))
             )

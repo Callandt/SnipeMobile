@@ -14,6 +14,7 @@ struct UserDetailView: View {
     @State private var selectedTab = 0
     @State private var showEditSheet = false
     @State private var detailImageURL: String? = nil
+    @State private var detailUser: User? = nil
     @State private var userAssets: [Asset] = []
     @State private var userAccessories: [Accessory] = []
     @State private var userLicenses: [License] = []
@@ -21,6 +22,55 @@ struct UserDetailView: View {
 
     private var currentUser: User {
         apiClient.users.first { $0.id == user.id } ?? user
+    }
+
+    private func cleaned(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    private var displayName: String {
+        if let detail = detailUser, detail.id == user.id, !detail.decodedName.isEmpty {
+            return detail.decodedName
+        }
+        return currentUser.decodedName
+    }
+
+    private func field(_ keyPath: KeyPath<User, String?>) -> String? {
+        if let detail = detailUser, detail.id == user.id, let value = cleaned(detail[keyPath: keyPath]) {
+            return HTMLDecoder.decode(value)
+        }
+        return cleaned(currentUser[keyPath: keyPath]).map(HTMLDecoder.decode)
+    }
+
+    private var companyName: String? {
+        if let detail = detailUser, detail.id == user.id, let value = cleaned(detail.company?.name) {
+            return HTMLDecoder.decode(value)
+        }
+        return cleaned(currentUser.company?.name).map(HTMLDecoder.decode)
+    }
+
+    private var locationName: String? {
+        if let detail = detailUser, detail.id == user.id, let value = cleaned(detail.location?.name) {
+            return HTMLDecoder.decode(value)
+        }
+        return cleaned(currentUser.location?.name).map(HTMLDecoder.decode)
+    }
+
+    private var activatedState: Bool? {
+        if let detail = detailUser, detail.id == user.id, let value = detail.activated {
+            return value
+        }
+        return currentUser.activated
+    }
+
+    private var groupNames: String? {
+        let source = (detailUser?.id == user.id ? detailUser : nil) ?? currentUser
+        let names = source.groups
+            .map { $0.decodedName }
+            .filter { !$0.isEmpty }
+        guard !names.isEmpty else { return nil }
+        return names.joined(separator: ", ")
     }
 
     private var resolvedImageURL: URL? {
@@ -53,10 +103,6 @@ struct UserDetailView: View {
                 if selectedTab == 0 {
                     ScrollView {
                         VStack(spacing: 12) {
-                            UserCardView(user: currentUser, useExplicitBackground: false)
-                                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .padding(.horizontal)
-
                             userInfoSection
 
                             if !userAssets.isEmpty {
@@ -118,7 +164,7 @@ struct UserDetailView: View {
         .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text(HTMLDecoder.decode(user.decodedName))
+                Text(displayName)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
@@ -153,11 +199,13 @@ struct UserDetailView: View {
                 user: currentUser,
                 isPresented: $showEditSheet,
                 onSuccess: {
+                    detailUser = nil
                     Task {
-                        await reloadAssignedItems()
                         if let fullUser = await apiClient.fetchUserDetails(userId: user.id) {
+                            detailUser = fullUser
                             detailImageURL = fullUser.image
                         }
+                        await reloadAssignedItems()
                     }
                 }
             )
@@ -166,10 +214,14 @@ struct UserDetailView: View {
             DispatchQueue.main.async { isDetailViewActive = true }
             defer { isDetailViewActive = false }
             await reloadAssignedItems()
-            if let fullUser = await apiClient.fetchUserDetails(userId: user.id),
-               let image = fullUser.image,
-               !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                detailImageURL = image
+            if let fullUser = await apiClient.fetchUserDetails(userId: user.id) {
+                detailUser = fullUser
+                if let image = fullUser.image,
+                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    detailImageURL = image
+                } else {
+                    detailImageURL = nil
+                }
             } else {
                 detailImageURL = nil
             }
@@ -216,16 +268,38 @@ struct UserDetailView: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 15) {
-                if let empNumber = user.employeeNumber, !empNumber.isEmpty {
-                    copyableDetailRow(label: "Employee Number", value: empNumber)
+                if let username = field(\.username) {
+                    copyableDetailRow(label: L10n.string("username"), value: username)
                 }
-
-                if let email = user.email, !email.isEmpty {
-                    copyableDetailRow(label: "Email", value: email)
+                if let jobtitle = field(\.jobtitle) {
+                    copyableDetailRow(label: L10n.string("job_title"), value: jobtitle)
                 }
-
-                if let locationName = user.location?.name, !locationName.isEmpty {
-                    copyableDetailRow(label: "Location", value: locationName)
+                if let empNumber = field(\.employeeNumber) {
+                    copyableDetailRow(label: L10n.string("employee_number"), value: empNumber)
+                }
+                if let email = field(\.email) {
+                    copyableDetailRow(label: L10n.string("email"), value: email)
+                }
+                if let phone = field(\.phone) {
+                    copyableDetailRow(label: L10n.string("phone"), value: phone)
+                }
+                if let companyName {
+                    copyableDetailRow(label: L10n.string("company"), value: companyName)
+                }
+                if let locationName {
+                    copyableDetailRow(label: L10n.string("location"), value: locationName)
+                }
+                if let activated = activatedState {
+                    copyableDetailRow(
+                        label: L10n.string("status"),
+                        value: activated ? L10n.string("activated") : L10n.string("deactivated")
+                    )
+                }
+                if let groupNames {
+                    copyableDetailRow(label: L10n.string("groups"), value: groupNames)
+                }
+                if let notes = field(\.notes) {
+                    copyableDetailRow(label: L10n.string("notes"), value: notes)
                 }
             }
             .padding()
@@ -255,39 +329,36 @@ struct UserDetailView: View {
         async let accessories = apiClient.fetchUserAccessories(userId: user.id)
         async let licenses = apiClient.fetchUserLicenses(userId: user.id)
         async let consumables = apiClient.fetchUserConsumables(userId: user.id)
-        userAssets = mergeCached(await assets, from: apiClient.assets, id: \.id)
-        userAccessories = mergeCached(await accessories, from: apiClient.accessories, id: \.id)
-        userLicenses = mergeCached(await licenses, from: apiClient.licenses, id: \.id)
-        userConsumables = mergeCached(await consumables, from: apiClient.consumables, id: \.id)
-    }
-
-    private func mergeCached<T>(_ items: [T], from cache: [T], id: KeyPath<T, Int>) -> [T] {
-        items.map { item in
-            let itemId = item[keyPath: id]
-            return cache.first(where: { $0[keyPath: id] == itemId }) ?? item
-        }
+        userAssets = await assets
+        userAccessories = await accessories
+        userLicenses = await licenses
+        userConsumables = await consumables
     }
 
     @ViewBuilder
     private func copyableDetailRow(label: String, value: String) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label + ":")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(HTMLDecoder.decode(value))
-                    .font(.body)
-                    .foregroundColor(.primary)
+        let isSingleToken = !value.contains(" ")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Text(label).bold()
+                Spacer(minLength: 8)
+                Text(value)
+                    .lineLimit(1)
             }
-
-            Spacer()
-
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).bold()
+                Text(value)
+                    .lineLimit(isSingleToken ? 1 : nil)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
             Button(action: {
                 UIPasteboard.general.string = value
             }) {
-                Image(systemName: "doc.on.doc")
-                    .foregroundColor(.blue)
-                    .padding(.leading)
+                Label(L10n.string("copy"), systemImage: "doc.on.doc")
             }
         }
     }

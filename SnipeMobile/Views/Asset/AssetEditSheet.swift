@@ -47,6 +47,21 @@ struct AssetEditSheet: View {
     @State private var showArchiveError = false
     @State private var showResult = false
     @State private var resultMessage = ""
+    @State private var selectedImage: UIImage?
+    @State private var removeExistingImage = false
+
+    private var existingImageURL: URL? {
+        let raw = (apiClient.assets.first { $0.id == asset.id }?.image ?? asset.image)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty else { return nil }
+        if let absolute = URL(string: raw), absolute.scheme != nil {
+            return absolute
+        }
+        if raw.hasPrefix("/") {
+            return URL(string: "\(apiClient.baseURL)\(raw)")
+        }
+        return nil
+    }
 
     /// Checked out. Status read only.
     private var isAssetCheckedOut: Bool {
@@ -64,6 +79,11 @@ struct AssetEditSheet: View {
             Form {
                 generalSection
                 financialSection
+                AssetPhotoSection(
+                    selectedImage: $selectedImage,
+                    existingImageURL: existingImageURL,
+                    removeExistingImage: $removeExistingImage
+                )
                 notesSection
                 customFieldsSection
             }
@@ -144,9 +164,14 @@ struct AssetEditSheet: View {
                                     next_audit_date: nextAuditDateRequest,
                                     expected_checkin: expectedCheckinString,
                                     eol_date: eolDateString,
-                                    warranty_months: warrantyMonthsRequest
+                                    warranty_months: warrantyMonthsRequest,
+                                    image_delete: (selectedImage == nil && removeExistingImage) ? 1 : nil
                                 )
-                                let success = await apiClient.updateAsset(assetId: asset.id, update: update)
+                                let success = await apiClient.updateAsset(
+                                    assetId: asset.id,
+                                    update: update,
+                                    image: selectedImage
+                                )
                                 if success {
                                     // updateAsset already patched it in memory, so refresh the
                                     // full list in the background instead of making the user wait.
@@ -323,24 +348,6 @@ struct AssetEditSheet: View {
         }
     }
 
-    private func debugCustomFields(customFieldDefs: [SnipeITAPIClient.FieldDefinition], editCustomFields: [String: String]) {
-        #if DEBUG
-        let defsString = customFieldDefs.map { "\($0.name):\($0.type ?? "")" }.joined(separator: ", ")
-        let fieldsString = editCustomFields.map { "\($0.key):\($0.value)" }.joined(separator: ", ")
-        print("DEBUG: customFieldDefs: \(defsString)")
-        print("DEBUG: editCustomFields: \(fieldsString)")
-        for key in editCustomFields.keys.sorted() {
-            if let def = customFieldDefs.first(where: { $0.name == key }) {
-                let type = def.type ?? "(geen type)"
-                let options = def.field_values_array?.joined(separator: ", ") ?? "(geen opties)"
-                print("DEBUG: veld \(key): type=\(type), opties=\(options)")
-            } else {
-                print("DEBUG: veld \(key): GEEN definitie gevonden")
-            }
-        }
-        #endif
-    }
-
     private var customFieldsSection: some View {
         Section(header: Text(L10n.string("custom_fields"))) {
             let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
@@ -376,10 +383,6 @@ struct AssetEditSheet: View {
                     }
                 }
             }
-        }
-        .onAppear {
-            let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
-            debugCustomFields(customFieldDefs: customFieldDefs, editCustomFields: editCustomFields)
         }
     }
 

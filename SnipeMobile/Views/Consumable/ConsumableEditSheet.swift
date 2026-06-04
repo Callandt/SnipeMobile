@@ -96,11 +96,12 @@ struct ConsumableEditSheet: View {
         if apiClient.companies.isEmpty { Task { await apiClient.fetchCompanies() } }
         if apiClient.manufacturers.isEmpty { Task { await apiClient.fetchManufacturers() } }
         if apiClient.suppliers.isEmpty { Task { await apiClient.fetchSuppliers() } }
-        let validCategoryIds = Set(apiClient.categories.map(\.id))
+        let consumableCategories = apiClient.categories(for: "consumable")
+        let validCategoryIds = Set(consumableCategories.map(\.id))
         if selectedCategoryId != 0, !validCategoryIds.contains(selectedCategoryId) {
-            selectedCategoryId = apiClient.categories.first?.id ?? 0
+            selectedCategoryId = consumableCategories.first?.id ?? 0
         }
-        if selectedCategoryId == 0, let first = apiClient.categories.first {
+        if selectedCategoryId == 0, let first = consumableCategories.first {
             selectedCategoryId = first.id
         }
     }
@@ -110,7 +111,7 @@ struct ConsumableEditSheet: View {
             TextField(L10n.string("name"), text: $name)
             AdaptivePickerRow(
                 title: L10n.string("category"),
-                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                items: apiClient.categories(for: "consumable").map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedCategoryId,
                 emptyOption: (0, L10n.string("choose_category"))
             )

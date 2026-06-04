@@ -320,6 +320,22 @@ struct CompaniesResponse: Codable {
     let rows: [Company]
 }
 
+struct UserGroup: Codable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+
+    var decodedName: String { HTMLDecoder.decode(name) }
+}
+
+struct GroupsResponse: Codable {
+    let total: Int?
+    let rows: [UserGroup]
+}
+
+struct GroupsContainer: Codable {
+    let rows: [UserGroup]?
+}
+
 struct ManufacturersResponse: Codable {
     let total: Int?
     let rows: [Manufacturer]
@@ -376,6 +392,7 @@ struct User: Identifiable, Codable, Hashable {
     let jobtitle: String?
     let notes: String?
     let activated: Bool?
+    let groups: [UserGroup]
 
     let decodedName: String
     let decodedFirstName: String
@@ -400,7 +417,7 @@ struct User: Identifiable, Codable, Hashable {
         return trimmed
     }
 
-    init(id: Int, name: String, first_name: String, lastName: String? = nil, username: String? = nil, email: String? = nil, phone: String? = nil, image: String? = nil, location: Location? = nil, company: Company? = nil, employeeNumber: String? = nil, jobtitle: String? = nil, notes: String? = nil, activated: Bool? = nil) {
+    init(id: Int, name: String, first_name: String, lastName: String? = nil, username: String? = nil, email: String? = nil, phone: String? = nil, image: String? = nil, location: Location? = nil, company: Company? = nil, employeeNumber: String? = nil, jobtitle: String? = nil, notes: String? = nil, activated: Bool? = nil, groups: [UserGroup] = []) {
         self.id = id
         self.name = name
         self.first_name = first_name
@@ -415,6 +432,7 @@ struct User: Identifiable, Codable, Hashable {
         self.jobtitle = jobtitle
         self.notes = notes
         self.activated = activated
+        self.groups = groups
 
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedFirstName = HTMLDecoder.decode(first_name)
@@ -430,7 +448,7 @@ struct User: Identifiable, Codable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, first_name, username, email, phone, image, avatar, location, company, jobtitle, notes, activated
+        case id, name, first_name, username, email, phone, image, avatar, location, company, jobtitle, notes, activated, groups
         case lastName = "last_name"
         case employeeNumber = "employee_num"
     }
@@ -452,8 +470,15 @@ struct User: Identifiable, Codable, Hashable {
         let jobtitle = try? container.decodeIfPresent(String.self, forKey: .jobtitle)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
         let activated = try? container.decodeIfPresent(Bool.self, forKey: .activated)
+        // API: nested { rows }; cache may store a flat array.
+        var groups: [UserGroup] = []
+        if let wrapper = try? container.decodeIfPresent(GroupsContainer.self, forKey: .groups) {
+            groups = wrapper.rows ?? []
+        } else if let array = try? container.decodeIfPresent([UserGroup].self, forKey: .groups) {
+            groups = array
+        }
 
-        self.init(id: id, name: name, first_name: first_name, lastName: lastName, username: username, email: email, phone: phone, image: image, location: location, company: company, employeeNumber: employeeNumber, jobtitle: jobtitle, notes: notes, activated: activated)
+        self.init(id: id, name: name, first_name: first_name, lastName: lastName, username: username, email: email, phone: phone, image: image, location: location, company: company, employeeNumber: employeeNumber, jobtitle: jobtitle, notes: notes, activated: activated, groups: groups)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -472,6 +497,9 @@ struct User: Identifiable, Codable, Hashable {
         try container.encodeIfPresent(jobtitle, forKey: .jobtitle)
         try container.encodeIfPresent(notes, forKey: .notes)
         try container.encodeIfPresent(activated, forKey: .activated)
+        if !groups.isEmpty {
+            try container.encode(groups, forKey: .groups)
+        }
     }
 
     static func == (lhs: User, rhs: User) -> Bool {

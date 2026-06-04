@@ -607,7 +607,7 @@ struct MainSplitView: View {
         hardwareSubtab = enableAuditSubtab ? .audit : .all
         auditNotificationNavResolved = true
 
-        // Ensure we land on the hardware list (not an asset detail).
+        // Open hardware list, not asset detail.
         searchText = ""
         let needsSectionChange = selectedSection != .hardware
         skipClearSelectionOnSectionChange = needsSectionChange
@@ -933,7 +933,8 @@ struct MainSplitView: View {
             next_audit_date: .value(nextAuditStr),
             expected_checkin: nil,
             eol_date: nil,
-            warranty_months: nil
+            warranty_months: nil,
+            image_delete: nil
         )
 
         let ok = await apiClient.updateAsset(assetId: assetId, update: update)
@@ -2009,7 +2010,7 @@ struct MainSplitView: View {
             func openHardwareForScannedValueByTag(_ value: String) async {
                 let asset = await apiClient.fetchHardwareByTag(assetTag: value)
                 if let asset {
-                    // Ensure navigation can find the asset in `apiClient.assets`.
+                    // Patch cache so navigation can resolve the asset.
                     if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
                         apiClient.assets[idx] = asset
                     } else {
@@ -2086,7 +2087,7 @@ struct MainSplitView: View {
                         let asset = await apiClient.fetchHardwareByTag(assetTag: assetTag)
                         await MainActor.run {
                             if let asset {
-                                // Ensure navigation can find the asset in `apiClient.assets`.
+                                // Patch cache so navigation can resolve the asset.
                                 if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
                                     apiClient.assets[idx] = asset
                                 } else {

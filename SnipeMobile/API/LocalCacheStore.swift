@@ -52,7 +52,7 @@ enum LocalCacheStore {
         try? data.write(to: url, options: .atomic)
     }
 
-    // Wipe all cached files (on logout / data wipe).
+    // Wipe all cached files (on data wipe).
     static func clearAll() {
         guard let dir = directory else { return }
         try? FileManager.default.removeItem(at: dir)

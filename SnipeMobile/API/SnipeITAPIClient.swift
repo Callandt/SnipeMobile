@@ -15,6 +15,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var components: [Component] = [] { didSet { scheduleCacheSave() } }
     @Published var locations: [Location] = [] { didSet { scheduleCacheSave() } }
     @Published var companies: [Company] = [] { didSet { scheduleCacheSave() } }
+    @Published var groups: [UserGroup] = []
     @Published var manufacturers: [Manufacturer] = [] { didSet { scheduleCacheSave() } }
     @Published var suppliers: [Supplier] = [] { didSet { scheduleCacheSave() } }
     @Published var errorMessage: String?
@@ -797,12 +798,13 @@ class SnipeITAPIClient: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         var body: [String: Any] = [
             "name": name,
             "category_id": categoryId,
             "qty": quantity
         ]
-        if let min = minAmt, min > 0 { body["min_amt"] = min }
+        body["min_amt"] = minAmt ?? 0
         if let v = itemNo, !v.isEmpty { body["item_no"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -818,19 +820,27 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Consumable created!" : "Create failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200,
-                   let payload = json?["payload"] as? [String: Any],
-                   let newId = payload["id"] as? Int {
-                    Task { await self.fetchConsumables() }
-                    return (true, newId)
-                }
+            guard let httpResponse = response as? HTTPURLResponse else { return (false, nil) }
+            if Self.isHTMLResponse(data) {
+                await MainActor.run { self.lastApiMessage = L10n.string("api_invalid_response") }
                 return (false, nil)
+            }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            #if DEBUG
+            let preview = String(data: data.prefix(500), encoding: .utf8) ?? "<non-UTF8>"
+            print("[SnipeMobile] POST /consumables status=\(httpResponse.statusCode) body=\(preview)")
+            #endif
+            let status = (json?["status"] as? String)?.lowercased()
+            let isError = status == "error"
+            let newId = Self.idFromApiPayload(json?["payload"])
+            let httpOK = (200...299).contains(httpResponse.statusCode)
+            let success = httpOK && !isError && newId != nil
+            let msg = Self.extractApiErrorMessage(from: json ?? [:])
+                ?? (success ? L10n.string("consumable_created") : L10n.string("create_failed"))
+            await MainActor.run { self.lastApiMessage = msg }
+            if success, let newId {
+                Task { await self.fetchConsumables() }
+                return (true, newId)
             }
             return (false, nil)
         } catch {
@@ -861,12 +871,13 @@ class SnipeITAPIClient: ObservableObject {
         request.httpMethod = "PATCH"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         var body: [String: Any] = [
             "name": name,
             "category_id": categoryId,
             "qty": quantity
         ]
-        if let min = minAmt { body["min_amt"] = min }
+        body["min_amt"] = minAmt ?? 0
         if let v = itemNo, !v.isEmpty { body["item_no"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -883,12 +894,19 @@ class SnipeITAPIClient: ObservableObject {
         do {
             let (data, response) = try await urlSession.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
+                if Self.isHTMLResponse(data) {
+                    await MainActor.run { self.lastApiMessage = L10n.string("api_invalid_response") }
+                    return false
+                }
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
+                let isError = (json?["status"] as? String)?.lowercased() == "error"
+                let msg = Self.extractApiErrorMessage(from: json ?? [:])
+                    ?? (httpResponse.statusCode == 200 && !isError ? L10n.string("saved") : L10n.string("create_failed"))
                 await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200 {
+                if (200...299).contains(httpResponse.statusCode), !isError {
+                    if let updated: Consumable = decodedPatchPayload(from: data) {
+                        await MainActor.run { replaceCachedItem(updated, in: &self.consumables, id: \.id) }
+                    }
                     Task { await self.fetchConsumables() }
                     return true
                 }
@@ -1153,6 +1171,9 @@ class SnipeITAPIClient: ObservableObject {
                     ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200 {
+                    if let updated: Component = decodedPatchPayload(from: data) {
+                        await MainActor.run { replaceCachedItem(updated, in: &self.components, id: \.id) }
+                    }
                     Task { await self.fetchComponents() }
                     return true
                 }
@@ -1750,7 +1771,9 @@ class SnipeITAPIClient: ObservableObject {
                 }
                 return (json["messages"] as? String) ?? "Save failed."
             }
-            // Refresh the cached list in the background.
+            if let updated: License = decodedPatchPayload(from: data) {
+                await MainActor.run { replaceCachedItem(updated, in: &self.licenses, id: \.id) }
+            }
             Task { await self.fetchLicenses() }
             return nil
         } catch {
@@ -1816,6 +1839,9 @@ class SnipeITAPIClient: ObservableObject {
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let status = json["status"] as? String, status == "error" {
                 return Self.extractApiErrorMessage(from: json) ?? "Save failed."
+            }
+            if let updated: User = decodedPatchPayload(from: data) {
+                await MainActor.run { replaceCachedItem(updated, in: &self.users, id: \.id) }
             }
             Task { await self.fetchUsers() }
             return nil
@@ -1883,6 +1909,9 @@ class SnipeITAPIClient: ObservableObject {
                let status = json["status"] as? String, status == "error" {
                 return Self.extractApiErrorMessage(from: json) ?? "Save failed."
             }
+            if let updated: Location = decodedPatchPayload(from: data) {
+                await MainActor.run { replaceCachedItem(updated, in: &self.locations, id: \.id) }
+            }
             Task { await self.fetchLocations() }
             return nil
         } catch {
@@ -1934,8 +1963,102 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Pulls a user-facing message out of a Snipe-IT error payload.
-    /// `messages` may be a plain string, a dict of field → string, or field → [string].
+    /// Decodes the updated record from a Snipe-IT PATCH/PUT response (`payload` or root).
+    private func decodedPatchPayload<T: Decodable>(from data: Data) -> T? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return try? JSONDecoder().decode(T.self, from: data)
+        }
+        if (json["status"] as? String) == "error" { return nil }
+        guard let payload = json["payload"], !(payload is NSNull),
+              let payloadDict = payload as? [String: Any],
+              let payloadData = try? JSONSerialization.data(withJSONObject: payloadDict),
+              let decoded = try? JSONDecoder().decode(T.self, from: payloadData) else {
+            return nil
+        }
+        return decoded
+    }
+
+    private func hardwareFormFields(from bodyObject: [String: Any]) -> [String: String] {
+        var fields: [String: String] = [:]
+        for (key, value) in bodyObject {
+            switch value {
+            case is NSNull:
+                continue
+            case let string as String:
+                fields[key] = string
+            case let number as Int:
+                fields[key] = "\(number)"
+            case let number as Double:
+                fields[key] = "\(number)"
+            case let flag as Bool:
+                fields[key] = flag ? "1" : "0"
+            default:
+                continue
+            }
+        }
+        return fields
+    }
+
+    private func buildMultipartBody(
+        boundary: String,
+        fields: [String: String],
+        imageData: Data?,
+        fileName: String = "image.jpg"
+    ) -> Data {
+        var body = Data()
+        func append(_ string: String) {
+            if let data = string.data(using: .utf8) { body.append(data) }
+        }
+        for (key, value) in fields.sorted(by: { $0.key < $1.key }) {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n")
+            append("\(value)\r\n")
+        }
+        if let imageData {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"image\"; filename=\"\(fileName)\"\r\n")
+            append("Content-Type: image/jpeg\r\n\r\n")
+            body.append(imageData)
+            append("\r\n")
+        }
+        append("--\(boundary)--\r\n")
+        return body
+    }
+
+    private func sendHardwareMultipart(
+        url: URL,
+        method: String,
+        fields: [String: String],
+        imageData: Data
+    ) async throws -> (Data, HTTPURLResponse) {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var fieldsWithMethod = fields
+        var httpMethod = method
+        if method == "PUT" {
+            // Laravel needs POST + _method for multipart file uploads.
+            fieldsWithMethod["_method"] = "PUT"
+            httpMethod = "POST"
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = httpMethod
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = buildMultipartBody(boundary: boundary, fields: fieldsWithMethod, imageData: imageData)
+        let (data, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        return (data, http)
+    }
+
+    @MainActor
+    private func replaceCachedItem<T>(_ item: T, in list: inout [T], id: KeyPath<T, Int>) {
+        if let idx = list.firstIndex(where: { $0[keyPath: id] == item[keyPath: id] }) {
+            list[idx] = item
+        }
+    }
+
     static func extractApiErrorMessage(from json: [String: Any]) -> String? {
         if let str = json["messages"] as? String, !str.isEmpty { return str }
         if let dict = json["messages"] as? [String: Any] {
@@ -1946,6 +2069,27 @@ class SnipeITAPIClient: ObservableObject {
         }
         if let str = json["error"] as? String, !str.isEmpty { return str }
         return nil
+    }
+
+    private static func isHTMLResponse(_ data: Data) -> Bool {
+        guard let prefix = String(data: data.prefix(128), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() else { return false }
+        return prefix.hasPrefix("<!doctype") || prefix.hasPrefix("<html")
+    }
+
+    private static func idFromApiPayload(_ payload: Any?) -> Int? {
+        if let id = payload as? Int { return id }
+        if let str = payload as? String { return Int(str) }
+        guard let dict = payload as? [String: Any] else { return nil }
+        if let id = dict["id"] as? Int { return id }
+        if let str = dict["id"] as? String { return Int(str) }
+        return nil
+    }
+
+    func categories(for type: String) -> [CategoryRow] {
+        let typed = categories.filter { ($0.categoryType ?? "").lowercased() == type.lowercased() }
+        return typed.isEmpty ? categories : typed
     }
 
     func fetchLocations() async {
@@ -1983,6 +2127,23 @@ class SnipeITAPIClient: ObservableObject {
             }
         } catch {
             print("Error fetching companies: \(error.localizedDescription)")
+        }
+    }
+
+    func fetchGroups() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        do {
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/groups",
+                as: UserGroup.self
+            ) else { return }
+            await MainActor.run {
+                self.groups = rows.sorted {
+                    $0.decodedName.lowercased() < $1.decodedName.lowercased()
+                }
+            }
+        } catch {
+            print("Error fetching groups: \(error.localizedDescription)")
         }
     }
 
@@ -2239,6 +2400,8 @@ class SnipeITAPIClient: ObservableObject {
         let expected_checkin: String?
         let eol_date: String?
         let warranty_months: NullableString?
+        // Set to 1 to delete the current image.
+        let image_delete: Int?
     }
 
     // MARK: - Models
@@ -2339,13 +2502,8 @@ class SnipeITAPIClient: ObservableObject {
         let byod: Bool?
     }
 
-    func createAsset(_ body: AssetCreateRequest) async -> Bool {
+    func createAsset(_ body: AssetCreateRequest, image: UIImage? = nil) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/hardware") else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let encoded = try JSONEncoder().encode(body)
             var bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
@@ -2355,15 +2513,40 @@ class SnipeITAPIClient: ObservableObject {
                     bodyObject[dbKey] = value
                 }
             }
-            let data = try JSONSerialization.data(withJSONObject: bodyObject)
-            request.httpBody = data
-            #if DEBUG
-            print("createAsset: POST \(url.absoluteString)")
-            #endif
-            let (responseData, response) = try await urlSession.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                await MainActor.run { self.lastApiMessage = "Geen geldige HTTP-response." }
-                return false
+
+            let responseData: Data
+            let httpResponse: HTTPURLResponse
+
+            if let image, let jpeg = image.snipeJPEGUploadData() {
+                #if DEBUG
+                print("createAsset: POST multipart \(url.absoluteString)")
+                #endif
+                let result = try await sendHardwareMultipart(
+                    url: url,
+                    method: "POST",
+                    fields: hardwareFormFields(from: bodyObject),
+                    imageData: jpeg
+                )
+                responseData = result.0
+                httpResponse = result.1
+            } else {
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let data = try JSONSerialization.data(withJSONObject: bodyObject)
+                request.httpBody = data
+                #if DEBUG
+                print("createAsset: POST \(url.absoluteString)")
+                #endif
+                let pair = try await urlSession.data(for: request)
+                responseData = pair.0
+                guard let http = pair.1 as? HTTPURLResponse else {
+                    await MainActor.run { self.lastApiMessage = "Geen geldige HTTP-response." }
+                    return false
+                }
+                httpResponse = http
             }
 
             #if DEBUG
@@ -2380,7 +2563,7 @@ class SnipeITAPIClient: ObservableObject {
                 json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
             }
 
-            // HTML instead of JSON? Login page or redirect.
+            // HTML body = login page or redirect, not API JSON.
             let contentType = (httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
             let isHtmlContentType = contentType.contains("text/html")
             let firstBytes = String(data: responseData.prefix(800), encoding: .utf8) ?? ""
@@ -2412,18 +2595,25 @@ class SnipeITAPIClient: ObservableObject {
             await MainActor.run { self.lastApiMessage = msg }
 
             if httpResponse.statusCode == 200 {
+                let isSnipeError = (json?["status"] as? String)?.lowercased() == "error"
                 let isSnipeSuccess = (json?["status"] as? String)?.lowercased() == "success"
                 let hasPayload = (json?["payload"] as? [String: Any])?["id"] != nil
 
-                if isSnipeSuccess || hasPayload {
-                    // Decode payload into cache if possible
+                if !isSnipeError && (isSnipeSuccess || hasPayload) {
+                    var newAssetId: Int?
                     if let json = json,
-                       let payload = json["payload"],
-                       let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+                       let payload = json["payload"], !(payload is NSNull),
+                       let payloadDict = payload as? [String: Any],
+                       let payloadData = try? JSONSerialization.data(withJSONObject: payloadDict),
                        let newAsset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
+                        newAssetId = newAsset.id
                         await MainActor.run { self.assets.insert(newAsset, at: 0) }
                     } else {
                         await self.fetchAssets()
+                    }
+                    if image != nil, let newAssetId,
+                       let details = await fetchHardwareDetails(assetId: newAssetId) {
+                        await MainActor.run { applyUpdatedAsset(details) }
                     }
                     if let messages = json?["messages"] as? String, !messages.isEmpty {
                         await MainActor.run { self.lastApiMessage = messages }
@@ -2606,6 +2796,9 @@ class SnipeITAPIClient: ObservableObject {
                     ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
                 await MainActor.run { self.lastApiMessage = msg }
                 if httpResponse.statusCode == 200 {
+                    if let updated: Accessory = decodedPatchPayload(from: data) {
+                        await MainActor.run { replaceCachedItem(updated, in: &self.accessories, id: \.id) }
+                    }
                     Task { await self.fetchAccessories() }
                     return true
                 }
@@ -2682,64 +2875,90 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    func updateAsset(assetId: Int, update: AssetUpdateRequest) async -> Bool {
+    func updateAsset(assetId: Int, update: AssetUpdateRequest, image: UIImage? = nil) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
             let encodedBody = try JSONEncoder().encode(update)
             var bodyObject = (try JSONSerialization.jsonObject(with: encodedBody) as? [String: Any]) ?? [:]
             if let customFields = update.custom_fields {
-                // Some Snipe-IT versions expect custom fields as top-level _snipeit_* keys
-                // alongside (or instead of) custom_fields.
                 for (dbKey, wrappedValue) in customFields {
                     bodyObject[dbKey] = wrappedValue.value
                 }
+                bodyObject.removeValue(forKey: "custom_fields")
             }
-            let body = try JSONSerialization.data(withJSONObject: bodyObject)
-            request.httpBody = body
-            #if DEBUG
-            if let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
-                print("[SnipeMobile] PATCH /hardware/\(assetId) body: \(json)")
-            } else if let raw = String(data: body, encoding: .utf8) {
-                print("[SnipeMobile] PATCH /hardware/\(assetId) body (raw): \(raw)")
-            }
-            #endif
-            let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
+
+            let data: Data
+            let httpResponse: HTTPURLResponse
+
+            if let image, let jpeg = image.snipeJPEGUploadData() {
                 #if DEBUG
-                let status = httpResponse.statusCode
-                let responseStr = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
-                print("[SnipeMobile] PATCH /hardware/\(assetId) status: \(status) response: \(responseStr.prefix(500))")
+                print("[SnipeMobile] PUT /hardware/\(assetId) multipart (image upload)")
                 #endif
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Changes saved!" : "Save failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200 {
-                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                    let payload = json?["payload"]
-                    let payloadData = payload.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
-                    if let payloadData = payloadData,
-                       let updatedAsset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
-                        await MainActor.run {
-                            if let idx = self.assets.firstIndex(where: { $0.id == updatedAsset.id }) {
-                                self.assets[idx] = updatedAsset
-                            }
-                        }
-                    } else if let updatedAsset = try? JSONDecoder().decode(Asset.self, from: data) {
-                        await MainActor.run {
-                            if let idx = self.assets.firstIndex(where: { $0.id == updatedAsset.id }) {
-                                self.assets[idx] = updatedAsset
-                            }
-                        }
-                    }
-                    return true
+                let result = try await sendHardwareMultipart(
+                    url: url,
+                    method: "PUT",
+                    fields: hardwareFormFields(from: bodyObject),
+                    imageData: jpeg
+                )
+                data = result.0
+                httpResponse = result.1
+            } else {
+                let body = try JSONSerialization.data(withJSONObject: bodyObject)
+
+                func makeRequest(method: String, bodyData: Data) -> URLRequest {
+                    var request = URLRequest(url: url)
+                    request.httpMethod = method
+                    request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue("application/json", forHTTPHeaderField: "Accept")
+                    request.httpBody = bodyData
+                    return request
                 }
-                return false
+
+                #if DEBUG
+                Self.debugLogHardwareUpdate(assetId: assetId, method: "PUT", bodyObject: bodyObject)
+                #endif
+
+                var (responseData, response) = try await urlSession.data(for: makeRequest(method: "PUT", bodyData: body))
+                var http = response as? HTTPURLResponse
+
+                if http?.statusCode == 405 {
+                    #if DEBUG
+                    print("[SnipeMobile] PUT /hardware/\(assetId) — 405, retry POST + _method=PUT")
+                    #endif
+                    var spoofed = bodyObject
+                    spoofed["_method"] = "PUT"
+                    let spoofedBody = try JSONSerialization.data(withJSONObject: spoofed)
+                    (responseData, response) = try await urlSession.data(for: makeRequest(method: "POST", bodyData: spoofedBody))
+                    http = response as? HTTPURLResponse
+                }
+
+                guard let http else { return false }
+                data = responseData
+                httpResponse = http
+            }
+
+            #if DEBUG
+            let responseStr = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
+            print("[SnipeMobile] PUT /hardware/\(assetId) status: \(httpResponse.statusCode) response: \(responseStr.prefix(500))")
+            #endif
+
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let isError = (json?["status"] as? String) == "error"
+            let msg = Self.extractApiErrorMessage(from: json ?? [:])
+                ?? (httpResponse.statusCode == 200 && !isError ? "Changes saved!" : "Save failed.")
+            await MainActor.run { self.lastApiMessage = msg }
+            if httpResponse.statusCode == 200, !isError {
+                if let updated: Asset = decodedPatchPayload(from: data) {
+                    await MainActor.run { replaceCachedItem(updated, in: &self.assets, id: \.id) }
+                }
+                // Refetch after image change; PATCH payload may omit image URL.
+                if image != nil || update.image_delete == 1 {
+                    if let details = await fetchHardwareDetails(assetId: assetId) {
+                        await MainActor.run { applyUpdatedAsset(details) }
+                    }
+                }
+                return true
             }
             return false
         } catch {
@@ -2749,6 +2968,16 @@ class SnipeITAPIClient: ObservableObject {
             return false
         }
     }
+
+    #if DEBUG
+    private static func debugLogHardwareUpdate(assetId: Int, method: String, bodyObject: [String: Any]) {
+        var logged = bodyObject
+        if let image = logged["image"] as? String, image.count > 80 {
+            logged["image"] = String(image.prefix(60)) + "…(\(image.count) chars)"
+        }
+        print("[SnipeMobile] \(method) /hardware/\(assetId) body: \(logged)")
+    }
+    #endif
 
     // MARK: - Field defs
     struct FieldDefinition: Codable, Identifiable, Equatable {

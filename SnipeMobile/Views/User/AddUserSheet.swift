@@ -20,6 +20,7 @@ struct AddUserSheet: View {
 
     @State private var selectedCompanyId: Int = 0
     @State private var selectedLocationId: Int = 0
+    @State private var selectedGroupIds: Set<Int> = []
 
     @State private var isSaving = false
     @State private var resultMessage: String = ""
@@ -76,6 +77,7 @@ struct AddUserSheet: View {
     private func setupOnAppear() {
         if apiClient.companies.isEmpty { Task { await apiClient.fetchCompanies() } }
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }
+        if apiClient.groups.isEmpty { Task { await apiClient.fetchGroups() } }
     }
 
     // MARK: - Sections
@@ -122,6 +124,13 @@ struct AddUserSheet: View {
                     emptyOption: (0, L10n.string("choose_location"))
                 )
             }
+            if !apiClient.groups.isEmpty {
+                MultiSelectPickerRow(
+                    title: L10n.string("groups"),
+                    items: apiClient.groups.map { (value: $0.id, label: $0.decodedName) },
+                    selection: $selectedGroupIds
+                )
+            }
         }
     }
 
@@ -130,9 +139,11 @@ struct AddUserSheet: View {
             SecureField(L10n.string("password"), text: $password)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
+                .textContentType(.newPassword)
             SecureField(L10n.string("password_confirmation"), text: $passwordConfirmation)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
+                .textContentType(.newPassword)
             Toggle(L10n.string("activated"), isOn: $activated)
         }
     }
@@ -174,6 +185,7 @@ struct AddUserSheet: View {
         if !trimmedEmp.isEmpty { body["employee_num"] = trimmedEmp }
         if selectedCompanyId > 0 { body["company_id"] = selectedCompanyId }
         if selectedLocationId > 0 { body["location_id"] = selectedLocationId }
+        if !selectedGroupIds.isEmpty { body["groups"] = Array(selectedGroupIds) }
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedNotes.isEmpty { body["notes"] = trimmedNotes }
 

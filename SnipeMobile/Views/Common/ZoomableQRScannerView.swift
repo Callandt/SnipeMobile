@@ -130,8 +130,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
             print("[Scanner] filtered types: \(filteredSupportedTypes)")
             #endif
 
-            // If none of the desired types are available, fall back to *all* metadata types this device supports.
-            // This prevents "not scanning" issues caused by overly strict symbology filtering.
+            // Fall back to all symbologies if the filter set is empty on this device.
             let typesToUse = !filteredSupportedTypes.isEmpty ? filteredSupportedTypes : availableTypes
             guard !typesToUse.isEmpty else {
                 completion?(.failure(.badOutput))
