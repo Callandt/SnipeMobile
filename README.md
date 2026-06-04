@@ -25,9 +25,13 @@ iOS app to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, users,
 ## Features
 
 - **Hardware & accessories**: list, search, Scan QR codes, check-in/check-out, create and edit.
+- **Licenses & components**: list, search, check-in/check-out, create and edit.
+- **Consumables**: list, search, check-out, create and edit.
+- **Maintenances**: list, view, create and edit maintenance records.
+- **Audit**: scan and audit assets.
 - **Users & locations**: view and navigate to assigned assets.
 - **Theme**: light/dark/system.
-- **language**: Dutch, English and French.
+- **language**: Dutch, English, French and Spanish.
 - **Security**: optional Face ID / Touch ID on app open.
 - **iCloud**: settings (including API configuration) can sync via iCloud.
 
