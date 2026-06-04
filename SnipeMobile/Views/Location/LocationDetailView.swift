@@ -10,6 +10,7 @@ struct LocationDetailView: View {
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
     @State private var selectedTab = 0
+    @State private var showEditSheet = false
     @State private var locationAccessories: [Accessory] = []
     @State private var locationAssets: [Asset] = []
     @State private var isLoadingAccessories = false
@@ -140,12 +141,28 @@ struct LocationDetailView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showEditSheet = true } label: {
+                    Image(systemName: "pencil")
+                }
+                .accessibilityLabel(L10n.string("edit"))
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/locations/\(location.id)") {
                     Link(destination: url) {
                         Image(systemName: "safari")
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            LocationEditSheet(
+                apiClient: apiClient,
+                location: currentLocation,
+                isPresented: $showEditSheet,
+                onSuccess: {
+                    Task { await apiClient.fetchLocations() }
+                }
+            )
         }
         .task(id: location.id) {
             selectedTab = 0

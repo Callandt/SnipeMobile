@@ -333,6 +333,17 @@ struct ContentView: View {
         .sheet(isPresented: $showingAddAccessory) {
             AddAccessorySheet(apiClient: apiClient, isPresented: $showingAddAccessory)
         }
+        .alert(
+            L10n.string("refresh_failed_title"),
+            isPresented: Binding(
+                get: { apiClient.refreshErrorMessage != nil },
+                set: { if !$0 { apiClient.refreshErrorMessage = nil } }
+            )
+        ) {
+            Button(L10n.string("ok"), role: .cancel) { apiClient.refreshErrorMessage = nil }
+        } message: {
+            Text(apiClient.refreshErrorMessage ?? "")
+        }
         .onAppear {
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 Task { @MainActor in
@@ -936,7 +947,7 @@ struct HardwareTab: View {
         .refreshable {
             if apiClient.isConfigured {
                 isRefreshing = true
-                await apiClient.fetchPrimaryThenBackground()
+                await apiClient.fetchAssets()
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }
@@ -1111,7 +1122,7 @@ struct HardwareTab: View {
             if showLoadingPlaceholder {
                 ProgressView(L10n.string("loading_assets"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            } else if isHardwareListContentEmpty && apiClient.isConfigured && !apiClient.isLoading {
+            } else if isHardwareListContentEmpty && apiClient.isConfigured && !apiClient.isLoading && apiClient.hasCompletedInitialLoad {
                 ContentUnavailableView(hardwareEmptyTitle, systemImage: "laptopcomputer")
             }
         }
@@ -1217,7 +1228,7 @@ struct AccessoriesTab: View {
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true
-                    await apiClient.fetchPrimaryThenBackground()
+                    await apiClient.fetchAccessories()
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     isRefreshing = false
                 }
@@ -1348,7 +1359,7 @@ private struct LicensesContent: View {
                     systemImage: "link.badge.plus",
                     description: Text(L10n.string("configure_api_short"))
                 )
-            } else if apiClient.isLoading && !isRefreshing {
+            } else if apiClient.isLoading && !isRefreshing && apiClient.licenses.isEmpty {
                 ProgressView(L10n.string("loading_licenses"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if apiClient.errorMessage != nil {
@@ -1614,7 +1625,7 @@ private struct ConsumablesContent: View {
                     systemImage: "link.badge.plus",
                     description: Text(L10n.string("configure_api_short"))
                 )
-            } else if apiClient.isLoading && !isRefreshing {
+            } else if apiClient.isLoading && !isRefreshing && apiClient.consumables.isEmpty {
                 ProgressView(L10n.string("loading_consumables"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if apiClient.errorMessage != nil {
@@ -1689,7 +1700,7 @@ private struct ComponentsContent: View {
                     systemImage: "link.badge.plus",
                     description: Text(L10n.string("configure_api_short"))
                 )
-            } else if apiClient.isLoading && !isRefreshing {
+            } else if apiClient.isLoading && !isRefreshing && apiClient.components.isEmpty {
                 ProgressView(L10n.string("loading_components"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if apiClient.errorMessage != nil {
@@ -1805,7 +1816,7 @@ private struct AccessoriesContent: View {
                     systemImage: "link.badge.plus",
                     description: Text(L10n.string("configure_api_short"))
                 )
-            } else if apiClient.isLoading && !isRefreshing {
+            } else if apiClient.isLoading && !isRefreshing && apiClient.accessories.isEmpty {
                 ProgressView(L10n.string("loading_accessories"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if apiClient.errorMessage != nil {
@@ -1879,6 +1890,8 @@ struct DirectoryTab: View {
     @AppStorage("directorySelectedSubmodule") private var selectedSubmoduleRaw: String = DirectorySubmodule.users.rawValue
 
     @State private var showingComingSoon = false
+    @State private var showingAddUser = false
+    @State private var showingAddLocation = false
 
     private var enabledSubmodules: [DirectorySubmodule] { DirectorySubmodule.allCases }
 
@@ -1929,12 +1942,55 @@ struct DirectoryTab: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingComingSoon = true } label: {
+                    Button {
+                        switch selectedSubmodule {
+                        case .users: showingAddUser = true
+                        case .locations: showingAddLocation = true
+                        }
+                    } label: {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(addLabel)
                 }
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
+            }
+            .sheet(isPresented: $showingAddUser) {
+                AddUserSheet(
+                    apiClient: apiClient,
+                    isPresented: $showingAddUser,
+                    onCreated: { newId in
+                        Task {
+                            if let newId,
+                               let detailed = await apiClient.fetchUserDetails(userId: newId) {
+                                await MainActor.run {
+                                    if selectedSubmoduleRaw != DirectorySubmodule.users.rawValue {
+                                        selectedSubmoduleRaw = DirectorySubmodule.users.rawValue
+                                    }
+                                    navigationPath.append(detailed)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+            .sheet(isPresented: $showingAddLocation) {
+                AddLocationSheet(
+                    apiClient: apiClient,
+                    isPresented: $showingAddLocation,
+                    onCreated: { newId in
+                        Task {
+                            await apiClient.fetchLocations()
+                            await MainActor.run {
+                                guard let newId,
+                                      let created = apiClient.locations.first(where: { $0.id == newId }) else { return }
+                                if selectedSubmoduleRaw != DirectorySubmodule.locations.rawValue {
+                                    selectedSubmoduleRaw = DirectorySubmodule.locations.rawValue
+                                }
+                                navigationPath.append(created)
+                            }
+                        }
+                    }
+                )
             }
             .searchable(
                 text: $searchText,
@@ -1950,7 +2006,12 @@ struct DirectoryTab: View {
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true
-                    await apiClient.fetchPrimaryThenBackground()
+                    switch selectedSubmodule {
+                    case .users:
+                        await apiClient.fetchUsers()
+                    case .locations:
+                        await apiClient.fetchLocations()
+                    }
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     isRefreshing = false
                 }
@@ -2012,7 +2073,7 @@ private struct UsersContent: View {
                     systemImage: "link.badge.plus",
                     description: Text(L10n.string("configure_api_short"))
                 )
-            } else if apiClient.isLoading && !isRefreshing {
+            } else if apiClient.isLoading && !isRefreshing && apiClient.users.isEmpty {
                 ProgressView(L10n.string("loading_users"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if apiClient.errorMessage != nil {
@@ -2079,7 +2140,7 @@ private struct LocationsContent: View {
                     systemImage: "link.badge.plus",
                     description: Text(L10n.string("configure_api_short"))
                 )
-            } else if apiClient.isLoading && !isRefreshing {
+            } else if apiClient.isLoading && !isRefreshing && apiClient.locations.isEmpty {
                 ProgressView(L10n.string("loading_locations"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if apiClient.errorMessage != nil {

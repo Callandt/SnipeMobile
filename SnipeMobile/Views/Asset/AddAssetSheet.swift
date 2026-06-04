@@ -390,7 +390,9 @@ struct AddAssetSheet: View {
             #endif
             let success = await apiClient.createAsset(req)
             if success {
-                await apiClient.fetchAssets()
+                // Already inserted in memory by createAsset; sync the rest in the
+                // background so the sheet can close right away.
+                Task { await apiClient.fetchAssets() }
             }
             await MainActor.run {
                 isSaving = false

@@ -335,6 +335,19 @@ struct SettingsView: View {
                 title: L10n.string("settings_version"),
                 value: versionDisplay
             )
+            // Testing helper: drop the on-disk cache so the next launch starts fresh.
+            Button {
+                LocalCacheStore.clearAll()
+                alertMessage = "Cache cleared. Restart the app to test a cold load."
+                showAlert = true
+            } label: {
+                SettingsRow(
+                    icon: "arrow.clockwise.circle.fill",
+                    iconColor: .blue,
+                    title: "Clear cache (test)",
+                    value: nil
+                )
+            }
             Button(role: .destructive) {
                 showResetConfirm = true
             } label: {

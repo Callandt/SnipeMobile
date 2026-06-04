@@ -667,6 +667,17 @@ struct MainSplitView: View {
             ipadDetailContent
         }
         .navigationSplitViewStyle(.balanced)
+        .alert(
+            L10n.string("refresh_failed_title"),
+            isPresented: Binding(
+                get: { apiClient.refreshErrorMessage != nil },
+                set: { if !$0 { apiClient.refreshErrorMessage = nil } }
+            )
+        ) {
+            Button(L10n.string("ok"), role: .cancel) { apiClient.refreshErrorMessage = nil }
+        } message: {
+            Text(apiClient.refreshErrorMessage ?? "")
+        }
         .onChange(of: selectedSection) { _, newSection in
             if skipClearSelectionOnSectionChange {
                 skipClearSelectionOnSectionChange = false
@@ -1492,6 +1503,23 @@ struct MainSplitView: View {
         }
     }
 
+    // Don't show the loader if the active section already has cached rows.
+    private var currentSectionListIsEmpty: Bool {
+        switch selectedSection {
+        case .hardware: return apiClient.assets.isEmpty
+        case .accessories: return apiClient.accessories.isEmpty
+        case .licenses: return apiClient.licenses.isEmpty
+        case .stock:
+            return stockSelectedSubmodule == .consumables
+                ? apiClient.consumables.isEmpty
+                : apiClient.components.isEmpty
+        case .directory:
+            return directorySelectedSubmodule == .users
+                ? apiClient.users.isEmpty
+                : apiClient.locations.isEmpty
+        }
+    }
+
     @ViewBuilder
     private var ipadContentColumn: some View {
         Group {
@@ -1502,7 +1530,7 @@ struct MainSplitView: View {
                     description: Text(L10n.string("configure_api_short"))
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if apiClient.isLoading && !isRefreshing {
+            } else if apiClient.isLoading && !isRefreshing && currentSectionListIsEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = apiClient.errorMessage {
@@ -1692,7 +1720,7 @@ struct MainSplitView: View {
                     }
                 }()
 
-                if isRelevantAssetsEmpty && apiClient.isConfigured && !apiClient.isLoading {
+                if isRelevantAssetsEmpty && apiClient.isConfigured && !apiClient.isLoading && apiClient.hasCompletedInitialLoad {
                     ContentUnavailableView(
                         searchText.isEmpty ? L10n.string("no_assets") : L10n.string("no_assets_match"),
                         systemImage: "laptopcomputer"
@@ -1702,7 +1730,7 @@ struct MainSplitView: View {
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true
-                    await apiClient.fetchPrimaryThenBackground()
+                    await apiClient.fetchAssets()
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     isRefreshing = false
                 }
@@ -1743,7 +1771,7 @@ struct MainSplitView: View {
         .refreshable {
             if apiClient.isConfigured {
                 isRefreshing = true
-                await apiClient.fetchPrimaryThenBackground()
+                await apiClient.fetchAccessories()
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }
@@ -1820,6 +1848,14 @@ struct MainSplitView: View {
                 ContentUnavailableView(L10n.string("no_consumables"), systemImage: "shippingbox")
             }
         }
+        .refreshable {
+            if apiClient.isConfigured {
+                isRefreshing = true
+                await apiClient.fetchConsumables()
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                isRefreshing = false
+            }
+        }
     }
 
     private var ipadComponentList: some View {
@@ -1855,7 +1891,7 @@ struct MainSplitView: View {
         .refreshable {
             if apiClient.isConfigured {
                 isRefreshing = true
-                await apiClient.fetchConsumables()
+                await apiClient.fetchComponents()
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }
@@ -1895,7 +1931,7 @@ struct MainSplitView: View {
         .refreshable {
             if apiClient.isConfigured {
                 isRefreshing = true
-                await apiClient.fetchPrimaryThenBackground()
+                await apiClient.fetchUsers()
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }
@@ -1935,7 +1971,7 @@ struct MainSplitView: View {
         .refreshable {
             if apiClient.isConfigured {
                 isRefreshing = true
-                await apiClient.fetchPrimaryThenBackground()
+                await apiClient.fetchLocations()
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }

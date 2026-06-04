@@ -148,7 +148,8 @@ struct AssetEditSheet: View {
                                 )
                                 let success = await apiClient.updateAsset(assetId: asset.id, update: update)
                                 if success {
-                                    await apiClient.fetchAssets()
+                                    // updateAsset already patched it in memory, so refresh the
+                                    // full list in the background instead of making the user wait.
                                     if auditNotificationsEnabled {
                                         await AuditNotificationManager.shared.updateSchedule(
                                             enabled: true,
@@ -157,6 +158,7 @@ struct AssetEditSheet: View {
                                             assets: apiClient.assets
                                         )
                                     }
+                                    Task { await apiClient.fetchAssets() }
                                 }
                                 isSaving = false
                                 if success {

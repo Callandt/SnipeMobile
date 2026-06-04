@@ -12,6 +12,7 @@ struct UserDetailView: View {
     var onOpenLicense: ((License) -> Void)? = nil
     var onOpenConsumable: ((Consumable) -> Void)? = nil
     @State private var selectedTab = 0
+    @State private var showEditSheet = false
     @State private var detailImageURL: String? = nil
     @State private var userAssets: [Asset] = []
     @State private var userAccessories: [Accessory] = []
@@ -133,12 +134,33 @@ struct UserDetailView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showEditSheet = true } label: {
+                    Image(systemName: "pencil")
+                }
+                .accessibilityLabel(L10n.string("edit"))
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/users/\(user.id)") {
                     Link(destination: url) {
                         Image(systemName: "safari")
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            UserEditSheet(
+                apiClient: apiClient,
+                user: currentUser,
+                isPresented: $showEditSheet,
+                onSuccess: {
+                    Task {
+                        await reloadAssignedItems()
+                        if let fullUser = await apiClient.fetchUserDetails(userId: user.id) {
+                            detailImageURL = fullUser.image
+                        }
+                    }
+                }
+            )
         }
         .task(id: user.id) {
             DispatchQueue.main.async { isDetailViewActive = true }

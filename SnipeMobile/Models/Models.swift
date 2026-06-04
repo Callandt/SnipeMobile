@@ -235,13 +235,58 @@ struct AssignedTo: Codable {
     var isAsset: Bool { normalizedType == "asset" }
 }
 
+struct LocationParent: Codable, Hashable {
+    let id: Int?
+    let name: String?
+}
+
 struct Location: Codable, Identifiable, Hashable {
     let id: Int
     let name: String
+    let address: String?
+    let address2: String?
+    let city: String?
+    let state: String?
+    let country: String?
+    let zip: String?
+    let currency: String?
+    let parent: LocationParent?
 
     /// Some API fields contain HTML entities (e.g. `&#039;` for `'`).
     /// Use this everywhere we display the location name.
     var decodedName: String { HTMLDecoder.decode(name) }
+
+    init(
+        id: Int,
+        name: String,
+        address: String? = nil,
+        address2: String? = nil,
+        city: String? = nil,
+        state: String? = nil,
+        country: String? = nil,
+        zip: String? = nil,
+        currency: String? = nil,
+        parent: LocationParent? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.address = address
+        self.address2 = address2
+        self.city = city
+        self.state = state
+        self.country = country
+        self.zip = zip
+        self.currency = currency
+        self.parent = parent
+    }
+
+    static func == (lhs: Location, rhs: Location) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
 struct DateInfo: Codable {
@@ -320,18 +365,29 @@ struct User: Identifiable, Codable, Hashable {
     let id: Int
     let name: String
     let first_name: String
+    let lastName: String?
+    let username: String?
     let email: String?
+    let phone: String?
     let image: String?
     let location: Location?
+    let company: Company?
     let employeeNumber: String?
     let jobtitle: String?
+    let notes: String?
+    let activated: Bool?
 
     let decodedName: String
     let decodedFirstName: String
+    let decodedLastName: String
+    let decodedUsername: String
     let decodedEmail: String
+    let decodedPhone: String
     let decodedLocationName: String
+    let decodedCompanyName: String
     let decodedEmployeeNumber: String
     let decodedJobtitle: String
+    let decodedNotes: String
 
     private static func normalizeUserImage(_ value: String?) -> String? {
         guard let value else { return nil }
@@ -344,26 +400,38 @@ struct User: Identifiable, Codable, Hashable {
         return trimmed
     }
 
-    init(id: Int, name: String, first_name: String, email: String? = nil, image: String? = nil, location: Location? = nil, employeeNumber: String? = nil, jobtitle: String? = nil) {
+    init(id: Int, name: String, first_name: String, lastName: String? = nil, username: String? = nil, email: String? = nil, phone: String? = nil, image: String? = nil, location: Location? = nil, company: Company? = nil, employeeNumber: String? = nil, jobtitle: String? = nil, notes: String? = nil, activated: Bool? = nil) {
         self.id = id
         self.name = name
         self.first_name = first_name
+        self.lastName = lastName
+        self.username = username
         self.email = email
+        self.phone = phone
         self.image = Self.normalizeUserImage(image)
         self.location = location
+        self.company = company
         self.employeeNumber = employeeNumber
         self.jobtitle = jobtitle
+        self.notes = notes
+        self.activated = activated
 
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedFirstName = HTMLDecoder.decode(first_name)
+        self.decodedLastName = HTMLDecoder.decode(lastName ?? "")
+        self.decodedUsername = HTMLDecoder.decode(username ?? "")
         self.decodedEmail = HTMLDecoder.decode(email ?? "")
+        self.decodedPhone = HTMLDecoder.decode(phone ?? "")
         self.decodedLocationName = HTMLDecoder.decode(location?.name ?? "")
+        self.decodedCompanyName = HTMLDecoder.decode(company?.name ?? "")
         self.decodedEmployeeNumber = HTMLDecoder.decode(employeeNumber ?? "")
         self.decodedJobtitle = HTMLDecoder.decode(jobtitle ?? "")
+        self.decodedNotes = HTMLDecoder.decode(notes ?? "")
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, first_name, email, image, avatar, location, jobtitle
+        case id, name, first_name, username, email, phone, image, avatar, location, company, jobtitle, notes, activated
+        case lastName = "last_name"
         case employeeNumber = "employee_num"
     }
     
@@ -372,14 +440,20 @@ struct User: Identifiable, Codable, Hashable {
         let id = try container.decode(Int.self, forKey: .id)
         let name = try container.decode(String.self, forKey: .name)
         let first_name = try container.decode(String.self, forKey: .first_name)
+        let lastName = try? container.decodeIfPresent(String.self, forKey: .lastName)
+        let username = try? container.decodeIfPresent(String.self, forKey: .username)
         let email = try? container.decodeIfPresent(String.self, forKey: .email)
+        let phone = try? container.decodeIfPresent(String.self, forKey: .phone)
         let image = (try? container.decodeIfPresent(String.self, forKey: .image))
             ?? (try? container.decodeIfPresent(String.self, forKey: .avatar))
         let location = try? container.decodeIfPresent(Location.self, forKey: .location)
+        let company = try? container.decodeIfPresent(Company.self, forKey: .company)
         let employeeNumber = try? container.decodeIfPresent(String.self, forKey: .employeeNumber)
         let jobtitle = try? container.decodeIfPresent(String.self, forKey: .jobtitle)
+        let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+        let activated = try? container.decodeIfPresent(Bool.self, forKey: .activated)
 
-        self.init(id: id, name: name, first_name: first_name, email: email, image: image, location: location, employeeNumber: employeeNumber, jobtitle: jobtitle)
+        self.init(id: id, name: name, first_name: first_name, lastName: lastName, username: username, email: email, phone: phone, image: image, location: location, company: company, employeeNumber: employeeNumber, jobtitle: jobtitle, notes: notes, activated: activated)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -387,11 +461,17 @@ struct User: Identifiable, Codable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(first_name, forKey: .first_name)
+        try container.encodeIfPresent(lastName, forKey: .lastName)
+        try container.encodeIfPresent(username, forKey: .username)
         try container.encodeIfPresent(email, forKey: .email)
+        try container.encodeIfPresent(phone, forKey: .phone)
         try container.encodeIfPresent(image, forKey: .image)
         try container.encodeIfPresent(location, forKey: .location)
+        try container.encodeIfPresent(company, forKey: .company)
         try container.encodeIfPresent(employeeNumber, forKey: .employeeNumber)
         try container.encodeIfPresent(jobtitle, forKey: .jobtitle)
+        try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encodeIfPresent(activated, forKey: .activated)
     }
 
     static func == (lhs: User, rhs: User) -> Bool {
