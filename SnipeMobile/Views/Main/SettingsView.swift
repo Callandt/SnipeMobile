@@ -335,18 +335,21 @@ struct SettingsView: View {
                 title: L10n.string("settings_version"),
                 value: versionDisplay
             )
-            // Testing helper: drop the on-disk cache so the next launch starts fresh.
-            Button {
-                LocalCacheStore.clearAll()
-                alertMessage = "Cache cleared. Restart the app to test a cold load."
-                showAlert = true
-            } label: {
-                SettingsRow(
-                    icon: "arrow.clockwise.circle.fill",
-                    iconColor: .blue,
-                    title: "Clear cache (test)",
-                    value: nil
-                )
+            if let githubURL = URL(string: "https://github.com/Callandt/SnipeMobile") {
+                Link(destination: githubURL) {
+                    HStack(spacing: 12) {
+                        SettingsRow(
+                            icon: "chevron.left.forwardslash.chevron.right",
+                            iconColor: .black,
+                            title: L10n.string("settings_source_code"),
+                            value: "GitHub"
+                        )
+                        Image(systemName: "arrow.up.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.primary)
             }
             Button(role: .destructive) {
                 showResetConfirm = true
