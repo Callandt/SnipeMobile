@@ -15,7 +15,7 @@ struct MaintenanceCardView: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    if let type = record.assetMaintenanceType, !type.isEmpty {
+                    if let type = record.displayType {
                         Text(type)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -49,14 +49,14 @@ struct MaintenanceCardView: View {
                     }
                 }
             }
-            if record.isWarranty {
-                HStack(spacing: 4) {
-                    Image(systemName: "lock.shield")
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
-                    Text(L10n.string("is_warranty"))
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
+            HStack(spacing: 8) {
+                statusBadge
+                if record.isWarranty {
+                    badge(
+                        icon: "lock.shield",
+                        text: L10n.string("is_warranty"),
+                        color: .accentColor
+                    )
                 }
             }
         }
@@ -67,5 +67,27 @@ struct MaintenanceCardView: View {
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        if record.isCompleted {
+            badge(icon: "checkmark.seal.fill", text: L10n.string("status_completed"), color: .green)
+        } else {
+            badge(icon: "clock", text: L10n.string("in_progress"), color: .orange)
+        }
+    }
+
+    private func badge(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+            Text(text)
+        }
+        .font(.caption)
+        .fontWeight(.medium)
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.12), in: Capsule())
     }
 }

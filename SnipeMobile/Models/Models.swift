@@ -346,6 +346,18 @@ struct SuppliersResponse: Codable {
     let rows: [Supplier]
 }
 
+struct MaintenanceType: Codable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+
+    var decodedName: String { HTMLDecoder.decode(name) }
+}
+
+struct MaintenanceTypesResponse: Codable {
+    let total: Int?
+    let rows: [MaintenanceType]
+}
+
 struct CreatedBy: Codable {
     let id: Int
     let name: String
@@ -1213,12 +1225,18 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
     let id: Int
     let title: String
     let assetMaintenanceType: String?
+    let maintenanceType: String?
     let supplier: Supplier?
     let cost: String?
     let notes: String?
     let startDate: DateInfo?
     let completionDate: DateInfo?
     let isWarranty: Bool
+    let url: String?
+    let maintenanceTime: Int?
+    let createdBy: CreatedBy?
+    let responsibleParty: CreatedBy?
+    let completedAt: DateInfo?
     let createdAt: DateInfo?
     let updatedAt: DateInfo?
     let completedBy: CreatedBy?
@@ -1226,12 +1244,31 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
     var decodedTitle: String { HTMLDecoder.decode(title) }
     var decodedNotes: String { HTMLDecoder.decode(notes ?? "") }
 
+    // marked complete via the dedicated action (not just a planned end date)
+    var isCompleted: Bool {
+        if let dt = completedAt?.datetime, !dt.isEmpty { return true }
+        if let f = completedAt?.formatted, !f.isEmpty { return true }
+        return false
+    }
+
+    // legacy string first, then the named type from newer servers
+    var displayType: String? {
+        if let t = assetMaintenanceType, !t.isEmpty { return t }
+        if let t = maintenanceType, !t.isEmpty { return t }
+        return nil
+    }
+
     enum CodingKeys: String, CodingKey {
-        case id, title, supplier, cost, notes
+        case id, title, supplier, cost, notes, url
         case assetMaintenanceType = "asset_maintenance_type"
+        case maintenanceType = "maintenance_type"
         case startDate = "start_date"
         case completionDate = "completion_date"
         case isWarranty = "is_warranty"
+        case maintenanceTime = "asset_maintenance_time"
+        case createdBy = "created_by"
+        case responsibleParty = "responsible_party"
+        case completedAt = "completed_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case completedBy = "completed_by"
@@ -1242,12 +1279,18 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         id = try c.decode(Int.self, forKey: .id)
         title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
         assetMaintenanceType = try? c.decodeIfPresent(String.self, forKey: .assetMaintenanceType)
+        maintenanceType = try? c.decodeIfPresent(String.self, forKey: .maintenanceType)
         supplier = try? c.decodeIfPresent(Supplier.self, forKey: .supplier)
         cost = try? c.decodeIfPresent(String.self, forKey: .cost)
         notes = try? c.decodeIfPresent(String.self, forKey: .notes)
         startDate = try? c.decodeIfPresent(DateInfo.self, forKey: .startDate)
         completionDate = try? c.decodeIfPresent(DateInfo.self, forKey: .completionDate)
         isWarranty = (try? c.decodeIfPresent(Bool.self, forKey: .isWarranty)) ?? false
+        url = try? c.decodeIfPresent(String.self, forKey: .url)
+        maintenanceTime = try? c.decodeIfPresent(Int.self, forKey: .maintenanceTime)
+        createdBy = try? c.decodeIfPresent(CreatedBy.self, forKey: .createdBy)
+        responsibleParty = try? c.decodeIfPresent(CreatedBy.self, forKey: .responsibleParty)
+        completedAt = try? c.decodeIfPresent(DateInfo.self, forKey: .completedAt)
         createdAt = try? c.decodeIfPresent(DateInfo.self, forKey: .createdAt)
         updatedAt = try? c.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
         completedBy = try? c.decodeIfPresent(CreatedBy.self, forKey: .completedBy)
@@ -1266,19 +1309,45 @@ struct MaintenanceCreateRequest: Encodable {
     let asset_id: Int
     let name: String
     let asset_maintenance_type: String?
+    let maintenance_type_id: Int?
     let supplier_id: Int?
-    let cost: Double?
+    let cost: String?
     let notes: String?
     let start_date: String
     let completion_date: String?
     let is_warranty: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case asset_id, name, cost, notes
+        case asset_maintenance_type
+        case maintenance_type_id
+        case supplier_id
+        case start_date
+        case completion_date
+        case is_warranty
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(asset_id, forKey: .asset_id)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(asset_maintenance_type, forKey: .asset_maintenance_type)
+        try c.encodeIfPresent(maintenance_type_id, forKey: .maintenance_type_id)
+        try c.encodeIfPresent(supplier_id, forKey: .supplier_id)
+        try c.encodeIfPresent(cost, forKey: .cost)
+        try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encode(start_date, forKey: .start_date)
+        try c.encodeIfPresent(completion_date, forKey: .completion_date)
+        try c.encode(is_warranty, forKey: .is_warranty)
+    }
 }
 
 struct MaintenanceUpdateRequest: Encodable {
     let name: String?
     let asset_maintenance_type: String?
+    let maintenance_type_id: Int?
     let supplier_id: Int?
-    let cost: Double?
+    let cost: String?
     let notes: String?
     let start_date: String?
     let completion_date: String?
@@ -1287,6 +1356,7 @@ struct MaintenanceUpdateRequest: Encodable {
     enum CodingKeys: String, CodingKey {
         case name, cost, notes
         case asset_maintenance_type
+        case maintenance_type_id
         case supplier_id
         case start_date
         case completion_date
@@ -1297,6 +1367,7 @@ struct MaintenanceUpdateRequest: Encodable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(asset_maintenance_type, forKey: .asset_maintenance_type)
+        try c.encodeIfPresent(maintenance_type_id, forKey: .maintenance_type_id)
         try c.encodeIfPresent(supplier_id, forKey: .supplier_id)
         try c.encodeIfPresent(cost, forKey: .cost)
         try c.encodeIfPresent(notes, forKey: .notes)

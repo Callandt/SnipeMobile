@@ -10,6 +10,7 @@ struct MaintenanceFormSheet: View {
 
     @State private var title: String = ""
     @State private var selectedType: String = "Maintenance"
+    @State private var selectedTypeId: Int = 0
     @State private var selectedSupplierId: Int = 0
     @State private var cost: String = ""
     @State private var notes: String = ""
@@ -34,7 +35,17 @@ struct MaintenanceFormSheet: View {
     }()
 
     private var isEditing: Bool { record != nil }
-    private var canSave: Bool { !title.trimmingCharacters(in: .whitespaces).isEmpty && !isSaving }
+
+    // empty list = older server without the maintenance-types endpoint
+    private var usesTypeIds: Bool { !apiClient.maintenanceTypes.isEmpty }
+
+    private var typeIsValid: Bool {
+        usesTypeIds ? selectedTypeId != 0 : !selectedType.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespaces).isEmpty && typeIsValid && !isSaving
+    }
 
     var body: some View {
         NavigationStack {
@@ -46,9 +57,17 @@ struct MaintenanceFormSheet: View {
                             .foregroundColor(.secondary)
                         TextField(L10n.string("name"), text: $title)
                     }
-                    Picker(L10n.string("maintenance_type"), selection: $selectedType) {
-                        ForEach(maintenanceTypes, id: \.self) { type in
-                            Text(type).tag(type)
+                    if usesTypeIds {
+                        Picker(L10n.string("maintenance_type"), selection: $selectedTypeId) {
+                            ForEach(apiClient.maintenanceTypes) { type in
+                                Text(type.decodedName).tag(type.id)
+                            }
+                        }
+                    } else {
+                        Picker(L10n.string("maintenance_type"), selection: $selectedType) {
+                            ForEach(maintenanceTypes, id: \.self) { type in
+                                Text(type).tag(type)
+                            }
                         }
                     }
                 }
@@ -103,6 +122,14 @@ struct MaintenanceFormSheet: View {
             if apiClient.suppliers.isEmpty {
                 Task { await apiClient.fetchSuppliers() }
             }
+            if apiClient.maintenanceTypes.isEmpty {
+                Task {
+                    await apiClient.fetchMaintenanceTypes()
+                    applyTypeSelection()
+                }
+            } else {
+                applyTypeSelection()
+            }
         }
         .alert(L10n.string("error"), isPresented: $showErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {}
@@ -111,10 +138,26 @@ struct MaintenanceFormSheet: View {
         }
     }
 
+    // match the edited record by name, else pick the first type
+    private func applyTypeSelection() {
+        guard usesTypeIds else { return }
+        if let r = record {
+            let targetName = (r.maintenanceType ?? r.assetMaintenanceType)?.lowercased()
+            if let target = targetName,
+               let match = apiClient.maintenanceTypes.first(where: { $0.name.lowercased() == target }) {
+                selectedTypeId = match.id
+                return
+            }
+        }
+        if selectedTypeId == 0, let first = apiClient.maintenanceTypes.first {
+            selectedTypeId = first.id
+        }
+    }
+
     private func prefill() {
         guard let r = record else { return }
         title = r.decodedTitle
-        selectedType = r.assetMaintenanceType ?? "Maintenance"
+        selectedType = r.assetMaintenanceType ?? r.maintenanceType ?? "Maintenance"
         selectedSupplierId = r.supplier?.id ?? 0
         cost = r.cost ?? ""
         notes = r.decodedNotes
@@ -135,14 +178,21 @@ struct MaintenanceFormSheet: View {
         let startStr = dateFormatter.string(from: startDate)
         let endStr = hasCompletionDate ? dateFormatter.string(from: completionDate) : nil
         let supplierIdOpt: Int? = selectedSupplierId == 0 ? nil : selectedSupplierId
-        let costOpt: Double? = Double(cost.trimmingCharacters(in: .whitespaces))
+        let costOpt: String? = NumberFormatHelpers.normalizeDecimalForAPI(cost)
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
+
+        // send both so the legacy string column stays populated too
+        let typeIdOpt: Int? = usesTypeIds ? (selectedTypeId == 0 ? nil : selectedTypeId) : nil
+        let typeStringOpt: String? = usesTypeIds
+            ? apiClient.maintenanceTypes.first(where: { $0.id == selectedTypeId })?.name
+            : selectedType
 
         let ok: Bool
         if let existing = record {
             let update = MaintenanceUpdateRequest(
                 name: title,
-                asset_maintenance_type: selectedType,
+                asset_maintenance_type: typeStringOpt,
+                maintenance_type_id: typeIdOpt,
                 supplier_id: supplierIdOpt,
                 cost: costOpt,
                 notes: notesOpt,
@@ -155,7 +205,8 @@ struct MaintenanceFormSheet: View {
             let create = MaintenanceCreateRequest(
                 asset_id: assetId,
                 name: title,
-                asset_maintenance_type: selectedType,
+                asset_maintenance_type: typeStringOpt,
+                maintenance_type_id: typeIdOpt,
                 supplier_id: supplierIdOpt,
                 cost: costOpt,
                 notes: notesOpt,

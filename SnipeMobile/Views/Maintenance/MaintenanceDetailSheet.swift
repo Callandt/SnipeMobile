@@ -10,15 +10,22 @@ struct MaintenanceDetailSheet: View {
     @State private var showEditSheet = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
+    @State private var showCompleteConfirm = false
+    @State private var isCompleting = false
+    @State private var completeNote = ""
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
+
+    private var isBusy: Bool { isDeleting || isCompleting }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 15) {
+                    statusHeader
+
                     VStack(spacing: 10) {
-                        if let type = record.assetMaintenanceType, !type.isEmpty {
+                        if let type = record.displayType {
                             detailRow(label: L10n.string("maintenance_type"), value: type)
                         }
                         if let supplier = record.supplier {
@@ -32,12 +39,33 @@ struct MaintenanceDetailSheet: View {
                         } else {
                             detailRow(label: L10n.string("completion_date"), value: L10n.string("in_progress"))
                         }
+                        if let time = record.maintenanceTime, time > 0 {
+                            detailRow(label: L10n.string("maintenance_duration"), value: L10n.string("maintenance_duration_days", time))
+                        }
                         if let cost = record.cost, !cost.isEmpty {
                             detailRow(label: L10n.string("cost"), value: cost)
                         }
                         detailRow(label: L10n.string("is_warranty"), value: record.isWarranty ? L10n.string("yes") : L10n.string("no"))
+                        if let urlString = record.url, !urlString.isEmpty {
+                            detailLinkRow(label: L10n.string("url"), urlString: urlString)
+                        }
+                        if let responsible = record.responsibleParty {
+                            detailRow(label: L10n.string("responsible_party"), value: HTMLDecoder.decode(responsible.name))
+                        }
+                        if let createdBy = record.createdBy {
+                            detailRow(label: L10n.string("created_by"), value: HTMLDecoder.decode(createdBy.name))
+                        }
                         if let completedBy = record.completedBy {
                             detailRow(label: L10n.string("completed_by"), value: HTMLDecoder.decode(completedBy.name))
+                        }
+                        if let completedAt = record.completedAt?.formatted, !completedAt.isEmpty {
+                            detailRow(label: L10n.string("completed_date"), value: completedAt)
+                        }
+                        if let created = record.createdAt?.formatted, !created.isEmpty {
+                            detailRow(label: L10n.string("created_date"), value: created)
+                        }
+                        if let updated = record.updatedAt?.formatted, !updated.isEmpty {
+                            detailRow(label: L10n.string("updated_date"), value: updated)
                         }
                     }
                     .padding()
@@ -72,14 +100,40 @@ struct MaintenanceDetailSheet: View {
                     Button { showEditSheet = true } label: {
                         Image(systemName: "pencil")
                     }
-                    .disabled(isDeleting)
+                    .disabled(isBusy)
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
                         Image(systemName: "trash")
                             .foregroundStyle(.red)
                     }
-                    .disabled(isDeleting)
+                    .disabled(isBusy)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if !record.isCompleted {
+                    Button {
+                        completeNote = ""
+                        showCompleteConfirm = true
+                    } label: {
+                        Label(L10n.string("mark_complete"), systemImage: "checkmark.seal")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.large)
+                    .disabled(isBusy)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(.bar)
+                }
+            }
+            .overlay {
+                if isBusy {
+                    ProgressView()
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
         }
@@ -97,11 +151,35 @@ struct MaintenanceDetailSheet: View {
         } message: {
             Text(L10n.string("delete_maintenance_confirm_message", record.decodedTitle))
         }
+        .alert(L10n.string("mark_complete_confirm_title"), isPresented: $showCompleteConfirm) {
+            TextField(L10n.string("note_optional"), text: $completeNote)
+            Button(L10n.string("cancel"), role: .cancel) {}
+            Button(L10n.string("mark_complete")) {
+                Task { await completeRecord() }
+            }
+        } message: {
+            Text(L10n.string("mark_complete_confirm_message"))
+        }
         .alert(L10n.string("error"), isPresented: $showErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {}
         } message: {
             Text(errorMessage)
         }
+    }
+
+    @ViewBuilder
+    private var statusHeader: some View {
+        let completed = record.isCompleted
+        HStack(spacing: 6) {
+            Image(systemName: completed ? "checkmark.seal.fill" : "clock")
+            Text(completed ? L10n.string("status_completed") : L10n.string("in_progress"))
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(completed ? .green : .orange)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background((completed ? Color.green : Color.orange).opacity(0.12), in: Capsule())
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private func detailRow(label: String, value: String) -> some View {
@@ -114,10 +192,41 @@ struct MaintenanceDetailSheet: View {
         }
     }
 
+    @ViewBuilder
+    private func detailLinkRow(label: String, urlString: String) -> some View {
+        HStack {
+            Text(label).fontWeight(.semibold)
+            Spacer()
+            if let url = URL(string: urlString) {
+                Link(urlString, destination: url)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text(urlString)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+    }
+
     private func deleteRecord() async {
         isDeleting = true
         let ok = await apiClient.deleteMaintenance(id: record.id)
         isDeleting = false
+        if ok {
+            onMutated()
+            dismiss()
+        } else {
+            errorMessage = apiClient.lastApiMessage ?? apiClient.errorMessage ?? L10n.string("error")
+            showErrorAlert = true
+        }
+    }
+
+    private func completeRecord() async {
+        isCompleting = true
+        let ok = await apiClient.completeMaintenance(id: record.id, note: completeNote)
+        isCompleting = false
         if ok {
             onMutated()
             dismiss()

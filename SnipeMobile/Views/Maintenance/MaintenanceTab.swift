@@ -46,6 +46,8 @@ struct MaintenanceTab: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {

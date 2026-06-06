@@ -18,6 +18,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var groups: [UserGroup] = []
     @Published var manufacturers: [Manufacturer] = [] { didSet { scheduleCacheSave() } }
     @Published var suppliers: [Supplier] = [] { didSet { scheduleCacheSave() } }
+    @Published var maintenanceTypes: [MaintenanceType] = []
     @Published var errorMessage: String?
     @Published var lastApiMessage: String?
     @Published var isConfigured: Bool {
@@ -2177,6 +2178,22 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    // newer servers only; older ones leave the list empty
+    func fetchMaintenanceTypes() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        do {
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/maintenance-types",
+                as: MaintenanceType.self
+            ) else { return }
+            await MainActor.run {
+                self.maintenanceTypes = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            }
+        } catch {
+            print("Error fetching maintenance types: \(error.localizedDescription)")
+        }
+    }
+
     func fetchUsersForAccessory(accessoryId: Int) async -> [User] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         do {
@@ -3550,6 +3567,40 @@ class SnipeITAPIClient: ObservableObject {
             }
             if (json?["status"] as? String)?.lowercased() == "error" {
                 await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Update failed." }
+                return false
+            }
+            return true
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    func completeMaintenance(id: Int, note: String? = nil) async -> Bool {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)/complete") else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedNote, !trimmedNote.isEmpty {
+            request.httpBody = try? JSONSerialization.data(withJSONObject: ["note": trimmedNote])
+        }
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if !(200...299).contains(http.statusCode) {
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Complete failed." }
+                return false
+            }
+            if (json?["status"] as? String)?.lowercased() == "error" {
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Complete failed." }
                 return false
             }
             return true
