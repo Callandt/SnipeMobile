@@ -3511,10 +3511,15 @@ class SnipeITAPIClient: ObservableObject {
             request.httpBody = try JSONEncoder().encode(body)
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             if !(200...299).contains(http.statusCode) {
-                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                let msg = (json?["messages"] as? String) ?? "Create failed."
-                await MainActor.run { self.lastApiMessage = msg }
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Create failed." }
+                return false
+            }
+            // Snipe-IT returns HTTP 200 even on validation failure; the real
+            // outcome is in the body's "status" field.
+            if (json?["status"] as? String)?.lowercased() == "error" {
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Create failed." }
                 return false
             }
             return true
@@ -3538,10 +3543,13 @@ class SnipeITAPIClient: ObservableObject {
             request.httpBody = try JSONEncoder().encode(update)
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             if !(200...299).contains(http.statusCode) {
-                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                let msg = (json?["messages"] as? String) ?? "Update failed."
-                await MainActor.run { self.lastApiMessage = msg }
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Update failed." }
+                return false
+            }
+            if (json?["status"] as? String)?.lowercased() == "error" {
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Update failed." }
                 return false
             }
             return true
@@ -3563,10 +3571,13 @@ class SnipeITAPIClient: ObservableObject {
         do {
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             if !(200...299).contains(http.statusCode) {
-                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                let msg = (json?["messages"] as? String) ?? "Delete failed."
-                await MainActor.run { self.lastApiMessage = msg }
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Delete failed." }
+                return false
+            }
+            if (json?["status"] as? String)?.lowercased() == "error" {
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Delete failed." }
                 return false
             }
             return true

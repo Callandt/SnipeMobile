@@ -574,8 +574,10 @@ struct ContentView: View {
                 }
             }
 
-            // Try QR handling first when the scanned payload parses as a URL.
-            if let url = URL(string: scannedValue) {
+            // Only QR codes carry a Snipe-IT URL with an internal asset id. A 1D barcode is
+            // the asset tag verbatim, so it must not be parsed as a URL/number (which would
+            // strip leading zeros); it falls through to the literal tag lookup below.
+            if scanResult.type == .qr, let url = URL(string: scannedValue) {
                 // Snipe-IT QR: asset ID in path
                 if let id = extractAssetId(from: url) {
                     if let asset = apiClient.assets.first(where: { $0.id == id }) {
@@ -586,16 +588,9 @@ struct ContentView: View {
                         selectedTab = .hardware
                         Task { await apiClient.fetchPrimaryThenBackground() }
                     } else {
-                        // Fallback: when label content is (mis)configured, treat the extracted numeric
-                        // segment as an `asset_tag` instead of an internal asset `id`.
-                        // Only do this for non-QR scans.
-                        if scanResult.type != .qr {
-                            Task { await openHardwareForScannedValueByTag(String(id)) }
-                        } else {
-                            scannedAssetId = nil
-                            scanErrorMessage = L10n.string("asset_not_found_id", String(id))
-                            showScanErrorAlert = true
-                        }
+                        scannedAssetId = nil
+                        scanErrorMessage = L10n.string("asset_not_found_id", String(id))
+                        showScanErrorAlert = true
                     }
                     return
                 }

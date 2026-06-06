@@ -22,6 +22,7 @@ struct SettingsView: View {
     @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
+    @AppStorage("autoFillAssetTag") private var autoFillAssetTag: Bool = true
 
     @State private var baseURL: String = ""
     @State private var apiToken: String = ""
@@ -102,6 +103,8 @@ struct SettingsView: View {
                     )
                 case .dell:
                     DellSettingsView()
+                case .assets:
+                    AssetSettingsView(autoFillAssetTag: $autoFillAssetTag)
                 case .modules:
                     ModulesSettingsView(
                         showAccessoriesTab: $showAccessoriesTab,
@@ -127,6 +130,9 @@ struct SettingsView: View {
             }
             .onChange(of: useCloudSync) { _, newValue in
                 CloudSettingsStore.shared.setUseCloudSync(newValue)
+            }
+            .onChange(of: autoFillAssetTag) { _, newValue in
+                CloudSettingsStore.shared.setAutoFillAssetTag(newValue)
             }
             .onChange(of: enableAuditSubtab) { _, newValue in
                 // Notifications only make sense when the Audit subtab is visible.
@@ -306,6 +312,14 @@ struct SettingsView: View {
 
     private var featuresSection: some View {
         Section {
+            NavigationLink(value: SettingsRoute.assets) {
+                SettingsRow(
+                    icon: "barcode",
+                    iconColor: .blue,
+                    title: L10n.string("settings_assets"),
+                    value: nil
+                )
+            }
             NavigationLink(value: SettingsRoute.audit) {
                 SettingsRow(
                     icon: "bell.badge.fill",
@@ -431,7 +445,7 @@ struct SettingsView: View {
     }
 }
 
-enum SettingsRoute: Hashable { case appearance, security, api, audit, dell, modules }
+enum SettingsRoute: Hashable { case appearance, security, api, audit, dell, modules, assets }
 
 // MARK: - Reusable building blocks (iOS Settings.app style)
 
@@ -713,6 +727,24 @@ struct ModulesSettingsView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle(L10n.string("settings_modules"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct AssetSettingsView: View {
+    @Binding var autoFillAssetTag: Bool
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(L10n.string("auto_fill_asset_tag_toggle"), isOn: $autoFillAssetTag)
+            } header: {
+                Text(L10n.string("settings_assets_creation_header"))
+            } footer: {
+                Text(L10n.string("auto_fill_asset_tag_footer"))
+            }
+        }
+        .navigationTitle(L10n.string("settings_assets"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

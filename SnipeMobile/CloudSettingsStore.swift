@@ -22,6 +22,7 @@ private enum CloudKey: String, CaseIterable {
     case settingsLanguage
     case biometricsJustConfirmed
     case enableDellQrScan
+    case autoFillAssetTag
     case dellTechDirectClientId
     case dellTechDirectClientSecret
     /// Unix timestamp of last wipe. Other devices mirror it locally.
@@ -175,6 +176,14 @@ final class CloudSettingsStore {
         }
     }
 
+    func setAutoFillAssetTag(_ value: Bool) {
+        defaults.set(value, forKey: "autoFillAssetTag")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.autoFillAssetTag.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
     func setDellTechDirectClientId(_ value: String) {
         KeychainSecretStore.set(value, for: .dellTechDirectClientId)
         defaults.removeObject(forKey: "dellTechDirectClientId")
@@ -244,6 +253,9 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.enableDellQrScan.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.enableDellQrScan.rawValue), forKey: "enableDellQrScan")
         }
+        if store.object(forKey: CloudKey.autoFillAssetTag.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.autoFillAssetTag.rawValue), forKey: "autoFillAssetTag")
+        }
         if let v = store.string(forKey: CloudKey.dellTechDirectClientId.rawValue) {
             KeychainSecretStore.set(v, for: .dellTechDirectClientId)
             defaults.removeObject(forKey: "dellTechDirectClientId")
@@ -272,6 +284,7 @@ final class CloudSettingsStore {
         if let v = defaults.string(forKey: "settingsLanguage") { store.set(v, forKey: CloudKey.settingsLanguage.rawValue) }
         store.set(defaults.bool(forKey: "biometricsJustConfirmed"), forKey: CloudKey.biometricsJustConfirmed.rawValue)
         store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
+        store.set(defaults.object(forKey: "autoFillAssetTag") as? Bool ?? true, forKey: CloudKey.autoFillAssetTag.rawValue)
         store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue)
         store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue)
     }

@@ -32,6 +32,7 @@ struct AddAssetSheet: View {
     @State private var showResult = false
     @State private var showingDellScanner = false
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
+    @AppStorage("autoFillAssetTag") private var autoFillAssetTag: Bool = true
 
     private var canSave: Bool {
         !assetTag.trimmingCharacters(in: .whitespaces).isEmpty
@@ -51,6 +52,8 @@ struct AddAssetSheet: View {
             let digits = tag.filter(\.isNumber)
             return digits.isEmpty ? nil : digits.count
         }
+        // Width is inferred from existing tags so leading zeros are preserved
+        // (e.g. "00041" -> "00042"); falls back to 5 for an empty system.
         let width = digitLengths.max() ?? 5
         return String(format: "%0*d", width, nextNum)
     }
@@ -68,7 +71,9 @@ struct AddAssetSheet: View {
             .toolbar { toolbarContent }
             .onAppear(perform: setupOnAppear)
             .onChange(of: apiClient.assets) { _, _ in
-                assetTag = nextAvailableAssetTag
+                if autoFillAssetTag {
+                    assetTag = nextAvailableAssetTag
+                }
             }
             .task(id: selectedModelId) {
                 await loadAndDisplayCustomFieldsForModel()
@@ -100,7 +105,8 @@ struct AddAssetSheet: View {
     }
 
     private func setupOnAppear() {
-        assetTag = nextAvailableAssetTag
+        // Only prefill the tag when auto-fill is enabled; otherwise the user types it.
+        assetTag = autoFillAssetTag ? nextAvailableAssetTag : ""
         // No model preselected.
         selectedModelId = 0
         displayedFieldDefinitions = []
@@ -168,12 +174,18 @@ struct AddAssetSheet: View {
     private var generalSection: some View {
         Section(header: Text(L10n.string("general"))) {
             TextField(L10n.string("name_optional"), text: $name)
-            HStack {
-                Text(L10n.string("asset_tag"))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(assetTag.isEmpty ? nextAvailableAssetTag : assetTag)
-                    .foregroundStyle(.primary)
+            if autoFillAssetTag {
+                HStack {
+                    Text(L10n.string("asset_tag"))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(assetTag.isEmpty ? nextAvailableAssetTag : assetTag)
+                        .foregroundStyle(.primary)
+                }
+            } else {
+                TextField(L10n.string("asset_tag"), text: $assetTag)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
             }
             TextField(L10n.string("serial_optional"), text: $serial)
             if enableDellQrScan {

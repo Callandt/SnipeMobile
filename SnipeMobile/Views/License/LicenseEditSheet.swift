@@ -237,8 +237,8 @@ struct LicenseEditSheet: View {
             "reassignable": reassignable ? 1 : 0,
             "maintained": maintained ? 1 : 0
         ]
-        let trimmedSerial = serial.trimmingCharacters(in: .whitespaces)
-        if !trimmedSerial.isEmpty { body["serial"] = trimmedSerial }
+        // Always send serial so clearing the product key removes the stored value.
+        body["serial"] = serial.trimmingCharacters(in: .whitespaces)
         let trimmedLicenseName = licensedToName.trimmingCharacters(in: .whitespaces)
         if !trimmedLicenseName.isEmpty { body["license_name"] = trimmedLicenseName }
         let trimmedEmail = licensedToEmail.trimmingCharacters(in: .whitespaces)
