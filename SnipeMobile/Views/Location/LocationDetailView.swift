@@ -4,8 +4,6 @@ struct LocationDetailView: View {
     let location: Location
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var isDetailViewActive: Bool
-    var returnToTab: MainTab? = nil
-    var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
@@ -183,7 +181,6 @@ struct LocationDetailView: View {
         .background(Color(.systemBackground))
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(currentLocation.decodedName)
@@ -191,15 +188,6 @@ struct LocationDetailView: View {
                     .fontWeight(.medium)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-            }
-            if let _ = returnToTab, let onBack = onBackToPrevious {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onBack()
-                    } label: {
-                        Label(L10n.string("back"), systemImage: "chevron.left")
-                    }
-                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showEditSheet = true } label: {

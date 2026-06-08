@@ -5,8 +5,6 @@ struct AccessoryDetailView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
     @Binding var isDetailViewActive: Bool
-    var returnToTab: MainTab? = nil
-    var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
@@ -185,7 +183,6 @@ struct AccessoryDetailView: View {
         .onDisappear { isDetailViewActive = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(currentAccessory.decodedName)
@@ -193,15 +190,6 @@ struct AccessoryDetailView: View {
                     .fontWeight(.medium)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-            }
-            if let _ = returnToTab, let onBack = onBackToPrevious {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onBack()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
-                    }
-                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/accessories/\(currentAccessory.id)") {

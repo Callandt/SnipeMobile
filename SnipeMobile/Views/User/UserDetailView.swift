@@ -4,8 +4,6 @@ struct UserDetailView: View {
     let user: User
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var isDetailViewActive: Bool
-    var returnToTab: MainTab? = nil
-    var onBackToPrevious: (() -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
@@ -161,7 +159,6 @@ struct UserDetailView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(displayName)
@@ -169,15 +166,6 @@ struct UserDetailView: View {
                     .fontWeight(.medium)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-            }
-            if let _ = returnToTab, let onBack = onBackToPrevious {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onBack()
-                    } label: {
-                        Label(L10n.string("back"), systemImage: "chevron.left")
-                    }
-                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showEditSheet = true } label: {
@@ -201,6 +189,7 @@ struct UserDetailView: View {
                 onSuccess: {
                     detailUser = nil
                     Task {
+                        await apiClient.fetchUsers()
                         if let fullUser = await apiClient.fetchUserDetails(userId: user.id) {
                             detailUser = fullUser
                             detailImageURL = fullUser.image

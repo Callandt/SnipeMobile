@@ -170,11 +170,6 @@ struct ContentView: View {
     @State private var searchText: String = ""
     @State private var isRefreshing: Bool = false
     @State private var hasLoadedInitialAssets: Bool = false
-    @State private var assetDetailTab: Int = 0
-    @State private var accessoryDetailTab: Int = 0
-    @State private var licenseDetailTab: Int = 0
-    @State private var consumableDetailTab: Int = 0
-    @State private var componentDetailTab: Int = 0
     @EnvironmentObject var appSettings: AppSettings
     @EnvironmentObject private var auditNotificationRouter: AuditNotificationRouter
     @State private var auditListFilter: AuditListFilter = .all
@@ -183,14 +178,6 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var showingAddAsset = false
     @State private var showingAddAccessory = false
-    @State private var pendingUserToOpen: User?
-    @State private var pendingAssetToOpen: Asset?
-    @State private var pendingLocationToOpen: Location?
-    @State private var pendingAccessoryToOpen: Accessory?
-    @State private var pendingLicenseToOpen: License?
-    @State private var pendingConsumableToOpen: Consumable?
-    @State private var pendingComponentToOpen: Component?
-    @State private var returnToTab: MainTab?
     @State private var hardwarePath = NavigationPath()
     @State private var accessoriesPath = NavigationPath()
     @State private var licensesPath = NavigationPath()
@@ -262,8 +249,6 @@ struct ContentView: View {
             searchText = ""
             // Tab state from visible view
             isDetailViewActive = false
-            // Back to list only on tab tap. Programmatic nav keeps path.
-            guard returnToTab == nil else { return }
             if !awaitingAuditNavigationResolution {
                 auditListFilter = .all
                 showTodayOnlyOverride = false
@@ -337,7 +322,13 @@ struct ContentView: View {
             L10n.string("refresh_failed_title"),
             isPresented: Binding(
                 get: { apiClient.refreshErrorMessage != nil },
-                set: { if !$0 { apiClient.refreshErrorMessage = nil } }
+                set: { newValue in
+                    if !newValue {
+                        // Defer out of the view-update cycle to avoid
+                        // "Publishing changes from within view updates".
+                        DispatchQueue.main.async { apiClient.refreshErrorMessage = nil }
+                    }
+                }
             )
         ) {
             Button(L10n.string("ok"), role: .cancel) { apiClient.refreshErrorMessage = nil }
@@ -394,76 +385,46 @@ struct ContentView: View {
                 searchText: $searchText,
                 isRefreshing: $isRefreshing,
                 hasLoadedInitialAssets: $hasLoadedInitialAssets,
-                assetDetailTab: $assetDetailTab,
                 scannedAssetId: $scannedAssetId,
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 showingAddAsset: $showingAddAsset,
                 navigationPath: $hardwarePath,
                 isDetailViewActive: $isDetailViewActive,
-                pendingAssetToOpen: $pendingAssetToOpen,
-                returnToTab: $returnToTab,
                 auditListFilter: $auditListFilter,
                 hardwareSubtab: $hardwareSubtab,
-                showTodayOnlyOverride: $showTodayOnlyOverride,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; hardwarePath = NavigationPath() } },
-                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .hardware },
-                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .hardware },
-                onOpenLicense: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .hardware },
-                onOpenAccessory: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .hardware },
-                onOpenComponent: { pendingComponentToOpen = $0; selectedTab = .stock; returnToTab = .hardware }
+                showTodayOnlyOverride: $showTodayOnlyOverride
             )
         case .accessories:
             AccessoriesTab(
                 apiClient: apiClient,
                 searchText: $searchText,
                 isRefreshing: $isRefreshing,
-                accessoryDetailTab: $accessoryDetailTab,
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 showingAddAccessory: $showingAddAccessory,
                 navigationPath: $accessoriesPath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingAccessoryToOpen: $pendingAccessoryToOpen,
-                returnToTab: $returnToTab,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; accessoriesPath = NavigationPath() } },
-                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .accessories },
-                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .accessories },
-                onOpenLocation: { pendingLocationToOpen = $0; selectedTab = .directory; returnToTab = .accessories }
+                isDetailViewActive: $isDetailViewActive
             )
         case .licenses:
             LicensesTab(
                 apiClient: apiClient,
                 searchText: $searchText,
                 isRefreshing: $isRefreshing,
-                licenseDetailTab: $licenseDetailTab,
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 navigationPath: $licensesPath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingLicenseToOpen: $pendingLicenseToOpen,
-                returnToTab: $returnToTab,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; licensesPath = NavigationPath() } },
-                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .licenses },
-                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .licenses }
+                isDetailViewActive: $isDetailViewActive
             )
         case .stock:
             StockTab(
                 apiClient: apiClient,
                 searchText: $searchText,
                 isRefreshing: $isRefreshing,
-                consumableDetailTab: $consumableDetailTab,
-                componentDetailTab: $componentDetailTab,
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 navigationPath: $stockPath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingConsumableToOpen: $pendingConsumableToOpen,
-                pendingComponentToOpen: $pendingComponentToOpen,
-                returnToTab: $returnToTab,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; stockPath = NavigationPath() } },
-                onOpenUser: { u in pendingUserToOpen = u; selectedTab = .directory; returnToTab = .stock },
-                onOpenAsset: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .stock }
+                isDetailViewActive: $isDetailViewActive
             )
         case .directory:
             DirectoryTab(
@@ -473,19 +434,7 @@ struct ContentView: View {
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 navigationPath: $directoryPath,
-                isDetailViewActive: $isDetailViewActive,
-                pendingUserToOpen: $pendingUserToOpen,
-                pendingLocationToOpen: $pendingLocationToOpen,
-                returnToTab: $returnToTab,
-                onBackToPreviousTab: { if let t = returnToTab { selectedTab = t; returnToTab = nil; directoryPath = NavigationPath() } },
-                onOpenAssetFromUser: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory },
-                onOpenAccessoryFromUser: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .directory },
-                onOpenLicenseFromUser: { pendingLicenseToOpen = $0; selectedTab = .licenses; returnToTab = .directory },
-                onOpenConsumableFromUser: { pendingConsumableToOpen = $0; selectedTab = .stock; returnToTab = .directory },
-                onOpenLocationFromUser: { pendingLocationToOpen = $0 },
-                onOpenUserFromLocation: { pendingUserToOpen = $0 },
-                onOpenAssetFromLocation: { pendingAssetToOpen = $0; selectedTab = .hardware; returnToTab = .directory },
-                onOpenAccessoryFromLocation: { pendingAccessoryToOpen = $0; selectedTab = .accessories; returnToTab = .directory }
+                isDetailViewActive: $isDetailViewActive
             )
         }
     }
@@ -515,9 +464,6 @@ struct ContentView: View {
         auditListFilter = .all
         showTodayOnlyOverride = false
         hardwareSubtab = enableAuditSubtab ? .audit : .all
-
-        // Avoid landing on an asset detail view.
-        pendingAssetToOpen = nil
         auditNotificationNavResolved = true
 
         // Defer resetting `selectedTab` until after the state changes,
@@ -696,30 +642,134 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Shared navigation destinations
+
+/// Registers detail destinations for every entity type on a single `NavigationStack`,
+/// so cross-module links (e.g. user → asset → license) push onto the *current* tab's
+/// stack instead of switching tabs. This keeps the native back button and the
+/// edge-swipe-to-go-back gesture working as users expect.
+private struct AppNavigationDestinations: ViewModifier {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var navigationPath: NavigationPath
+    @Binding var isDetailViewActive: Bool
+    @State private var assetDetailTab = 0
+    @State private var accessoryDetailTab = 0
+    @State private var licenseDetailTab = 0
+    @State private var consumableDetailTab = 0
+    @State private var componentDetailTab = 0
+
+    func body(content: Content) -> some View {
+        content
+            .navigationDestination(for: Asset.self) { asset in
+                AssetDetailView(
+                    asset: asset,
+                    apiClient: apiClient,
+                    selectedTab: $assetDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenUser: { navigationPath.append($0) },
+                    onOpenLocation: { navigationPath.append($0) },
+                    onOpenLicense: { navigationPath.append($0) },
+                    onOpenAccessory: { navigationPath.append($0) },
+                    onOpenComponent: { navigationPath.append($0) },
+                    onOpenAsset: { navigationPath.append($0) }
+                )
+            }
+            .navigationDestination(for: User.self) { user in
+                UserDetailView(
+                    user: user,
+                    apiClient: apiClient,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenAsset: { navigationPath.append($0) },
+                    onOpenAccessory: { navigationPath.append($0) },
+                    onOpenLocation: { navigationPath.append($0) },
+                    onOpenLicense: { navigationPath.append($0) },
+                    onOpenConsumable: { navigationPath.append($0) }
+                )
+                .id(user.id)
+            }
+            .navigationDestination(for: Location.self) { location in
+                LocationDetailView(
+                    location: location,
+                    apiClient: apiClient,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenUser: { navigationPath.append($0) },
+                    onOpenAsset: { navigationPath.append($0) },
+                    onOpenAccessory: { navigationPath.append($0) }
+                )
+                .id(location.id)
+            }
+            .navigationDestination(for: Accessory.self) { accessory in
+                AccessoryDetailView(
+                    accessory: accessory,
+                    apiClient: apiClient,
+                    selectedTab: $accessoryDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenUser: { navigationPath.append($0) },
+                    onOpenAsset: { navigationPath.append($0) },
+                    onOpenLocation: { navigationPath.append($0) }
+                )
+            }
+            .navigationDestination(for: License.self) { license in
+                LicenseDetailView(
+                    license: license,
+                    apiClient: apiClient,
+                    selectedTab: $licenseDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenUser: { navigationPath.append($0) },
+                    onOpenAsset: { navigationPath.append($0) }
+                )
+            }
+            .navigationDestination(for: Consumable.self) { consumable in
+                ConsumableDetailView(
+                    consumable: consumable,
+                    apiClient: apiClient,
+                    selectedTab: $consumableDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenUser: { navigationPath.append($0) }
+                )
+            }
+            .navigationDestination(for: Component.self) { component in
+                ComponentDetailView(
+                    component: component,
+                    apiClient: apiClient,
+                    selectedTab: $componentDetailTab,
+                    isDetailViewActive: $isDetailViewActive,
+                    onOpenAsset: { navigationPath.append($0) }
+                )
+            }
+    }
+}
+
+extension View {
+    /// Attaches the shared detail destinations to the current `NavigationStack`.
+    func appNavigationDestinations(
+        apiClient: SnipeITAPIClient,
+        navigationPath: Binding<NavigationPath>,
+        isDetailViewActive: Binding<Bool>
+    ) -> some View {
+        modifier(AppNavigationDestinations(
+            apiClient: apiClient,
+            navigationPath: navigationPath,
+            isDetailViewActive: isDetailViewActive
+        ))
+    }
+}
+
 // MARK: - Hardware Tab
 struct HardwareTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
     @Binding var hasLoadedInitialAssets: Bool
-    @Binding var assetDetailTab: Int
     @Binding var scannedAssetId: Int?
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
     @Binding var showingAddAsset: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
-    @Binding var pendingAssetToOpen: Asset?
-    @Binding var returnToTab: MainTab?
     @Binding var auditListFilter: AuditListFilter
     @Binding var hardwareSubtab: HardwareAuditSubtab
     @Binding var showTodayOnlyOverride: Bool
-    var onBackToPreviousTab: () -> Void
-    var onOpenUser: (User) -> Void
-    var onOpenLocation: (Location) -> Void
-    var onOpenLicense: (License) -> Void
-    var onOpenAccessory: (Accessory) -> Void
-    var onOpenComponent: (Component) -> Void
 
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
@@ -789,17 +839,12 @@ struct HardwareTab: View {
                 }
             }
             tryPushScannedAsset()
-            tryPushPendingAsset()
         }
         .onChange(of: scannedAssetId) { _, _ in
             tryPushScannedAsset()
         }
-        .onChange(of: pendingAssetToOpen) { _, _ in
-            tryPushPendingAsset()
-        }
         .onChange(of: apiClient.assets) { _, _ in
             tryPushScannedAsset()
-            tryPushPendingAsset()
         }
         .sheet(isPresented: $showAuditCompletionSheet) {
             NavigationStack {
@@ -948,9 +993,7 @@ struct HardwareTab: View {
                 isRefreshing = false
             }
         }
-        .navigationDestination(for: Asset.self) { asset in
-            AssetDetailView(asset: asset, apiClient: apiClient, selectedTab: $assetDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenLocation: onOpenLocation, onOpenLicense: onOpenLicense, onOpenAccessory: onOpenAccessory, onOpenComponent: onOpenComponent, onOpenAsset: { navigationPath.append($0) })
-        }
+        .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
         .alert(L10n.string("delete_asset_confirm_title"), isPresented: $showDeleteConfirm) {
             Button(L10n.string("cancel"), role: .cancel) {
                 assetToDelete = nil
@@ -1159,12 +1202,6 @@ struct HardwareTab: View {
         }
     }
 
-    private func tryPushPendingAsset() {
-        guard let asset = pendingAssetToOpen else { return }
-        navigationPath.append(asset)
-        pendingAssetToOpen = nil
-    }
-
     private func tryPushScannedAsset() {
         guard let id = scannedAssetId, let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
         navigationPath.append(asset)
@@ -1178,18 +1215,11 @@ struct AccessoriesTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
-    @Binding var accessoryDetailTab: Int
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
     @Binding var showingAddAccessory: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
-    @Binding var pendingAccessoryToOpen: Accessory?
-    @Binding var returnToTab: MainTab?
-    var onBackToPreviousTab: () -> Void
-    var onOpenUser: (User) -> Void
-    var onOpenAsset: (Asset) -> Void
-    var onOpenLocation: (Location) -> Void
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -1229,16 +1259,8 @@ struct AccessoriesTab: View {
                     isRefreshing = false
                 }
             }
-            .navigationDestination(for: Accessory.self) { accessory in
-                AccessoryDetailView(accessory: accessory, apiClient: apiClient, selectedTab: $accessoryDetailTab, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUser, onOpenAsset: onOpenAsset, onOpenLocation: onOpenLocation)
-            }
+            .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        }
-        .onChange(of: pendingAccessoryToOpen) { _, new in
-            if let accessory = new {
-                navigationPath.append(accessory)
-                pendingAccessoryToOpen = nil
-            }
         }
     }
 }
@@ -1249,16 +1271,10 @@ struct LicensesTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
-    @Binding var licenseDetailTab: Int
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
-    @Binding var pendingLicenseToOpen: License?
-    @Binding var returnToTab: MainTab?
-    var onBackToPreviousTab: () -> Void
-    var onOpenUser: (User) -> Void
-    var onOpenAsset: (Asset) -> Void
 
     @State private var showingAddLicense = false
 
@@ -1290,18 +1306,7 @@ struct LicensesTab: View {
                     isRefreshing = false
                 }
             }
-            .navigationDestination(for: License.self) { license in
-                LicenseDetailView(
-                    license: license,
-                    apiClient: apiClient,
-                    selectedTab: $licenseDetailTab,
-                    isDetailViewActive: $isDetailViewActive,
-                    returnToTab: returnToTab,
-                    onBackToPrevious: onBackToPreviousTab,
-                    onOpenUser: onOpenUser,
-                    onOpenAsset: onOpenAsset
-                )
-            }
+            .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .sheet(isPresented: $showingAddLicense) {
                 AddLicenseSheet(
@@ -1318,12 +1323,6 @@ struct LicensesTab: View {
                         }
                     }
                 )
-            }
-        }
-        .onChange(of: pendingLicenseToOpen) { _, new in
-            if let license = new {
-                navigationPath.append(license)
-                pendingLicenseToOpen = nil
             }
         }
     }
@@ -1409,18 +1408,10 @@ struct StockTab: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
-    @Binding var consumableDetailTab: Int
-    @Binding var componentDetailTab: Int
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
-    @Binding var pendingConsumableToOpen: Consumable?
-    @Binding var pendingComponentToOpen: Component?
-    @Binding var returnToTab: MainTab?
-    var onBackToPreviousTab: () -> Void
-    var onOpenUser: (User) -> Void
-    var onOpenAsset: (Asset) -> Void
 
     @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
@@ -1518,28 +1509,7 @@ struct StockTab: View {
                     isRefreshing = false
                 }
             }
-            .navigationDestination(for: Consumable.self) { consumable in
-                ConsumableDetailView(
-                    consumable: consumable,
-                    apiClient: apiClient,
-                    selectedTab: $consumableDetailTab,
-                    isDetailViewActive: $isDetailViewActive,
-                    returnToTab: returnToTab,
-                    onBackToPrevious: onBackToPreviousTab,
-                    onOpenUser: onOpenUser
-                )
-            }
-            .navigationDestination(for: Component.self) { component in
-                ComponentDetailView(
-                    component: component,
-                    apiClient: apiClient,
-                    selectedTab: $componentDetailTab,
-                    isDetailViewActive: $isDetailViewActive,
-                    returnToTab: returnToTab,
-                    onBackToPrevious: onBackToPreviousTab,
-                    onOpenAsset: onOpenAsset
-                )
-            }
+            .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
                 Button(L10n.string("ok"), role: .cancel) { }
@@ -1577,18 +1547,6 @@ struct StockTab: View {
                         }
                     }
                 )
-            }
-        }
-        .onChange(of: pendingConsumableToOpen) { _, new in
-            if let consumable = new {
-                navigationPath.append(consumable)
-                pendingConsumableToOpen = nil
-            }
-        }
-        .onChange(of: pendingComponentToOpen) { _, new in
-            if let component = new {
-                navigationPath.append(component)
-                pendingComponentToOpen = nil
             }
         }
     }
@@ -1870,18 +1828,6 @@ struct DirectoryTab: View {
     @Binding var showingScanner: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
-    @Binding var pendingUserToOpen: User?
-    @Binding var pendingLocationToOpen: Location?
-    @Binding var returnToTab: MainTab?
-    var onBackToPreviousTab: () -> Void
-    var onOpenAssetFromUser: (Asset) -> Void
-    var onOpenAccessoryFromUser: (Accessory) -> Void
-    var onOpenLicenseFromUser: (License) -> Void
-    var onOpenConsumableFromUser: (Consumable) -> Void
-    var onOpenLocationFromUser: (Location) -> Void
-    var onOpenUserFromLocation: (User) -> Void
-    var onOpenAssetFromLocation: (Asset) -> Void
-    var onOpenAccessoryFromLocation: (Accessory) -> Void
 
     @AppStorage("directorySelectedSubmodule") private var selectedSubmoduleRaw: String = DirectorySubmodule.users.rawValue
 
@@ -2012,35 +1958,8 @@ struct DirectoryTab: View {
                     isRefreshing = false
                 }
             }
-            .navigationDestination(for: User.self) { user in
-                UserDetailView(user: user, apiClient: apiClient, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenAsset: onOpenAssetFromUser, onOpenAccessory: onOpenAccessoryFromUser, onOpenLocation: onOpenLocationFromUser, onOpenLicense: onOpenLicenseFromUser, onOpenConsumable: onOpenConsumableFromUser)
-                    .id(user.id)
-            }
-            .navigationDestination(for: Location.self) { location in
-                LocationDetailView(location: location, apiClient: apiClient, isDetailViewActive: $isDetailViewActive, returnToTab: returnToTab, onBackToPrevious: onBackToPreviousTab, onOpenUser: onOpenUserFromLocation, onOpenAsset: onOpenAssetFromLocation, onOpenAccessory: onOpenAccessoryFromLocation)
-                    .id(location.id)
-            }
+            .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        }
-        .onChange(of: pendingUserToOpen) { _, new in
-            guard let user = new else { return }
-            pendingUserToOpen = nil
-            DispatchQueue.main.async {
-                if selectedSubmoduleRaw != DirectorySubmodule.users.rawValue {
-                    selectedSubmoduleRaw = DirectorySubmodule.users.rawValue
-                }
-                navigationPath.append(user)
-            }
-        }
-        .onChange(of: pendingLocationToOpen) { _, new in
-            guard let location = new else { return }
-            pendingLocationToOpen = nil
-            DispatchQueue.main.async {
-                if selectedSubmoduleRaw != DirectorySubmodule.locations.rawValue {
-                    selectedSubmoduleRaw = DirectorySubmodule.locations.rawValue
-                }
-                navigationPath.append(location)
-            }
         }
     }
 }

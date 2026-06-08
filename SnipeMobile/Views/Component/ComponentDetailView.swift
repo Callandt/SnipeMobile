@@ -5,8 +5,6 @@ struct ComponentDetailView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
     @Binding var isDetailViewActive: Bool
-    var returnToTab: MainTab? = nil
-    var onBackToPrevious: (() -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
 
     @State private var checkedOutRows: [SnipeITAPIClient.ComponentAssetRow] = []
@@ -177,7 +175,6 @@ struct ComponentDetailView: View {
         .onDisappear { isDetailViewActive = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(currentComponent.decodedName)
@@ -187,15 +184,6 @@ struct ComponentDetailView: View {
                     .truncationMode(.tail)
                     .minimumScaleFactor(0.85)
                     .frame(maxWidth: 200)
-            }
-            if let _ = returnToTab, let onBack = onBackToPrevious {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onBack()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
-                    }
-                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/components/\(currentComponent.id)") {

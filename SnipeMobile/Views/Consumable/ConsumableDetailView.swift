@@ -5,8 +5,6 @@ struct ConsumableDetailView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
     @Binding var isDetailViewActive: Bool
-    var returnToTab: MainTab? = nil
-    var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
 
     @State private var checkedOutRows: [SnipeITAPIClient.ConsumableUserRow] = []
@@ -173,7 +171,6 @@ struct ConsumableDetailView: View {
         .onDisappear { isDetailViewActive = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(currentConsumable.decodedName)
@@ -181,15 +178,6 @@ struct ConsumableDetailView: View {
                     .fontWeight(.medium)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-            }
-            if let _ = returnToTab, let onBack = onBackToPrevious {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onBack()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
-                    }
-                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/consumables/\(currentConsumable.id)") {

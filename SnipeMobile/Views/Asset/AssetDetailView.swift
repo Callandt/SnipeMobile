@@ -5,8 +5,6 @@ struct AssetDetailView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
     @Binding var isDetailViewActive: Bool
-    var returnToTab: MainTab? = nil
-    var onBackToPrevious: (() -> Void)? = nil
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
     var onOpenLicense: ((License) -> Void)? = nil
@@ -18,7 +16,6 @@ struct AssetDetailView: View {
     @State private var assetAccessories: [Accessory] = []
     @State private var assetComponents: [SnipeITAPIClient.AssetAssignedComponent] = []
     @State private var assignedChildAssets: [Asset] = []
-    @Environment(\.dismiss) var dismiss
     @State private var hasLoggedAppearance = false
     @State private var showEditSheet = false
     @State private var editName: String = ""
@@ -301,7 +298,6 @@ struct AssetDetailView: View {
         .onDisappear { isDetailViewActive = false }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(returnToTab != nil)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(currentAsset.decodedModelName.isEmpty ? currentAsset.decodedName : currentAsset.decodedModelName)
@@ -309,15 +305,6 @@ struct AssetDetailView: View {
                     .fontWeight(.medium)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-            }
-            if let _ = returnToTab, let onBack = onBackToPrevious {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onBack()
-                    } label: {
-                        Label(L10n.string("back"), systemImage: "chevron.left")
-                    }
-                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/hardware/\(currentAsset.id)") {
@@ -382,14 +369,6 @@ struct AssetDetailView: View {
             // Digits only
             editWarrantyMonths = (currentAsset.warrantyMonths ?? "").components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
         }
-        .gesture(
-            DragGesture(minimumDistance: 30, coordinateSpace: .local)
-                .onEnded { value in
-                    if value.translation.width > 100 {
-                        dismiss()
-                    }
-                }
-        )
         .sheet(isPresented: $showEditSheet) {
             editSheet
         }
