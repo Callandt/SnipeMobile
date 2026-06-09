@@ -624,6 +624,25 @@ struct MainSplitView: View {
         }
     }
 
+    // Count row at the top of each iPad list, like on iPhone.
+    @ViewBuilder
+    private func ipadCountHeader(count: Int, icon: String, trailing: String? = nil) -> some View {
+        Section {
+            HStack {
+                Label("\(count)", systemImage: icon)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if let trailing {
+                    Text(trailing)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+        }
+    }
+
     private func ipadCardRowBackground(selected: Bool) -> some View {
         ZStack {
             Color(.systemGroupedBackground)
@@ -664,7 +683,11 @@ struct MainSplitView: View {
             ipadContentWithToolbar
                 .navigationSplitViewColumnWidth(min: 380, ideal: 420)
         } detail: {
+            // Keep detail content at a readable width on wide iPads.
             ipadDetailContent
+                .frame(maxWidth: 760, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground).ignoresSafeArea())
         }
         .navigationSplitViewStyle(.balanced)
         .alert(
@@ -957,25 +980,28 @@ struct MainSplitView: View {
         }
     }
 
+    // Single-selection binding; selectedSection is non-optional.
+    private var sidebarSelection: Binding<MainTab?> {
+        Binding(
+            get: { selectedSection },
+            set: { if let value = $0 { selectedSection = value } }
+        )
+    }
+
     private var ipadSidebar: some View {
-        List {
+        List(selection: sidebarSelection) {
             Section {
                 Button {
                     showScanner = true
                 } label: {
                     Label(L10n.string("scan_qr"), systemImage: "qrcode.viewfinder")
                 }
-                .buttonStyle(.plain)
+            }
 
+            Section {
                 ForEach(orderedVisibleSections, id: \.self) { section in
-                    Button {
-                        selectedSection = section
-                    } label: {
-                        Label(sectionTitle(section), systemImage: sectionIcon(section))
-                            .foregroundStyle(selectedSection == section ? Color.accentColor : .primary)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(selectedSection == section ? Color.accentColor.opacity(0.15) : nil)
+                    Label(sectionTitle(section), systemImage: sectionIcon(section))
+                        .tag(section)
                 }
             }
 
@@ -985,7 +1011,6 @@ struct MainSplitView: View {
                 } label: {
                     Label(L10n.string("settings"), systemImage: "gearshape")
                 }
-                .buttonStyle(.plain)
             }
         }
         .listStyle(.sidebar)
@@ -1212,7 +1237,7 @@ struct MainSplitView: View {
                 ContentUnavailableView(
                     L10n.string("select_asset"),
                     systemImage: "laptopcomputer",
-                    description: Text("Choose an asset from the list")
+                    description: Text(L10n.string("select_asset_desc"))
                 )
             }
         case .accessories:
@@ -1262,7 +1287,7 @@ struct MainSplitView: View {
                 ContentUnavailableView(
                     L10n.string("select_accessory"),
                     systemImage: "mediastick",
-                    description: Text("Choose an accessory from the list")
+                    description: Text(L10n.string("select_accessory_desc"))
                 )
             }
         case .licenses:
@@ -1300,7 +1325,7 @@ struct MainSplitView: View {
                 ContentUnavailableView(
                     L10n.string("select_license"),
                     systemImage: "doc.text.fill",
-                    description: Text("Choose a license from the list")
+                    description: Text(L10n.string("select_license_desc"))
                 )
             }
         case .stock:
@@ -1443,7 +1468,7 @@ struct MainSplitView: View {
                 ContentUnavailableView(
                     L10n.string("select_user"),
                     systemImage: "person.2",
-                    description: Text("Choose a user from the list")
+                    description: Text(L10n.string("select_user_desc"))
                 )
             }
         case .locations:
@@ -1490,7 +1515,7 @@ struct MainSplitView: View {
                 ContentUnavailableView(
                     L10n.string("select_location"),
                     systemImage: "mappin.and.ellipse",
-                    description: Text("Choose a location from the list")
+                    description: Text(L10n.string("select_location_desc"))
                 )
             }
         }
@@ -1625,6 +1650,11 @@ struct MainSplitView: View {
             }
 
             List {
+                ipadCountHeader(
+                    count: apiClient.assets.count,
+                    icon: "laptopcomputer",
+                    trailing: L10n.string("assigned_count", apiClient.assets.filter { $0.assignedTo != nil }.count)
+                )
                 // Audit subtab: today + upcoming audits.
                 if enableAuditSubtab, hardwareSubtab == .audit {
                     switch auditListFilter {
@@ -1706,8 +1736,11 @@ struct MainSplitView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .browseListBackground()
             .listSectionSpacing(0)
             .listSectionSeparator(.hidden)
+            // Drop the list's default top inset so it sits under the picker.
+            .contentMargins(.top, 0, for: .scrollContent)
             .overlay {
                 let isRelevantAssetsEmpty: Bool = {
                     if enableAuditSubtab && hardwareSubtab == .audit {
@@ -1741,6 +1774,7 @@ struct MainSplitView: View {
 
     private var ipadAccessoryList: some View {
         List {
+            ipadCountHeader(count: apiClient.accessories.count, icon: "mediastick")
             ForEach(filteredAccessories) { accessory in
                 let isSelected = selectedAccessory?.id == accessory.id
                 Button {
@@ -1762,6 +1796,7 @@ struct MainSplitView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .browseListBackground()
         .listSectionSpacing(.compact)
         .listSectionSeparator(.hidden)
         .overlay {
@@ -1781,6 +1816,7 @@ struct MainSplitView: View {
 
     private var ipadLicenseList: some View {
         List {
+            ipadCountHeader(count: apiClient.licenses.count, icon: "doc.text.fill")
             ForEach(filteredLicenses) { license in
                 let isSelected = selectedLicense?.id == license.id
                 Button {
@@ -1802,6 +1838,7 @@ struct MainSplitView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .browseListBackground()
         .listSectionSpacing(.compact)
         .listSectionSeparator(.hidden)
         .overlay {
@@ -1821,6 +1858,7 @@ struct MainSplitView: View {
 
     private var ipadConsumableList: some View {
         List {
+            ipadCountHeader(count: apiClient.consumables.count, icon: "shippingbox")
             ForEach(filteredConsumables) { consumable in
                 let isSelected = selectedConsumable?.id == consumable.id
                 Button {
@@ -1842,11 +1880,17 @@ struct MainSplitView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .browseListBackground()
         .listSectionSpacing(.compact)
         .listSectionSeparator(.hidden)
         .overlay {
             if filteredConsumables.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                 ContentUnavailableView(L10n.string("no_consumables"), systemImage: "shippingbox")
+            }
+        }
+        .onAppear {
+            if apiClient.isConfigured && apiClient.consumables.isEmpty && !apiClient.isLoading {
+                Task { await apiClient.fetchConsumables() }
             }
         }
         .refreshable {
@@ -1861,6 +1905,7 @@ struct MainSplitView: View {
 
     private var ipadComponentList: some View {
         List {
+            ipadCountHeader(count: apiClient.components.count, icon: "cpu")
             ForEach(filteredComponents) { component in
                 let isSelected = selectedComponent?.id == component.id
                 Button {
@@ -1882,11 +1927,19 @@ struct MainSplitView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .browseListBackground()
         .listSectionSpacing(.compact)
         .listSectionSeparator(.hidden)
         .overlay {
             if filteredComponents.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                 ContentUnavailableView(L10n.string("no_components"), systemImage: "cpu")
+            }
+        }
+        .onAppear {
+            // Self-heal if the shared initial sync skipped/failed the components page
+            // (it's fetched last, so a transient hiccup can leave this list empty).
+            if apiClient.isConfigured && apiClient.components.isEmpty && !apiClient.isLoading {
+                Task { await apiClient.fetchComponents() }
             }
         }
         .refreshable {
@@ -1901,6 +1954,7 @@ struct MainSplitView: View {
 
     private var ipadUserList: some View {
         List {
+            ipadCountHeader(count: apiClient.users.count, icon: "person.2")
             ForEach(filteredUsers) { user in
                 let isSelected = selectedUser?.id == user.id
                 Button {
@@ -1922,6 +1976,7 @@ struct MainSplitView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .browseListBackground()
         .listSectionSpacing(.compact)
         .listSectionSeparator(.hidden)
         .overlay {
@@ -1941,6 +1996,7 @@ struct MainSplitView: View {
 
     private var ipadLocationList: some View {
         List {
+            ipadCountHeader(count: apiClient.locations.count, icon: "mappin.and.ellipse")
             ForEach(filteredLocations) { location in
                 let isSelected = selectedLocation?.id == location.id
                 Button {
@@ -1962,6 +2018,7 @@ struct MainSplitView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .browseListBackground()
         .listSectionSpacing(.compact)
         .listSectionSeparator(.hidden)
         .overlay {

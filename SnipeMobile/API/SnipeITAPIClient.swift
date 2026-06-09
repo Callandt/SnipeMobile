@@ -447,9 +447,8 @@ class SnipeITAPIClient: ObservableObject {
                     as: Asset.self,
                     reportProgress: true,
                     reportConnectionError: true,
-                    isCancelled: { [weak self] in
-                        guard let self = self else { return true }
-                        return myGen != self.fetchAssetsGeneration
+                    isCancelled: {
+                        myGen != self.fetchAssetsGeneration
                     }
                 )
                 guard let assets = result else { return }

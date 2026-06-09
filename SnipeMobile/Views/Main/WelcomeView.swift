@@ -61,18 +61,8 @@ struct WelcomeView: View {
                         }
                         Button(action: onGetStarted) {
                             Text(L10n.string("get_started"))
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(
-                                    Color(red: 15/255, green: 61/255, blue: 102/255)
-                                        .opacity(0.95)
-                                        .blendMode(.multiply)
-                                )
-                                .cornerRadius(16)
-                                .shadow(radius: 4, y: 2)
                         }
+                        .buttonStyle(PrimaryActionButtonStyle())
                         .padding(.top, 18)
                     }
                 }

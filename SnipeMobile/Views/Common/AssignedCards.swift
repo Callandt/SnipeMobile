@@ -68,7 +68,7 @@ struct AssignedLicenseCard: View {
     let license: License
 
     var body: some View {
-        LicenseCardView(license: license, useExplicitBackground: false)
+        LicenseCardView(license: license, useExplicitBackground: false, showSeats: false)
             .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
     }

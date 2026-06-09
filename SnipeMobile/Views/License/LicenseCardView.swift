@@ -3,6 +3,8 @@ import SwiftUI
 struct LicenseCardView: View {
     let license: License
     var useExplicitBackground: Bool = true
+    // Off for assigned rows, where the license-wide seat count is misleading.
+    var showSeats: Bool = true
     @EnvironmentObject var appSettings: AppSettings
 
     private var totalSeats: Int? { license.seats }
@@ -32,7 +34,7 @@ struct LicenseCardView: View {
                     }
                 }
                 Spacer()
-                if let total = totalSeats, let free = freeSeats {
+                if showSeats, let total = totalSeats, let free = freeSeats {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(free)/\(total)")
                             .font(.headline)
@@ -74,7 +76,7 @@ struct LicenseCardView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            useExplicitBackground ? Color(.secondarySystemGroupedBackground) : Color.clear,
+            useExplicitBackground ? Color(.secondarySystemBackground) : Color.clear,
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .contentShape(Rectangle())

@@ -56,7 +56,7 @@ struct ConsumableCardView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            useExplicitBackground ? Color(.secondarySystemGroupedBackground) : Color.clear,
+            useExplicitBackground ? Color(.secondarySystemBackground) : Color.clear,
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .contentShape(Rectangle())

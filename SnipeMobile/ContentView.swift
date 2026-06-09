@@ -829,7 +829,7 @@ struct HardwareTab: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             hardwareTabContent
-                .background(Color(.systemGroupedBackground).ignoresSafeArea())
+                .background(Color(.systemBackground).ignoresSafeArea())
         }
         .onAppear {
             if apiClient.isConfigured && apiClient.assets.isEmpty && !hasLoadedInitialAssets {
@@ -1155,6 +1155,7 @@ struct HardwareTab: View {
             }
         }
         .listStyle(.insetGrouped)
+        .browseListBackground()
         .listSectionSpacing(0)
         .listSectionSeparator(.hidden)
         .overlay {
@@ -1260,7 +1261,7 @@ struct AccessoriesTab: View {
                 }
             }
             .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(Color(.systemBackground).ignoresSafeArea())
         }
     }
 }
@@ -1307,7 +1308,7 @@ struct LicensesTab: View {
                 }
             }
             .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(Color(.systemBackground).ignoresSafeArea())
             .sheet(isPresented: $showingAddLicense) {
                 AddLicenseSheet(
                     apiClient: apiClient,
@@ -1390,6 +1391,7 @@ private struct LicensesContent: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
                 .overlay {
@@ -1510,7 +1512,7 @@ struct StockTab: View {
                 }
             }
             .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(Color(.systemBackground).ignoresSafeArea())
             .alert(L10n.string("module_coming_soon_title"), isPresented: $showingComingSoon) {
                 Button(L10n.string("ok"), role: .cancel) { }
             } message: {
@@ -1615,6 +1617,7 @@ private struct ConsumablesContent: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
                 .overlay {
@@ -1690,6 +1693,7 @@ private struct ComponentsContent: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
                 .overlay {
@@ -1806,6 +1810,7 @@ private struct AccessoriesContent: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
                 .moduleEmptyOverlay(
@@ -1959,7 +1964,7 @@ struct DirectoryTab: View {
                 }
             }
             .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(Color(.systemBackground).ignoresSafeArea())
         }
     }
 }
@@ -2024,6 +2029,7 @@ private struct UsersContent: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
                 .moduleEmptyOverlay(
@@ -2091,6 +2097,7 @@ private struct LocationsContent: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
                 .moduleEmptyOverlay(
