@@ -18,6 +18,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var groups: [UserGroup] = []
     @Published var manufacturers: [Manufacturer] = [] { didSet { scheduleCacheSave() } }
     @Published var suppliers: [Supplier] = [] { didSet { scheduleCacheSave() } }
+    @Published var maintenances: [AssetMaintenance] = [] { didSet { scheduleCacheSave() } }
     @Published var maintenanceTypes: [MaintenanceType] = []
     @Published var errorMessage: String?
     @Published var lastApiMessage: String?
@@ -84,7 +85,8 @@ class SnipeITAPIClient: ObservableObject {
             companies: companies,
             manufacturers: manufacturers,
             suppliers: suppliers,
-            statusLabels: statusLabels
+            statusLabels: statusLabels,
+            maintenances: maintenances
         )
         let key = cacheKey
         await Task.detached(priority: .utility) {
@@ -110,6 +112,7 @@ class SnipeITAPIClient: ObservableObject {
         if manufacturers.isEmpty { manufacturers = snapshot.manufacturers }
         if suppliers.isEmpty { suppliers = snapshot.suppliers }
         if statusLabels.isEmpty { statusLabels = snapshot.statusLabels }
+        if maintenances.isEmpty { maintenances = snapshot.maintenances }
     }
 
     // MARK: - Pagination
@@ -3507,6 +3510,28 @@ class SnipeITAPIClient: ObservableObject {
                 as: AssetMaintenance.self,
                 extraQueryItems: [URLQueryItem(name: "asset_id", value: String(assetId))]
             )
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return nil
+        }
+    }
+
+    // every asset's maintenance, for the Hardware → Maintenance overview (cached for offline)
+    @discardableResult
+    func fetchAllMaintenances() async -> [AssetMaintenance]? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        do {
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/maintenances",
+                as: AssetMaintenance.self,
+                extraQueryItems: [
+                    URLQueryItem(name: "sort", value: "start_date"),
+                    URLQueryItem(name: "order", value: "desc")
+                ]
+            ) else { return nil }
+            let sorted = rows.sorted { ($0.startDate?.date ?? "") > ($1.startDate?.date ?? "") }
+            self.maintenances = sorted
+            return sorted
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
             return nil

@@ -18,11 +18,24 @@ struct MaintenanceDetailSheet: View {
 
     private var isBusy: Bool { isDeleting || isCompleting }
 
+    private var linkedAsset: Asset? {
+        guard let id = record.assetId, id > 0 else { return nil }
+        return apiClient.assets.first { $0.id == id }
+    }
+
+    private var assetInfo: MaintenanceLinkedAssetInfo? {
+        MaintenanceLinkedAssetInfo.resolve(record: record, asset: linkedAsset)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 15) {
                     statusHeader
+
+                    if let assetInfo {
+                        assetHeaderCard(assetInfo)
+                    }
 
                     VStack(spacing: 10) {
                         if let type = record.displayType {
@@ -180,6 +193,51 @@ struct MaintenanceDetailSheet: View {
         .padding(.vertical, 7)
         .background((completed ? Color.green : Color.orange).opacity(0.12), in: Capsule())
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func assetHeaderCard(_ info: MaintenanceLinkedAssetInfo) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "laptopcomputer")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, height: 36)
+                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.string("asset"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(info.title)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    if let detail = info.detailLine {
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            if let assignee = info.assignee {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.circle")
+                        .foregroundStyle(.secondary)
+                    Text(L10n.string("checked_out_to"))
+                        .fontWeight(.semibold)
+                    Text(assignee)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                    Spacer(minLength: 0)
+                }
+                .font(.subheadline)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
     }
 
     private func detailRow(label: String, value: String) -> some View {

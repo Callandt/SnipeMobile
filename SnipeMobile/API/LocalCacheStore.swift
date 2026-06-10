@@ -13,6 +13,7 @@ struct SnipeDataCacheSnapshot: Codable {
     var manufacturers: [Manufacturer] = []
     var suppliers: [Supplier] = []
     var statusLabels: [StatusLabel] = []
+    var maintenances: [AssetMaintenance] = []
     var savedAt: TimeInterval = Date().timeIntervalSince1970
 }
 

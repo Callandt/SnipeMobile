@@ -160,6 +160,7 @@ enum AuditListFilter: String {
 enum HardwareAuditSubtab: String {
     case all
     case audit
+    case maintenance
 }
 
 struct ContentView: View {
@@ -772,6 +773,7 @@ struct HardwareTab: View {
     @Binding var showTodayOnlyOverride: Bool
 
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
+    @AppStorage("showMaintenance") private var showMaintenance: Bool = true
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
     @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
     @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0
@@ -779,6 +781,17 @@ struct HardwareTab: View {
 
     @State private var assetToDelete: Asset?
     @State private var showDeleteConfirm = false
+
+    // Cross-asset maintenance overview (Hardware → Maintenance subtab).
+    // The records live in the cached `apiClient.maintenances` list.
+    @State private var isLoadingMaintenances = false
+    @State private var maintenanceError: String? = nil
+    @State private var maintenanceLoadedOnce = false
+    @State private var selectedMaintenance: AssetMaintenance? = nil
+    @State private var showingAddMaintenance = false
+    @State private var isSelectingMaintenances = false
+    @State private var selectedMaintenanceIds: Set<Int> = []
+    @State private var maintenanceFilter: MaintenanceStatusFilter = .all
 
     // Quick audit completion from the audit list.
     @State private var showAuditCompletionSheet = false
@@ -824,6 +837,43 @@ struct HardwareTab: View {
 
     private var shouldShowNextAuditDateOnCard: Bool {
         enableAuditSubtab && hardwareSubtab == .audit
+    }
+
+    private var isMaintenanceSubtabActive: Bool {
+        showMaintenance && hardwareSubtab == .maintenance
+    }
+
+    private var isAuditSubtabActive: Bool {
+        enableAuditSubtab && hardwareSubtab == .audit
+    }
+
+    private var auditOverviewCount: Int {
+        switch auditListFilter {
+        case .dueToday: return dueTodayAssets.count
+        case .dueSoon: return dueSoonAssets.count
+        case .all: return dueTodayAssets.count + dueSoonAssets.count + overdueAssets.count
+        }
+    }
+
+    private var showSubtabPicker: Bool {
+        enableAuditSubtab || showMaintenance
+    }
+
+    private var displayedMaintenances: [AssetMaintenance] {
+        var records = apiClient.maintenances.filter { maintenanceFilter.matches($0) }
+        if !searchText.isEmpty {
+            let q = searchText.lowercased()
+            records = records.filter {
+                $0.decodedTitle.lowercased().contains(q) ||
+                ($0.displayType?.lowercased().contains(q) ?? false) ||
+                ($0.assetDisplayLabel?.lowercased().contains(q) ?? false)
+            }
+        }
+        return records
+    }
+
+    private var selectableMaintenances: [AssetMaintenance] {
+        MaintenanceBulkCompleter.inProgress(from: displayedMaintenances)
     }
 
     var body: some View {
@@ -961,12 +1011,32 @@ struct HardwareTab: View {
         .navigationTitle(MainTab.hardware.localizedTitle)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    showingAddAsset = true
-                } label: {
-                    Image(systemName: "plus.circle")
+                if isMaintenanceSubtabActive && isSelectingMaintenances {
+                    EmptyView()
+                } else if showMaintenance {
+                    Menu {
+                        Button {
+                            showingAddAsset = true
+                        } label: {
+                            Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
+                        }
+                        Button {
+                            showingAddMaintenance = true
+                        } label: {
+                            Label(L10n.string("add_maintenance"), systemImage: "wrench.and.screwdriver")
+                        }
+                    } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel(L10n.string("add"))
+                } else {
+                    Button {
+                        showingAddAsset = true
+                    } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel(L10n.string("add_asset"))
                 }
-                .accessibilityLabel(L10n.string("add_asset"))
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -988,11 +1058,48 @@ struct HardwareTab: View {
         .refreshable {
             if apiClient.isConfigured {
                 isRefreshing = true
-                await apiClient.fetchAssets()
+                if isMaintenanceSubtabActive {
+                    await loadAllMaintenances(force: true)
+                } else {
+                    await apiClient.fetchAssets()
+                }
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
             }
         }
+        .sheet(isPresented: $showingAddMaintenance, onDismiss: {
+            Task { await loadAllMaintenances(force: true) }
+        }) {
+            BulkMaintenanceFormSheet(apiClient: apiClient)
+        }
+        .sheet(item: $selectedMaintenance, onDismiss: {
+            Task { await loadAllMaintenances(force: true) }
+        }) { record in
+            MaintenanceDetailSheet(
+                apiClient: apiClient,
+                assetId: record.assetId ?? 0,
+                record: record,
+                onMutated: {}
+            )
+        }
+        .onChange(of: hardwareSubtab) { _, newValue in
+            if newValue == .maintenance {
+                Task { await loadAllMaintenances() }
+            }
+        }
+        .onAppear {
+            if isMaintenanceSubtabActive {
+                Task { await loadAllMaintenances() }
+            }
+        }
+        .maintenanceBulkSelection(
+            isActive: isMaintenanceSubtabActive,
+            selectableRecords: selectableMaintenances,
+            apiClient: apiClient,
+            isSelecting: $isSelectingMaintenances,
+            selectedIds: $selectedMaintenanceIds,
+            onRefresh: { await loadAllMaintenances(force: true) }
+        )
         .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
         .alert(L10n.string("delete_asset_confirm_title"), isPresented: $showDeleteConfirm) {
             Button(L10n.string("cancel"), role: .cancel) {
@@ -1020,6 +1127,10 @@ struct HardwareTab: View {
     }
 
     private var isHardwareListContentEmpty: Bool {
+        if isMaintenanceSubtabActive {
+            // Maintenance handles its own loading/empty states inline.
+            return false
+        }
         if enableAuditSubtab, hardwareSubtab == .audit {
             switch auditListFilter {
             case .dueToday: return dueTodayAssets.isEmpty
@@ -1038,11 +1149,16 @@ struct HardwareTab: View {
     private var hardwareAssetList: some View {
         let showLoadingPlaceholder = apiClient.isLoading && !isRefreshing && apiClient.assets.isEmpty
         return List {
-            if enableAuditSubtab {
+            if showSubtabPicker {
                 Section {
                     Picker(selection: $hardwareSubtab, label: Text("Hardware")) {
                         Text(L10n.string("tab_hardware")).tag(HardwareAuditSubtab.all)
-                        Text(L10n.string("audit")).tag(HardwareAuditSubtab.audit)
+                        if enableAuditSubtab {
+                            Text(L10n.string("audit")).tag(HardwareAuditSubtab.audit)
+                        }
+                        if showMaintenance {
+                            Text(L10n.string("maintenance")).tag(HardwareAuditSubtab.maintenance)
+                        }
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: hardwareSubtab) { _, newValue in
@@ -1059,18 +1175,31 @@ struct HardwareTab: View {
 
             Section {
                 HStack {
-                    Label("\(apiClient.assets.count)", systemImage: "laptopcomputer")
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Text(L10n.string("assigned_count", apiClient.assets.filter { $0.assignedTo != nil }.count))
-                        .foregroundStyle(.secondary)
+                    if isMaintenanceSubtabActive {
+                        Label("\(displayedMaintenances.count)", systemImage: "wrench.and.screwdriver")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        maintenanceFilterMenu
+                    } else if isAuditSubtabActive {
+                        Label("\(auditOverviewCount)", systemImage: "checkmark.seal")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                    } else {
+                        Label("\(apiClient.assets.count)", systemImage: "laptopcomputer")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(L10n.string("assigned_count", apiClient.assets.filter { $0.assignedTo != nil }.count))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             }
 
-            if showLoadingPlaceholder {
+            if isMaintenanceSubtabActive {
+                maintenanceSubtabSections
+            } else if showLoadingPlaceholder {
                 // Keep header/subtab visible while loading; content loader is centered via overlay.
             } else if enableAuditSubtab, hardwareSubtab == .audit {
                 switch auditListFilter {
@@ -1159,12 +1288,95 @@ struct HardwareTab: View {
         .listSectionSpacing(0)
         .listSectionSeparator(.hidden)
         .overlay {
-            if showLoadingPlaceholder {
+            if isMaintenanceSubtabActive {
+                if isLoadingMaintenances && apiClient.maintenances.isEmpty {
+                    ProgressView(L10n.string("loading_maintenance"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                } else if let maintenanceError, apiClient.maintenances.isEmpty {
+                    ContentUnavailableView(
+                        L10n.string("error"),
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(maintenanceError)
+                    )
+                } else if displayedMaintenances.isEmpty {
+                    ContentUnavailableView(
+                        L10n.string("no_maintenance"),
+                        systemImage: "wrench.and.screwdriver",
+                        description: Text(L10n.string("no_maintenance_overview_desc"))
+                    )
+                }
+            } else if showLoadingPlaceholder {
                 ProgressView(L10n.string("loading_assets"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else if isHardwareListContentEmpty && apiClient.isConfigured && !apiClient.isLoading && apiClient.hasCompletedInitialLoad {
                 ContentUnavailableView(hardwareEmptyTitle, systemImage: "laptopcomputer")
             }
+        }
+    }
+
+    private var maintenanceFilterMenu: some View {
+        Menu {
+            Picker(L10n.string("filter"), selection: $maintenanceFilter) {
+                ForEach(MaintenanceStatusFilter.allCases) { filter in
+                    Text(filter.localizedTitle).tag(filter)
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(maintenanceFilter.localizedTitle)
+                Image(systemName: "line.3.horizontal.decrease.circle")
+            }
+            .font(.subheadline)
+        }
+    }
+
+    @ViewBuilder
+    private var maintenanceSubtabSections: some View {
+        Section {
+            ForEach(displayedMaintenances) { record in
+                MaintenanceOverviewRow(
+                    record: record,
+                    linkedAsset: linkedAsset(for: record),
+                    isSelecting: isSelectingMaintenances,
+                    isSelected: selectedMaintenanceIds.contains(record.id),
+                    onTap: { handleMaintenanceOverviewTap(record) }
+                )
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                .listRowBackground(Color.clear)
+            }
+        }
+    }
+
+    private func handleMaintenanceOverviewTap(_ record: AssetMaintenance) {
+        if isSelectingMaintenances {
+            guard !record.isCompleted else { return }
+            if selectedMaintenanceIds.contains(record.id) {
+                selectedMaintenanceIds.remove(record.id)
+            } else {
+                selectedMaintenanceIds.insert(record.id)
+            }
+        } else {
+            selectedMaintenance = record
+        }
+    }
+
+    private func linkedAsset(for record: AssetMaintenance) -> Asset? {
+        guard let id = record.assetId else { return nil }
+        return apiClient.assets.first { $0.id == id }
+    }
+
+    private func loadAllMaintenances(force: Bool = false) async {
+        guard apiClient.isConfigured else { return }
+        if isLoadingMaintenances { return }
+        if !force && maintenanceLoadedOnce { return }
+        isLoadingMaintenances = true
+        maintenanceError = nil
+        let fetched = await apiClient.fetchAllMaintenances()
+        isLoadingMaintenances = false
+        maintenanceLoadedOnce = true
+        if fetched == nil {
+            maintenanceError = apiClient.lastApiMessage ?? apiClient.errorMessage ?? L10n.string("error")
         }
     }
 

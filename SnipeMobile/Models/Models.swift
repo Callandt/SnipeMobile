@@ -1224,6 +1224,9 @@ struct ActivityFile: Codable {
 struct AssetMaintenance: Identifiable, Codable, Hashable {
     let id: Int
     let title: String
+    let assetId: Int?
+    let assetName: String?
+    let assetTag: String?
     let assetMaintenanceType: String?
     let maintenanceType: String?
     let supplier: Supplier?
@@ -1258,8 +1261,23 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         return nil
     }
 
+    // "Name (tag)" label for the overview
+    var assetDisplayLabel: String? {
+        let decodedName = assetName.map { HTMLDecoder.decode($0) }.flatMap { $0.isEmpty ? nil : $0 }
+        let tag = (assetTag?.isEmpty == false) ? assetTag : nil
+        switch (decodedName, tag) {
+        case let (name?, tag?): return "\(name) (\(tag))"
+        case let (name?, nil): return name
+        case let (nil, tag?): return tag
+        default: return nil
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
-        case id, title, supplier, cost, notes, url
+        case id, title, supplier, cost, notes, url, asset
+        case assetId = "asset_id"
+        case assetName = "asset_name"
+        case assetTag = "asset_tag"
         case assetMaintenanceType = "asset_maintenance_type"
         case maintenanceType = "maintenance_type"
         case startDate = "start_date"
@@ -1278,6 +1296,11 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
         title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        // some servers send flat asset_* fields, others a nested asset object
+        let nestedAsset = try? c.decodeIfPresent(MaintenanceAssetRef.self, forKey: .asset)
+        assetId = (try? c.decodeIfPresent(Int.self, forKey: .assetId)) ?? nestedAsset?.id
+        assetName = (try? c.decodeIfPresent(String.self, forKey: .assetName)) ?? nestedAsset?.name
+        assetTag = (try? c.decodeIfPresent(String.self, forKey: .assetTag)) ?? nestedAsset?.assetTag
         assetMaintenanceType = try? c.decodeIfPresent(String.self, forKey: .assetMaintenanceType)
         maintenanceType = try? c.decodeIfPresent(String.self, forKey: .maintenanceType)
         supplier = try? c.decodeIfPresent(Supplier.self, forKey: .supplier)
@@ -1296,6 +1319,32 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         completedBy = try? c.decodeIfPresent(CreatedBy.self, forKey: .completedBy)
     }
 
+    // manual decoder + the extra `asset` key break Encodable synthesis, so spell it out
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(title, forKey: .title)
+        try c.encodeIfPresent(assetId, forKey: .assetId)
+        try c.encodeIfPresent(assetName, forKey: .assetName)
+        try c.encodeIfPresent(assetTag, forKey: .assetTag)
+        try c.encodeIfPresent(assetMaintenanceType, forKey: .assetMaintenanceType)
+        try c.encodeIfPresent(maintenanceType, forKey: .maintenanceType)
+        try c.encodeIfPresent(supplier, forKey: .supplier)
+        try c.encodeIfPresent(cost, forKey: .cost)
+        try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encodeIfPresent(startDate, forKey: .startDate)
+        try c.encodeIfPresent(completionDate, forKey: .completionDate)
+        try c.encode(isWarranty, forKey: .isWarranty)
+        try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(maintenanceTime, forKey: .maintenanceTime)
+        try c.encodeIfPresent(createdBy, forKey: .createdBy)
+        try c.encodeIfPresent(responsibleParty, forKey: .responsibleParty)
+        try c.encodeIfPresent(completedAt, forKey: .completedAt)
+        try c.encodeIfPresent(createdAt, forKey: .createdAt)
+        try c.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try c.encodeIfPresent(completedBy, forKey: .completedBy)
+    }
+
     static func == (lhs: AssetMaintenance, rhs: AssetMaintenance) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
@@ -1303,6 +1352,18 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
 struct MaintenancesResponse: Codable {
     let total: Int?
     let rows: [AssetMaintenance]
+}
+
+// nested asset object some servers put in the /maintenances payload
+struct MaintenanceAssetRef: Codable {
+    let id: Int?
+    let name: String?
+    let assetTag: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case assetTag = "asset_tag"
+    }
 }
 
 struct MaintenanceCreateRequest: Encodable {
