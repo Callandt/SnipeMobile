@@ -802,10 +802,21 @@ struct HardwareTab: View {
     @State private var auditCompletionErrorMessage = ""
     @State private var isOverdueExpanded = false
 
+    // Multi-dimension filter for the normal assets list (status/category/model/…).
+    @State private var assetFilter = AssetFilter()
+
+    private var assetFilterOptions: AssetFilterOptions {
+        AssetFilterOptions(assets: apiClient.assets, statusLabels: apiClient.statusLabels)
+    }
+
     private var searchFilteredAssets: [Asset] {
-        if searchText.isEmpty { return apiClient.assets }
+        var assets = apiClient.assets
+        if assetFilter.isActive {
+            assets = assets.filter { assetFilter.matches($0) }
+        }
+        if searchText.isEmpty { return assets }
         let q = searchText.lowercased()
-        return apiClient.assets.filter {
+        return assets.filter {
             $0.decodedName.lowercased().contains(q) ||
             $0.decodedModelName.lowercased().contains(q) ||
             $0.decodedAssetTag.lowercased().contains(q) ||
@@ -887,6 +898,9 @@ struct HardwareTab: View {
                     await apiClient.fetchPrimaryThenBackground()
                     hasLoadedInitialAssets = true
                 }
+            }
+            if apiClient.isConfigured && apiClient.statusLabels.isEmpty {
+                Task { await apiClient.fetchStatusLabels() }
             }
             tryPushScannedAsset()
         }
@@ -1062,6 +1076,7 @@ struct HardwareTab: View {
                     await loadAllMaintenances(force: true)
                 } else {
                     await apiClient.fetchAssets()
+                    await apiClient.fetchStatusLabels()
                 }
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
@@ -1143,7 +1158,7 @@ struct HardwareTab: View {
     }
 
     private var hardwareEmptyTitle: String {
-        searchText.isEmpty ? L10n.string("no_assets") : L10n.string("no_assets_match")
+        (searchText.isEmpty && !assetFilter.isActive) ? L10n.string("no_assets") : L10n.string("no_assets_match")
     }
 
     private var hardwareAssetList: some View {
@@ -1185,11 +1200,12 @@ struct HardwareTab: View {
                             .foregroundStyle(.primary)
                         Spacer()
                     } else {
-                        Label("\(apiClient.assets.count)", systemImage: "laptopcomputer")
+                        Label("\(searchFilteredAssets.count)", systemImage: "laptopcomputer")
                             .foregroundStyle(.primary)
                         Spacer()
-                        Text(L10n.string("assigned_count", apiClient.assets.filter { $0.assignedTo != nil }.count))
-                            .foregroundStyle(.secondary)
+                        if !assetFilterOptions.isEmpty {
+                            AssetFilterMenu(filter: $assetFilter, options: assetFilterOptions)
+                        }
                     }
                 }
                 .listRowSeparator(.hidden)

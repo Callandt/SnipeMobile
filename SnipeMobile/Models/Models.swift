@@ -130,10 +130,28 @@ struct Asset: Identifiable, Codable, Hashable {
         case id, name, assetTag = "asset_tag", serial, model, byod, requestable, modelNumber = "model_number", eol, assetEolDate = "asset_eol_date", statusLabel = "status_label", category, manufacturer, supplier, notes, orderNumber = "order_number", company, location, rtdLocation = "rtd_location", image, qr, altBarcode = "alt_barcode", assignedTo = "assigned_to", jobtitle, warrantyMonths = "warranty_months", warrantyExpires = "warranty_expires", createdBy = "created_by", createdAt = "created_at", updatedAt = "updated_at", lastAuditDate = "last_audit_date", nextAuditDate = "next_audit_date", deletedAt = "deleted_at", purchaseDate = "purchase_date", age, lastCheckout = "last_checkout", lastCheckin = "last_checkin", expectedCheckin = "expected_checkin", purchaseCost = "purchase_cost", checkinCounter = "checkin_counter", checkoutCounter = "checkout_counter", requestsCounter = "requests_counter", userCanCheckout = "user_can_checkout", bookValue = "book_value", customFields = "custom_fields", availableActions = "available_actions"
     }
 
+    // compare shown content so views refresh after a checkout/checkin/edit
     static func == (lhs: Asset, rhs: Asset) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.decodedName == rhs.decodedName &&
+        lhs.decodedAssetTag == rhs.decodedAssetTag &&
+        lhs.decodedSerial == rhs.decodedSerial &&
+        lhs.decodedModelName == rhs.decodedModelName &&
+        lhs.statusLabel.id == rhs.statusLabel.id &&
+        lhs.statusLabel.statusMeta == rhs.statusLabel.statusMeta &&
+        lhs.decodedStatusLabelName == rhs.decodedStatusLabelName &&
+        lhs.assignedTo?.id == rhs.assignedTo?.id &&
+        lhs.decodedAssignedToName == rhs.decodedAssignedToName &&
+        lhs.decodedLocationName == rhs.decodedLocationName &&
+        lhs.decodedCategoryName == rhs.decodedCategoryName &&
+        lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
+        lhs.image == rhs.image &&
+        lhs.nextAuditDate?.date == rhs.nextAuditDate?.date &&
+        lhs.lastAuditDate?.date == rhs.lastAuditDate?.date &&
+        lhs.expectedCheckin?.date == rhs.expectedCheckin?.date
     }
 
+    // keep hashing id-based for stable navigation
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
@@ -281,7 +299,16 @@ struct Location: Codable, Identifiable, Hashable {
     }
 
     static func == (lhs: Location, rhs: Location) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.name == rhs.name &&
+        lhs.address == rhs.address &&
+        lhs.address2 == rhs.address2 &&
+        lhs.city == rhs.city &&
+        lhs.state == rhs.state &&
+        lhs.country == rhs.country &&
+        lhs.zip == rhs.zip &&
+        lhs.currency == rhs.currency &&
+        lhs.parent?.id == rhs.parent?.id
     }
 
     func hash(into hasher: inout Hasher) {
@@ -515,7 +542,19 @@ struct User: Identifiable, Codable, Hashable {
     }
 
     static func == (lhs: User, rhs: User) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.decodedName == rhs.decodedName &&
+        lhs.decodedFirstName == rhs.decodedFirstName &&
+        lhs.decodedLastName == rhs.decodedLastName &&
+        lhs.decodedUsername == rhs.decodedUsername &&
+        lhs.decodedEmail == rhs.decodedEmail &&
+        lhs.decodedPhone == rhs.decodedPhone &&
+        lhs.decodedLocationName == rhs.decodedLocationName &&
+        lhs.decodedCompanyName == rhs.decodedCompanyName &&
+        lhs.decodedEmployeeNumber == rhs.decodedEmployeeNumber &&
+        lhs.decodedJobtitle == rhs.decodedJobtitle &&
+        lhs.image == rhs.image &&
+        lhs.activated == rhs.activated
     }
 
     func hash(into hasher: inout Hasher) {
@@ -628,7 +667,20 @@ struct Accessory: Identifiable, Codable, Hashable {
     }
 
     static func == (lhs: Accessory, rhs: Accessory) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.decodedName == rhs.decodedName &&
+        lhs.decodedAssetTag == rhs.decodedAssetTag &&
+        lhs.decodedStatusLabelName == rhs.decodedStatusLabelName &&
+        lhs.assignedTo?.id == rhs.assignedTo?.id &&
+        lhs.decodedAssignedToName == rhs.decodedAssignedToName &&
+        lhs.decodedLocationName == rhs.decodedLocationName &&
+        lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
+        lhs.decodedCategoryName == rhs.decodedCategoryName &&
+        lhs.qty == rhs.qty &&
+        lhs.minAmt == rhs.minAmt &&
+        lhs.remaining == rhs.remaining &&
+        lhs.checkoutsCount == rhs.checkoutsCount &&
+        lhs.image == rhs.image
     }
 
     func hash(into hasher: inout Hasher) {
@@ -776,7 +828,18 @@ struct Consumable: Identifiable, Codable, Hashable {
     }
 
     static func == (lhs: Consumable, rhs: Consumable) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.decodedName == rhs.decodedName &&
+        lhs.decodedItemNo == rhs.decodedItemNo &&
+        lhs.decodedModelNumber == rhs.decodedModelNumber &&
+        lhs.decodedLocationName == rhs.decodedLocationName &&
+        lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
+        lhs.decodedCategoryName == rhs.decodedCategoryName &&
+        lhs.decodedCompanyName == rhs.decodedCompanyName &&
+        lhs.qty == rhs.qty &&
+        lhs.minAmt == rhs.minAmt &&
+        lhs.remaining == rhs.remaining &&
+        lhs.image == rhs.image
     }
 
     func hash(into hasher: inout Hasher) {
@@ -919,7 +982,18 @@ struct Component: Identifiable, Codable, Hashable {
     }
 
     static func == (lhs: Component, rhs: Component) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.decodedName == rhs.decodedName &&
+        lhs.decodedSerial == rhs.decodedSerial &&
+        lhs.decodedModelNumber == rhs.decodedModelNumber &&
+        lhs.decodedLocationName == rhs.decodedLocationName &&
+        lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
+        lhs.decodedCategoryName == rhs.decodedCategoryName &&
+        lhs.decodedCompanyName == rhs.decodedCompanyName &&
+        lhs.qty == rhs.qty &&
+        lhs.minAmt == rhs.minAmt &&
+        lhs.remaining == rhs.remaining &&
+        lhs.image == rhs.image
     }
 
     func hash(into hasher: inout Hasher) {
@@ -1098,7 +1172,23 @@ struct License: Identifiable, Codable, Hashable {
         case updatedAt = "updated_at"
     }
 
-    static func == (lhs: License, rhs: License) -> Bool { lhs.id == rhs.id }
+    static func == (lhs: License, rhs: License) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.decodedName == rhs.decodedName &&
+        lhs.decodedLicenseName == rhs.decodedLicenseName &&
+        lhs.decodedLicenseEmail == rhs.decodedLicenseEmail &&
+        lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
+        lhs.decodedCategoryName == rhs.decodedCategoryName &&
+        lhs.decodedProductKey == rhs.decodedProductKey &&
+        lhs.seats == rhs.seats &&
+        lhs.freeSeatsCount == rhs.freeSeatsCount &&
+        lhs.remaining == rhs.remaining &&
+        lhs.reassignable == rhs.reassignable &&
+        lhs.maintained == rhs.maintained &&
+        lhs.expirationDate?.date == rhs.expirationDate?.date &&
+        lhs.terminationDate?.date == rhs.terminationDate?.date &&
+        lhs.updatedAt?.datetime == rhs.updatedAt?.datetime
+    }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 

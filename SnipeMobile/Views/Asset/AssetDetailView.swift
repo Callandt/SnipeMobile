@@ -63,6 +63,19 @@ struct AssetDetailView: View {
         apiClient.assets.first { $0.id == asset.id } ?? asset
     }
 
+    private var isDeployed: Bool {
+        currentAsset.statusLabel.statusMeta?.lowercased() == "deployed"
+    }
+
+    /// Only deployable statuses can be checked out (matches Snipe-IT).
+    private var canCheckOut: Bool {
+        if let label = apiClient.statusLabels.first(where: { $0.id == currentAsset.statusLabel.id }) {
+            return (label.type?.lowercased() ?? "deployable") == "deployable"
+        }
+        // fallback before labels load: meta is "deployable" for an assignable, unassigned asset
+        return currentAsset.statusLabel.statusMeta?.lowercased() == "deployable"
+    }
+
     private var resolvedImageURL: URL? {
         let fromCache = currentAsset.image?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let fromDetail = detailImageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -255,7 +268,7 @@ struct AssetDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
-                if currentAsset.statusLabel.statusMeta?.lowercased() == "deployed" {
+                if isDeployed {
                     Button(action: {
                         Task {
                             let success = await apiClient.checkinAsset(assetId: currentAsset.id)
@@ -278,7 +291,7 @@ struct AssetDetailView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
                     .controlSize(.large)
-                } else {
+                } else if canCheckOut {
                     Button(action: { showCheckoutSheet = true }) {
                         Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
                             .font(.headline)

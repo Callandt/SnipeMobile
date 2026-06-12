@@ -44,7 +44,7 @@ struct AssetEditSheet: View {
     @Binding var showWarrantyExpires: Bool
     @Binding var showExpectedCheckin: Bool
     @Binding var showEolDate: Bool
-    @State private var showArchiveError = false
+    @State private var showCheckinWarning = false
     @State private var showResult = false
     @State private var resultMessage = ""
     @State private var selectedImage: UIImage?
@@ -63,15 +63,21 @@ struct AssetEditSheet: View {
         return nil
     }
 
-    /// Checked out. Status read only.
-    private var isAssetCheckedOut: Bool {
-        asset.assignedTo != nil || asset.location != nil
-    }
-
     /// Status label. name or status_meta.
     private func displayName(for label: StatusLabel) -> String {
         let meta = label.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return meta.isEmpty ? label.name : meta
+    }
+
+    private var isAssigned: Bool {
+        asset.assignedTo != nil
+    }
+
+    /// Snipe-IT auto-checks-in a deployed asset when set to a non-deployable status.
+    private var selectedStatusChecksInAsset: Bool {
+        guard isAssigned else { return false }
+        guard let label = apiClient.statusLabels.first(where: { $0.id == selectedStatusId }) else { return false }
+        return (label.type?.lowercased() ?? "deployable") != "deployable"
     }
 
     var body: some View {
@@ -97,111 +103,111 @@ struct AssetEditSheet: View {
                         ProgressView()
                     } else {
                         Button(L10n.string("save")) {
-                            // Block archive if assigned
-                            let archiveStatus = apiClient.statusLabels.first { $0.name.lowercased() == "archived" }?.id
-                            let isArchiving = selectedStatusId == archiveStatus
-                            let isAssigned = (asset.assignedTo != nil) || (asset.location != nil)
-                            if isArchiving && isAssigned {
-                                showArchiveError = true
-                                return
-                            }
-                            isSaving = true
-                            Task {
-                                let formatter = DateFormatter()
-                                formatter.dateFormat = "yyyy-MM-dd"
-                                formatter.timeZone = TimeZone(secondsFromGMT: 0)
-                                let purchaseDateString = hasPurchaseDate ? formatter.string(from: editPurchaseDate) : nil
-                                let nextAuditDateRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
-                                    hasNextAuditDate
-                                    ? .value(formatter.string(from: editNextAuditDate))
-                                    : .null
-                                let expectedCheckinString = hasExpectedCheckin ? formatter.string(from: editExpectedCheckin) : nil
-                                let eolDateString = hasEolDate ? formatter.string(from: editEolDate) : nil
-                                let trim: (String) -> String? = { s in
-                                    let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    return t.isEmpty ? nil : t
-                                }
-                                let warrantyMonthsRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? = {
-                                    let digitsOnly = editWarrantyMonths.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-                                    return digitsOnly.isEmpty ? .null : .value(digitsOnly)
-                                }()
-                                let normalizedPurchaseCost = NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost)
-                                let normalizedBookValue = NumberFormatHelpers.normalizeDecimalForAPI(editBookValue)
-                                let originalBookValue = NumberFormatHelpers.normalizeDecimalForAPI(asset.bookValue)
-                                let purchaseCostRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
-                                    normalizedPurchaseCost.map { .value($0) } ?? .null
-                                // When purchase cost is cleared and book value wasn't edited,
-                                // explicitly null the book value so legacy residuals don't stick.
-                                let shouldClearUnchangedBookValue = normalizedPurchaseCost == nil && normalizedBookValue == originalBookValue
-                                let bookValueRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
-                                    shouldClearUnchangedBookValue
-                                    ? .null
-                                    : (normalizedBookValue.map { .value($0) } ?? .null)
-                                // custom_fields usually wants the internal key (e.g. "_snipeit_xxx_1"),
-                                // not the visible label.
-                                let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
-                                    uniqueKeysWithValues: editCustomFields.map { key, value in
-                                        let apiKey = asset.customFields?[key]?.field ?? key
-                                        return (apiKey, .init(value: value))
-                                    }
-                                )
-                                let update = SnipeITAPIClient.AssetUpdateRequest(
-                                    name: trim(editName),
-                                    asset_tag: trim(editAssetTag) ?? asset.assetTag,
-                                    serial: trim(editSerial) ?? "",
-                                    model_id: selectedModelId,
-                                    status_id: selectedStatusId,
-                                    category_id: selectedCategoryId,
-                                    manufacturer_id: selectedManufacturerId,
-                                    supplier_id: selectedSupplierId,
-                                    notes: trim(editNotes) ?? "",
-                                    order_number: trim(editOrderNumber) ?? "",
-                                    location_id: asset.location?.id,
-                                    purchase_cost: purchaseCostRequest,
-                                    book_value: bookValueRequest,
-                                    custom_fields: customFieldsPayload,
-                                    purchase_date: purchaseDateString,
-                                    next_audit_date: nextAuditDateRequest,
-                                    expected_checkin: expectedCheckinString,
-                                    eol_date: eolDateString,
-                                    warranty_months: warrantyMonthsRequest,
-                                    image_delete: (selectedImage == nil && removeExistingImage) ? 1 : nil
-                                )
-                                let success = await apiClient.updateAsset(
-                                    assetId: asset.id,
-                                    update: update,
-                                    image: selectedImage
-                                )
-                                if success {
-                                    // updateAsset already patched it in memory, so refresh the
-                                    // full list in the background instead of making the user wait.
-                                    if auditNotificationsEnabled {
-                                        await AuditNotificationManager.shared.updateSchedule(
-                                            enabled: true,
-                                            hour: auditNotificationHour,
-                                            minute: auditNotificationMinute,
-                                            assets: apiClient.assets
-                                        )
-                                    }
-                                    Task { await apiClient.fetchAssets() }
-                                }
-                                isSaving = false
-                                if success {
-                                    isPresented = false
-                                } else {
-                                    resultMessage = apiClient.lastApiMessage ?? "Save failed."
-                                    showResult = true
-                                }
+                            if selectedStatusChecksInAsset {
+                                showCheckinWarning = true
+                            } else {
+                                performSave()
                             }
                         }
                     }
                 }
             }
-            .alert(isPresented: $showArchiveError) {
-                Alert(title: Text(L10n.string("cannot_archive")), message: Text(L10n.string("cannot_archive_msg")), dismissButton: .default(Text(L10n.string("ok"))))
+            .alert(L10n.string("status_not_deployable_title"), isPresented: $showCheckinWarning) {
+                Button(L10n.string("cancel"), role: .cancel) {}
+                Button(L10n.string("continue")) { performSave() }
+            } message: {
+                Text(L10n.string("status_not_deployable_checkin_warning"))
             }
             .alert(isPresented: $showResult) {
                 Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
+            }
+        }
+    }
+
+    private func performSave() {
+        isSaving = true
+        Task {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            let purchaseDateString = hasPurchaseDate ? formatter.string(from: editPurchaseDate) : nil
+            let nextAuditDateRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                hasNextAuditDate
+                ? .value(formatter.string(from: editNextAuditDate))
+                : .null
+            let expectedCheckinString = hasExpectedCheckin ? formatter.string(from: editExpectedCheckin) : nil
+            let eolDateString = hasEolDate ? formatter.string(from: editEolDate) : nil
+            let trim: (String) -> String? = { s in
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
+            }
+            let warrantyMonthsRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? = {
+                let digitsOnly = editWarrantyMonths.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+                return digitsOnly.isEmpty ? .null : .value(digitsOnly)
+            }()
+            let normalizedPurchaseCost = NumberFormatHelpers.normalizeDecimalForAPI(editPurchaseCost)
+            let normalizedBookValue = NumberFormatHelpers.normalizeDecimalForAPI(editBookValue)
+            let originalBookValue = NumberFormatHelpers.normalizeDecimalForAPI(asset.bookValue)
+            let purchaseCostRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                normalizedPurchaseCost.map { .value($0) } ?? .null
+            // clear residual book value when purchase cost is cleared and book value is untouched
+            let shouldClearUnchangedBookValue = normalizedPurchaseCost == nil && normalizedBookValue == originalBookValue
+            let bookValueRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                shouldClearUnchangedBookValue
+                ? .null
+                : (normalizedBookValue.map { .value($0) } ?? .null)
+            // custom_fields wants the internal key (e.g. "_snipeit_xxx_1"), not the label
+            let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
+                uniqueKeysWithValues: editCustomFields.map { key, value in
+                    let apiKey = asset.customFields?[key]?.field ?? key
+                    return (apiKey, .init(value: value))
+                }
+            )
+            let update = SnipeITAPIClient.AssetUpdateRequest(
+                name: trim(editName),
+                asset_tag: trim(editAssetTag) ?? asset.assetTag,
+                serial: trim(editSerial) ?? "",
+                model_id: selectedModelId,
+                status_id: selectedStatusId,
+                category_id: selectedCategoryId,
+                manufacturer_id: selectedManufacturerId,
+                supplier_id: selectedSupplierId,
+                notes: trim(editNotes) ?? "",
+                order_number: trim(editOrderNumber) ?? "",
+                location_id: asset.location?.id,
+                purchase_cost: purchaseCostRequest,
+                book_value: bookValueRequest,
+                custom_fields: customFieldsPayload,
+                purchase_date: purchaseDateString,
+                next_audit_date: nextAuditDateRequest,
+                expected_checkin: expectedCheckinString,
+                eol_date: eolDateString,
+                warranty_months: warrantyMonthsRequest,
+                image_delete: (selectedImage == nil && removeExistingImage) ? 1 : nil
+            )
+            let success = await apiClient.updateAsset(
+                assetId: asset.id,
+                update: update,
+                image: selectedImage
+            )
+            if success {
+                // updateAsset already patched it in memory; refresh the list in the background
+                if auditNotificationsEnabled {
+                    await AuditNotificationManager.shared.updateSchedule(
+                        enabled: true,
+                        hour: auditNotificationHour,
+                        minute: auditNotificationMinute,
+                        assets: apiClient.assets
+                    )
+                }
+                Task { await apiClient.fetchAssets() }
+            }
+            isSaving = false
+            if success {
+                isPresented = false
+            } else {
+                resultMessage = apiClient.lastApiMessage ?? "Save failed."
+                showResult = true
             }
         }
     }
@@ -265,8 +271,8 @@ struct AssetEditSheet: View {
                     )
                 }
             }
-            // Status only when not checked out. Avoids Picker crash.
-            if !isAssetCheckedOut, !apiClient.statusLabels.isEmpty {
+            // editable even when checked out; archive-while-assigned is blocked on save
+            if !apiClient.statusLabels.isEmpty {
                 let sortedStatuses = apiClient.statusLabels.sorted {
                     displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
                 }
