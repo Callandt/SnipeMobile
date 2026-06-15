@@ -18,6 +18,7 @@ class SnipeITAPIClient: ObservableObject {
     @Published var groups: [UserGroup] = []
     @Published var manufacturers: [Manufacturer] = [] { didSet { scheduleCacheSave() } }
     @Published var suppliers: [Supplier] = [] { didSet { scheduleCacheSave() } }
+    @Published var depreciations: [DepreciationRow] = []
     @Published var maintenances: [AssetMaintenance] = [] { didSet { scheduleCacheSave() } }
     @Published var maintenanceTypes: [MaintenanceType] = []
     @Published var errorMessage: String?
@@ -1599,6 +1600,18 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    struct LicenseSeatAsset: Codable, Hashable {
+        let id: Int
+        let name: String?
+    }
+
+    struct LicenseSeatAssignee {
+        let user: User?
+        let name: String
+        let email: String
+        let company: String
+    }
+
     struct LicenseSeatRow: Codable, Identifiable {
         let id: Int
         let licenseId: Int?
@@ -1622,11 +1635,41 @@ class SnipeITAPIClient: ObservableObject {
             case reassignable
             case disabled
         }
-    }
 
-    struct LicenseSeatAsset: Codable, Hashable {
-        let id: Int
-        let name: String?
+        // Fall back to the asset's checkout user when assigned_user is missing.
+        func resolvedAssignee(assets: [Asset], users: [User]) -> LicenseSeatAssignee? {
+            guard assignedAsset != nil else { return nil }
+
+            if let seatUser = assignedUser {
+                let cached = users.first(where: { $0.id == seatUser.id })
+                return LicenseSeatAssignee(
+                    user: cached,
+                    name: cached?.decodedName ?? HTMLDecoder.decode(seatUser.name),
+                    email: cached?.decodedEmail ?? HTMLDecoder.decode(seatUser.email ?? ""),
+                    company: cached?.decodedCompanyName ?? ""
+                )
+            }
+
+            guard let assetId = assignedAsset?.id,
+                  let asset = assets.first(where: { $0.id == assetId }),
+                  asset.assignedTo?.isUser == true else {
+                return nil
+            }
+
+            if let userId = asset.assignedTo?.id,
+               let user = users.first(where: { $0.id == userId }) {
+                return LicenseSeatAssignee(
+                    user: user,
+                    name: user.decodedName,
+                    email: user.decodedEmail,
+                    company: user.decodedCompanyName
+                )
+            }
+
+            let name = asset.decodedAssignedToName
+            guard !name.isEmpty else { return nil }
+            return LicenseSeatAssignee(user: nil, name: name, email: "", company: "")
+        }
     }
 
     func fetchLicenseSeats(licenseId: Int) async -> [LicenseSeatRow] {
@@ -1654,6 +1697,52 @@ class SnipeITAPIClient: ObservableObject {
     /// Returns nil on success, otherwise a user-facing error message.
     func checkoutLicenseSeat(licenseId: Int, seatId: Int, userId: Int?, assetId: Int?, note: String?) async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
+
+        if let userId {
+            var body: [String: Any] = ["assigned_to": userId]
+            if let note, !note.isEmpty { body["note"] = note }
+            if let error = await putLicenseSeatUpdate(licenseId: licenseId, seatId: seatId, body: body, label: "checkout-user") {
+                return error
+            }
+        } else if let assetId {
+            // The API `prohibits` rule allows only one of assigned_to / asset_id per request.
+            var assetBody: [String: Any] = ["asset_id": assetId]
+            if let note, !note.isEmpty { assetBody["note"] = note }
+            if let error = await putLicenseSeatUpdate(licenseId: licenseId, seatId: seatId, body: assetBody, label: "checkout-asset") {
+                return error
+            }
+
+            // Mirror Snipe-IT web checkout: copy the asset's assigned user onto the seat.
+            var asset = assets.first(where: { $0.id == assetId })
+            if asset == nil {
+                asset = await fetchHardwareDetails(assetId: assetId)
+            }
+            if let asset,
+               asset.assignedTo?.isUser == true,
+               let checkoutUserId = asset.assignedTo?.id {
+                let userBody: [String: Any] = ["assigned_to": checkoutUserId]
+                if let error = await putLicenseSeatUpdate(licenseId: licenseId, seatId: seatId, body: userBody, label: "checkout-asset-user") {
+                    return error
+                }
+            }
+        } else {
+            return "No assignee selected."
+        }
+
+        await refreshLicenseInCache(licenseId: licenseId)
+        if let assetId {
+            await refreshAssetInCache(assetId: assetId)
+        }
+        syncAllInBackground()
+        return nil
+    }
+
+    private func putLicenseSeatUpdate(
+        licenseId: Int,
+        seatId: Int,
+        body: [String: Any],
+        label: String
+    ) async -> String? {
         guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)/seats/\(seatId)") else {
             return "Invalid URL."
         }
@@ -1663,11 +1752,6 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        // Send only one of assigned_to / asset_id (the `prohibits` rule rejects both being present).
-        var body: [String: Any] = [:]
-        if let userId { body["assigned_to"] = userId } else if let assetId { body["asset_id"] = assetId }
-        if let note, !note.isEmpty { body["note"] = note }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
@@ -1677,7 +1761,7 @@ class SnipeITAPIClient: ObservableObject {
             #if DEBUG
             let bodyPreview = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
             let resPreview = String(data: data.prefix(600), encoding: .utf8) ?? ""
-            print("[SnipeMobile] PUT /licenses/\(licenseId)/seats/\(seatId) (checkout) sent=\(bodyPreview) status=\(http.statusCode) body=\(resPreview)")
+            print("[SnipeMobile] PUT /licenses/\(licenseId)/seats/\(seatId) (\(label)) sent=\(bodyPreview) status=\(http.statusCode) body=\(resPreview)")
             #endif
 
             guard (200...299).contains(http.statusCode) else {
@@ -1688,11 +1772,6 @@ class SnipeITAPIClient: ObservableObject {
                let status = json["status"] as? String, status == "error" {
                 return Self.extractApiErrorMessage(from: json) ?? "Check-out failed."
             }
-            await refreshLicenseInCache(licenseId: licenseId)
-            if let assetId {
-                await refreshAssetInCache(assetId: assetId)
-            }
-            syncAllInBackground()
             return nil
         } catch {
             return error.localizedDescription
@@ -2063,6 +2142,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     static func extractApiErrorMessage(from json: [String: Any]) -> String? {
+        if let str = json["message"] as? String, !str.isEmpty { return str }
         if let str = json["messages"] as? String, !str.isEmpty { return str }
         if let dict = json["messages"] as? [String: Any] {
             for value in dict.values {
@@ -2177,6 +2257,23 @@ class SnipeITAPIClient: ObservableObject {
             }
         } catch {
             print("Error fetching suppliers: \(error.localizedDescription)")
+        }
+    }
+
+    func fetchDepreciations() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        do {
+            guard let rows = try await fetchAllPaginated(
+                path: "/api/v1/depreciations",
+                as: DepreciationRow.self
+            ) else { return }
+            await MainActor.run {
+                self.depreciations = rows.sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+            }
+        } catch {
+            print("Error fetching depreciations: \(error.localizedDescription)")
         }
     }
 
@@ -2324,6 +2421,25 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    // one page of the global activity log; nil on failure
+    func fetchActivityPage(limit: Int, offset: Int, order: String = "desc") async -> [Activity]? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/reports/activity?limit=\(limit)&offset=\(offset)&order=\(order)") else {
+            return nil
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, _) = try await urlSession.data(for: request)
+            let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
+            return response.rows
+        } catch {
+            print("Error fetching activity page: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     func downloadFile(from url: String) async -> URL? {
         guard let fileUrl = URL(string: url), !apiToken.isEmpty else { return nil }
         var request = URLRequest(url: fileUrl)
@@ -2427,6 +2543,26 @@ class SnipeITAPIClient: ObservableObject {
     struct ModelRow: Codable, Identifiable {
         let id: Int
         let name: String
+        let requireSerial: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name
+            case requireSerial = "require_serial"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(Int.self, forKey: .id)
+            name = try c.decode(String.self, forKey: .name)
+            // API may send bool, int (0/1) or null
+            if let b = try? c.decode(Bool.self, forKey: .requireSerial) {
+                requireSerial = b
+            } else if let i = try? c.decode(Int.self, forKey: .requireSerial) {
+                requireSerial = i == 1
+            } else {
+                requireSerial = nil
+            }
+        }
     }
     struct ModelsResponse: Codable {
         let rows: [ModelRow]
@@ -3733,4 +3869,232 @@ class SnipeITAPIClient: ObservableObject {
             return false
         }
     }
-} 
+}
+
+// MARK: - Management CRUD (Settings → Management)
+extension SnipeITAPIClient {
+    struct ManagementWriteResult {
+        let success: Bool
+        let message: String?
+        let id: Int?
+    }
+
+    // paginated GET, returns raw rows
+    func managementFetchRows(path: String) async -> (rows: [[String: Any]]?, error: String?) {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            return (nil, L10n.string("settings_not_configured"))
+        }
+        var all: [[String: Any]] = []
+        var offset = 0
+        let limit = 200
+        while true {
+            guard var comps = URLComponents(string: "\(baseURL)\(path)") else {
+                return (nil, "Invalid URL.")
+            }
+            comps.queryItems = [
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "offset", value: String(offset))
+            ]
+            guard let url = comps.url else { return (nil, "Invalid URL.") }
+
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            do {
+                let (data, response) = try await urlSession.data(for: request)
+                guard let http = response as? HTTPURLResponse else { return (nil, "No response.") }
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                guard (200...299).contains(http.statusCode) else {
+                    return (nil, Self.extractApiErrorMessage(from: json ?? [:]) ?? "HTTP \(http.statusCode)")
+                }
+                guard let json else {
+                    return (nil, "Invalid response.")
+                }
+                let rows = (json["rows"] as? [[String: Any]]) ?? []
+                all.append(contentsOf: rows)
+                let total = json["total"] as? Int
+                if rows.count < limit { break }
+                if let total, all.count >= total { break }
+                if rows.isEmpty { break }
+                offset += limit
+                try? await Task.sleep(nanoseconds: 60_000_000)
+            } catch {
+                return (nil, error.localizedDescription)
+            }
+        }
+        return (all, nil)
+    }
+
+    func managementCreate(path: String, body: [String: Any]) async -> ManagementWriteResult {
+        await managementWrite(urlString: "\(baseURL)\(path)", method: "POST", body: body)
+    }
+
+    func managementUpdate(path: String, id: Int, body: [String: Any]) async -> ManagementWriteResult {
+        await managementWrite(urlString: "\(baseURL)\(path)/\(id)", method: "PATCH", body: body)
+    }
+
+    func managementDelete(path: String, id: Int) async -> ManagementWriteResult {
+        await managementWrite(urlString: "\(baseURL)\(path)/\(id)", method: "DELETE", body: nil)
+    }
+
+    private func managementWrite(urlString: String, method: String, body: [String: Any]?) async -> ManagementWriteResult {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            return ManagementWriteResult(success: false, message: L10n.string("settings_not_configured"), id: nil)
+        }
+        guard let url = URL(string: urlString) else {
+            return ManagementWriteResult(success: false, message: "Invalid URL.", id: nil)
+        }
+
+        func makeRequest(method: String, formMethodOverride: String? = nil) -> URLRequest {
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            if let formMethodOverride {
+                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                request.httpBody = "_method=\(formMethodOverride)".data(using: .utf8)
+            } else if let body {
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            }
+            return request
+        }
+
+        do {
+            var (data, response) = try await urlSession.data(for: makeRequest(method: method))
+            var http = response as? HTTPURLResponse
+
+            // Laravel method spoofing: some hosts reject raw DELETE with 405.
+            if http?.statusCode == 405, method == "DELETE" {
+                (data, response) = try await urlSession.data(for: makeRequest(method: "POST", formMethodOverride: "DELETE"))
+                http = response as? HTTPURLResponse
+            }
+
+            guard let http else {
+                return ManagementWriteResult(success: false, message: "No response.", id: nil)
+            }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            guard (200...299).contains(http.statusCode) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                return ManagementWriteResult(
+                    success: false,
+                    message: Self.extractApiErrorMessage(from: json ?? [:]) ?? "HTTP \(http.statusCode): \(preview)",
+                    id: nil
+                )
+            }
+            if (json?["status"] as? String)?.lowercased() == "error" {
+                return ManagementWriteResult(
+                    success: false,
+                    message: Self.extractApiErrorMessage(from: json ?? [:]) ?? "Request failed.",
+                    id: nil
+                )
+            }
+            let newId = (json?["payload"] as? [String: Any])?["id"] as? Int
+            let message = (json?["messages"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return ManagementWriteResult(success: true, message: message, id: newId)
+        } catch {
+            return ManagementWriteResult(success: false, message: error.localizedDescription, id: nil)
+        }
+    }
+
+    // Linked fields for a fieldset; older Snipe-IT builds lack GET /fieldsets/:id/fields.
+    func fetchFieldsetLinkedFields(fieldsetId: Int) async -> (rows: [[String: Any]]?, error: String?) {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            return (nil, L10n.string("settings_not_configured"))
+        }
+
+        func fieldRows(from json: [String: Any]) -> [[String: Any]]? {
+            if let rows = json["rows"] as? [[String: Any]] { return rows }
+            if let fields = json["fields"] as? [String: Any],
+               let rows = fields["rows"] as? [[String: Any]] { return rows }
+            if let payload = json["payload"] as? [String: Any] {
+                if let rows = payload["rows"] as? [[String: Any]] { return rows }
+                if let fields = payload["fields"] as? [String: Any],
+                   let rows = fields["rows"] as? [[String: Any]] { return rows }
+            }
+            return nil
+        }
+
+        func requestJSON(path: String) async throws -> (HTTPURLResponse, [String: Any]) {
+            guard let url = URL(string: "\(baseURL)\(path)") else { throw URLError(.badURL) }
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            return (http, json)
+        }
+
+        do {
+            let (http, json) = try await requestJSON(path: "/api/v1/fieldsets/\(fieldsetId)/fields")
+            if (200...299).contains(http.statusCode), let rows = fieldRows(from: json) {
+                return (await enrichFieldsetFieldRows(rows), nil)
+            }
+            if http.statusCode != 404 {
+                return (nil, Self.extractApiErrorMessage(from: json) ?? "HTTP \(http.statusCode)")
+            }
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+
+        do {
+            let (http, json) = try await requestJSON(path: "/api/v1/fieldsets/\(fieldsetId)")
+            if (200...299).contains(http.statusCode), let rows = fieldRows(from: json) {
+                return (await enrichFieldsetFieldRows(rows), nil)
+            }
+            if http.statusCode != 404 {
+                return (nil, Self.extractApiErrorMessage(from: json) ?? "HTTP \(http.statusCode)")
+            }
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+
+        await fetchFieldsets()
+        if let cached = fieldsets?.first(where: { $0.id == fieldsetId }) {
+            let rows = cached.fields.rows.map { field -> [String: Any] in
+                var row: [String: Any] = ["id": field.id, "name": field.name, "type": field.type]
+                if let values = field.field_values_array { row["field_values_array"] = values }
+                return row
+            }
+            return (rows, nil)
+        }
+
+        return (nil, L10n.string("mgmt_load_failed"))
+    }
+
+    func reorderFieldsetFields(fieldsetId: Int, fieldIds: [Int]) async -> ManagementWriteResult {
+        await managementCreate(
+            path: "/api/v1/fields/fieldsets/\(fieldsetId)/order",
+            body: ["item": fieldIds]
+        )
+    }
+
+    private func enrichFieldsetFieldRows(_ rows: [[String: Any]]) async -> [[String: Any]] {
+        guard rows.contains(where: { $0["id"] == nil }) else { return rows }
+        let allFields = await managementFetchRows(path: "/api/v1/fields")
+        guard let catalog = allFields.rows else { return rows }
+
+        func resolveId(for row: [String: Any]) -> Int? {
+            if let id = row["id"] as? Int { return id }
+            if let dbColumn = row["db_column_name"] as? String,
+               let match = catalog.first(where: { ($0["db_column_name"] as? String) == dbColumn }) {
+                return match["id"] as? Int
+            }
+            if let name = row["name"] as? String,
+               let match = catalog.first(where: { ($0["name"] as? String) == name }) {
+                return match["id"] as? Int
+            }
+            return nil
+        }
+
+        return rows.compactMap { row in
+            guard let id = resolveId(for: row) else { return nil }
+            var enriched = row
+            enriched["id"] = id
+            return enriched
+        }
+    }
+}

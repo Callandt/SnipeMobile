@@ -769,21 +769,15 @@ struct AssetDetailView: View {
     private func copyableDetailRow(label: String, value: String, copyValue: String? = nil) -> some View {
         let toCopy = copyValue ?? value
         let isSingleToken = !value.contains(" ")
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Text(label).bold()
-                Spacer(minLength: 8)
-                Text(value)
-                    .lineLimit(1)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label).bold()
-                Text(value)
-                    .lineLimit(isSingleToken ? 1 : nil)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).bold()
+            Text(value)
+                .foregroundColor(.secondary)
+                .lineLimit(isSingleToken ? 1 : nil)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .contextMenu {
             Button(action: {

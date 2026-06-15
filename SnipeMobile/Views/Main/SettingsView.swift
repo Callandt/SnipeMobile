@@ -72,6 +72,7 @@ struct SettingsView: View {
             Form {
                 generalSection
                 modulesSection
+                managementSection
                 privacySection
                 featuresSection
                 connectionSection
@@ -112,6 +113,12 @@ struct SettingsView: View {
                         showConsumablesSub: $showConsumablesSub,
                         showComponentsSub: $showComponentsSub
                     )
+                case .management:
+                    ManagementSettingsView()
+                case .activityLog:
+                    ActivityLogView(apiClient: apiClient)
+                case .managementEntity(let entity):
+                    ManagementListView(entity: entity, apiClient: apiClient)
                 }
             }
             .onAppear(perform: handleOnAppear)
@@ -244,6 +251,29 @@ struct SettingsView: View {
                     value: L10n.string("settings_modules_count", enabledModuleCount)
                 )
             }
+        }
+    }
+
+    private var managementSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.management) {
+                SettingsRow(
+                    icon: "slider.horizontal.3",
+                    iconColor: .pink,
+                    title: L10n.string("settings_management"),
+                    value: nil
+                )
+            }
+            NavigationLink(value: SettingsRoute.activityLog) {
+                SettingsRow(
+                    icon: "clock.arrow.circlepath",
+                    iconColor: .brown,
+                    title: L10n.string("settings_activity_log"),
+                    value: nil
+                )
+            }
+        } footer: {
+            Text(L10n.string("settings_management_footer"))
         }
     }
 
@@ -445,7 +475,64 @@ struct SettingsView: View {
     }
 }
 
-enum SettingsRoute: Hashable { case appearance, security, api, audit, dell, modules, assets }
+enum SettingsRoute: Hashable {
+    case appearance, security, api, audit, dell, modules, assets
+    case management, activityLog
+    case managementEntity(ManagementEntity)
+}
+
+// Admin entities you can manage from settings.
+enum ManagementEntity: String, Hashable, CaseIterable, Identifiable {
+    case fields, fieldsets, companies, statusLabels, models, categories
+    case manufacturers, suppliers, departments, groups
+
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .fields:        return "mgmt_fields"
+        case .fieldsets:     return "mgmt_fieldsets"
+        case .companies:     return "mgmt_companies"
+        case .statusLabels:  return "mgmt_status_labels"
+        case .models:        return "mgmt_models"
+        case .categories:    return "mgmt_categories"
+        case .manufacturers: return "mgmt_manufacturers"
+        case .suppliers:     return "mgmt_suppliers"
+        case .departments:   return "mgmt_departments"
+        case .groups:        return "mgmt_groups"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .fields:        return "list.bullet.rectangle"
+        case .fieldsets:     return "rectangle.3.group.fill"
+        case .companies:     return "building.2.fill"
+        case .statusLabels:  return "tag.fill"
+        case .models:        return "shippingbox.fill"
+        case .categories:    return "folder.fill"
+        case .manufacturers: return "wrench.and.screwdriver.fill"
+        case .suppliers:     return "cart.fill"
+        case .departments:   return "person.2.fill"
+        case .groups:        return "person.3.fill"
+        }
+    }
+
+    var iconColor: Color {
+        switch self {
+        case .fields:        return .indigo
+        case .fieldsets:     return .cyan
+        case .companies:     return .blue
+        case .statusLabels:  return .green
+        case .models:        return .orange
+        case .categories:    return .yellow
+        case .manufacturers: return .teal
+        case .suppliers:     return .purple
+        case .departments:   return .pink
+        case .groups:        return .red
+        }
+    }
+}
 
 // MARK: - Reusable building blocks (iOS Settings.app style)
 
@@ -745,6 +832,29 @@ struct AssetSettingsView: View {
             }
         }
         .navigationTitle(L10n.string("settings_assets"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct ManagementSettingsView: View {
+    var body: some View {
+        Form {
+            Section {
+                ForEach(ManagementEntity.allCases) { entity in
+                    NavigationLink(value: SettingsRoute.managementEntity(entity)) {
+                        SettingsRow(
+                            icon: entity.icon,
+                            iconColor: entity.iconColor,
+                            title: L10n.string(entity.titleKey),
+                            value: nil
+                        )
+                    }
+                }
+            } footer: {
+                Text(L10n.string("settings_management_footer"))
+            }
+        }
+        .navigationTitle(L10n.string("settings_management"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

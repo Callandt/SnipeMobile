@@ -73,6 +73,14 @@ struct AssetEditSheet: View {
         asset.assignedTo != nil
     }
 
+    private var modelRequiresSerial: Bool {
+        apiClient.models.first { $0.id == selectedModelId }?.requireSerial ?? false
+    }
+
+    private var serialSatisfied: Bool {
+        !modelRequiresSerial || !editSerial.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     /// Snipe-IT auto-checks-in a deployed asset when set to a non-deployable status.
     private var selectedStatusChecksInAsset: Bool {
         guard isAssigned else { return false }
@@ -109,6 +117,7 @@ struct AssetEditSheet: View {
                                 performSave()
                             }
                         }
+                        .disabled(!serialSatisfied)
                     }
                 }
             }
@@ -221,10 +230,15 @@ struct AssetEditSheet: View {
                 TextField(L10n.string("name"), text: $editName)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.string("serial"))
+                Text(L10n.string("serial") + (modelRequiresSerial ? " *" : ""))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 TextField(L10n.string("serial"), text: $editSerial)
+                if modelRequiresSerial && editSerial.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text(L10n.string("serial_required_hint"))
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
             }
             if !apiClient.assets.isEmpty {
                 let modelPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { asset in

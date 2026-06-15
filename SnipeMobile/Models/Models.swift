@@ -337,6 +337,11 @@ struct Supplier: Codable {
     let name: String
 }
 
+struct DepreciationRow: Codable, Identifiable {
+    let id: Int
+    let name: String
+}
+
 struct Company: Codable, Identifiable {
     let id: Int
     let name: String

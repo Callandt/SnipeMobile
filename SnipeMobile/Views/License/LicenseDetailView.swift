@@ -311,13 +311,13 @@ struct LicenseDetailView: View {
 
     private func checkinConfirmMessage(for seat: SnipeITAPIClient.LicenseSeatRow) -> String {
         var base: String
-        if let userId = seat.assignedUser?.id,
+        if let assetName = seat.assignedAsset?.name, !assetName.isEmpty {
+            base = String(format: L10n.string("checkin_user_confirm_message"), assetName)
+        } else if let userId = seat.assignedUser?.id,
            let user = apiClient.users.first(where: { $0.id == userId }) {
             base = String(format: L10n.string("checkin_user_confirm_message"), user.decodedName)
         } else if let name = seat.assignedUser?.name, !name.isEmpty {
             base = String(format: L10n.string("checkin_user_confirm_message"), name)
-        } else if let assetName = seat.assignedAsset?.name, !assetName.isEmpty {
-            base = String(format: L10n.string("checkin_user_confirm_message"), assetName)
         } else {
             base = L10n.string("checkin_generic_confirm_message")
         }
@@ -439,7 +439,20 @@ struct LicenseDetailView: View {
 
     @ViewBuilder
     private func seatRow(_ seat: SnipeITAPIClient.LicenseSeatRow) -> some View {
-        if let assigned = seat.assignedUser {
+        if let assignedAsset = seat.assignedAsset {
+            Button {
+                if let fullAsset = apiClient.assets.first(where: { $0.id == assignedAsset.id }) {
+                    onOpenAsset?(fullAsset)
+                }
+            } label: {
+                LicenseSeatAssetCard(
+                    asset: apiClient.assets.first(where: { $0.id == assignedAsset.id }),
+                    fallbackTitle: assignedAsset.name ?? "",
+                    assignee: seat.resolvedAssignee(assets: apiClient.assets, users: apiClient.users)
+                )
+            }
+            .buttonStyle(.plain)
+        } else if let assigned = seat.assignedUser {
             let userId = assigned.id
             Button {
                 if let fullUser = apiClient.users.first(where: { $0.id == userId }) {
@@ -453,61 +466,33 @@ struct LicenseDetailView: View {
                 )
             }
             .buttonStyle(.plain)
-        } else if let assignedAsset = seat.assignedAsset {
-            Button {
-                if let fullAsset = apiClient.assets.first(where: { $0.id == assignedAsset.id }) {
-                    onOpenAsset?(fullAsset)
-                }
-            } label: {
-                AssignedAssetCard(
-                    asset: apiClient.assets.first(where: { $0.id == assignedAsset.id }),
-                    fallbackTitle: assignedAsset.name ?? ""
-                )
-            }
-            .buttonStyle(.plain)
         }
     }
 
     @ViewBuilder
     private func detailRow(label: String, value: String) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Text(label).bold()
-                Spacer(minLength: 8)
-                Text(value)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label).bold()
-                Text(value)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).bold()
+            Text(value)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private func copyableDetailRow(label: String, value: String, copyValue: String? = nil) -> some View {
         let toCopy = copyValue ?? value
         let isSingleToken = !value.contains(" ")
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Text(label).bold()
-                Spacer(minLength: 8)
-                Text(value)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label).bold()
-                Text(value)
-                    .foregroundColor(.secondary)
-                    .lineLimit(isSingleToken ? 1 : nil)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).bold()
+            Text(value)
+                .foregroundColor(.secondary)
+                .lineLimit(isSingleToken ? 1 : nil)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .contextMenu {
             Button {

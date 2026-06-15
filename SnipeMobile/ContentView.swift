@@ -794,10 +794,22 @@ struct HardwareTab: View {
     @State private var selectedMaintenanceIds: Set<Int> = []
     @State private var maintenanceFilter: MaintenanceStatusFilter = .all
 
+    // Quick swipe-to-complete from the maintenance overview.
+    @State private var maintenanceToComplete: AssetMaintenance?
+    @State private var maintenanceCompleteNote = ""
+    @State private var isCompletingMaintenanceSwipe = false
+    @State private var showMaintenanceCompleteError = false
+    @State private var maintenanceCompleteErrorMessage = ""
+
+    // Audit detail sheet from the audit subtab.
+    @State private var selectedAuditAsset: Asset?
+
     // Quick audit completion from the audit list.
     @State private var showAuditCompletionSheet = false
     @State private var auditCompletionAsset: Asset?
     @State private var auditCompletionNextAuditDate: Date = Date()
+    @State private var auditCompletionSetDate = true
+    @State private var auditCompletionNote = ""
     @State private var isSavingAuditCompletion = false
     @State private var showAuditCompletionErrorAlert = false
     @State private var auditCompletionErrorMessage = ""
@@ -912,36 +924,18 @@ struct HardwareTab: View {
             tryPushScannedAsset()
         }
         .sheet(isPresented: $showAuditCompletionSheet) {
-            NavigationStack {
-                Form {
-                    Section {
-                        Text(L10n.string("audit_completed_sheet_message"))
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                    }
-                    Section {
-                        DatePicker(
-                            L10n.string("next_audit_date"),
-                            selection: $auditCompletionNextAuditDate,
-                            displayedComponents: .date
-                        )
-                    }
-                }
-                .navigationTitle(L10n.string("audit_completed_sheet_title"))
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(L10n.string("cancel"), role: .cancel) {
-                            showAuditCompletionSheet = false
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(L10n.string("save")) {
-                            Task { await saveAuditCompletionFromList() }
-                        }
-                        .disabled(isSavingAuditCompletion)
-                    }
-                }
-            }
+            CompletionActionSheet(
+                title: L10n.string("complete_audit_confirm_title"),
+                message: L10n.string("complete_audit_confirm_message"),
+                dateLabel: L10n.string("next_audit_date"),
+                date: $auditCompletionNextAuditDate,
+                includeDate: $auditCompletionSetDate,
+                includeDateLabel: L10n.string("audit_set_next_audit_date"),
+                note: $auditCompletionNote,
+                confirmTitle: L10n.string("complete_audit"),
+                isSaving: isSavingAuditCompletion,
+                onSave: { Task { await saveAuditCompletionFromList() } }
+            )
         }
         .alert(L10n.string("error"), isPresented: $showAuditCompletionErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {
@@ -953,42 +947,33 @@ struct HardwareTab: View {
     }
 
     private func saveAuditCompletionFromList() async {
-        guard !isSavingAuditCompletion, let assetId = auditCompletionAsset?.id else { return }
+        guard !isSavingAuditCompletion, let asset = auditCompletionAsset else { return }
+        let tag = asset.decodedAssetTag
+        guard !tag.isEmpty else {
+            auditCompletionErrorMessage = apiClient.lastApiMessage ?? apiClient.errorMessage ?? L10n.string("error")
+            showAuditCompletionErrorAlert = true
+            return
+        }
+
         isSavingAuditCompletion = true
         defer { isSavingAuditCompletion = false }
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        let nextAuditStr = formatter.string(from: auditCompletionNextAuditDate)
+        let nextAuditStr = auditCompletionSetDate ? formatter.string(from: auditCompletionNextAuditDate) : nil
+        let noteOpt = auditCompletionNote.trimmingCharacters(in: .whitespaces).isEmpty ? nil : auditCompletionNote
 
-        let update = SnipeITAPIClient.AssetUpdateRequest(
-            name: nil,
-            asset_tag: nil,
-            serial: nil,
-            model_id: nil,
-            status_id: nil,
-            category_id: nil,
-            manufacturer_id: nil,
-            supplier_id: nil,
-            notes: nil,
-            order_number: nil,
-            location_id: nil,
-            purchase_cost: nil,
-            book_value: nil,
-            custom_fields: nil,
-            purchase_date: nil,
-            next_audit_date: .value(nextAuditStr),
-            expected_checkin: nil,
-            eol_date: nil,
-            warranty_months: nil,
-            image_delete: nil
+        let ok = await apiClient.auditAsset(
+            assetTag: tag,
+            assetId: asset.id,
+            nextAuditDate: nextAuditStr,
+            note: noteOpt
         )
-
-        let ok = await apiClient.updateAsset(assetId: assetId, update: update)
         if ok {
             showAuditCompletionSheet = false
             auditCompletionAsset = nil
+            auditCompletionNote = ""
             await apiClient.fetchPrimaryThenBackground()
             if auditNotificationsEnabled {
                 await AuditNotificationManager.shared.updateSchedule(
@@ -1120,6 +1105,35 @@ struct HardwareTab: View {
                 record: record,
                 onMutated: {}
             )
+        }
+        .sheet(item: $selectedAuditAsset) { asset in
+            AuditDetailSheet(apiClient: apiClient, asset: asset, onCompleted: {
+                if auditNotificationsEnabled {
+                    Task {
+                        await AuditNotificationManager.shared.updateSchedule(
+                            enabled: true,
+                            hour: auditNotificationHour,
+                            minute: auditNotificationMinute,
+                            assets: apiClient.assets
+                        )
+                    }
+                }
+            })
+        }
+        .sheet(item: $maintenanceToComplete) { record in
+            CompletionActionSheet(
+                title: L10n.string("mark_complete_confirm_title"),
+                message: L10n.string("mark_complete_confirm_message"),
+                note: $maintenanceCompleteNote,
+                confirmTitle: L10n.string("mark_complete"),
+                isSaving: isCompletingMaintenanceSwipe,
+                onSave: { Task { await completeMaintenanceFromSwipe(record) } }
+            )
+        }
+        .alert(L10n.string("error"), isPresented: $showMaintenanceCompleteError) {
+            Button(L10n.string("ok"), role: .cancel) { maintenanceCompleteErrorMessage = "" }
+        } message: {
+            Text(maintenanceCompleteErrorMessage)
         }
         .onChange(of: hardwareSubtab) { _, newValue in
             if newValue == .maintenance {
@@ -1384,7 +1398,35 @@ struct HardwareTab: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                 .listRowBackground(Color.clear)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    if !isSelectingMaintenances, !record.isCompleted {
+                        Button {
+                            maintenanceCompleteNote = ""
+                            maintenanceToComplete = record
+                        } label: {
+                            Label(L10n.string("mark_complete"), systemImage: "checkmark.seal")
+                        }
+                        .tint(.green)
+                    }
+                }
             }
+        }
+    }
+
+    private func completeMaintenanceFromSwipe(_ record: AssetMaintenance) async {
+        guard !isCompletingMaintenanceSwipe else { return }
+        isCompletingMaintenanceSwipe = true
+        defer { isCompletingMaintenanceSwipe = false }
+
+        let trimmed = maintenanceCompleteNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = trimmed.isEmpty ? nil : trimmed
+        let ok = await apiClient.completeMaintenance(id: record.id, note: note)
+        maintenanceToComplete = nil
+        if ok {
+            await loadAllMaintenances(force: true)
+        } else {
+            maintenanceCompleteErrorMessage = apiClient.lastApiMessage ?? apiClient.errorMessage ?? L10n.string("error")
+            showMaintenanceCompleteError = true
         }
     }
 
@@ -1425,7 +1467,11 @@ struct HardwareTab: View {
         let isAuditTabActive = enableAuditSubtab && hardwareSubtab == .audit
 
         Button {
-            navigationPath.append(asset)
+            if isAuditTabActive {
+                selectedAuditAsset = asset
+            } else {
+                navigationPath.append(asset)
+            }
         } label: {
             AssetCardView(asset: asset, showNextAuditDate: shouldShowNextAuditDateOnCard)
         }
@@ -1437,12 +1483,14 @@ struct HardwareTab: View {
             if shouldShowNextAuditDateOnCard, (AuditDateClassifier.isDueToday(asset, now: Date()) || AuditDateClassifier.isOverdue(asset, now: Date())) {
                 Button {
                     auditCompletionAsset = asset
-                    auditCompletionNextAuditDate = Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date()
+                    auditCompletionNextAuditDate = AuditDateClassifier.nextAuditDateGMT(asset) ?? Date()
+                    auditCompletionSetDate = true
+                    auditCompletionNote = ""
                     showAuditCompletionSheet = true
                 } label: {
-                    Label(L10n.string("audit_completed_action"), systemImage: "checkmark.seal")
+                    Label(L10n.string("mark_complete"), systemImage: "checkmark.seal")
                 }
-                .tint(.purple)
+                .tint(.green)
             }
             if !isAuditTabActive {
                 Button(role: .destructive) {

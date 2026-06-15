@@ -34,10 +34,16 @@ struct AddAssetSheet: View {
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
     @AppStorage("autoFillAssetTag") private var autoFillAssetTag: Bool = true
 
+    private var selectedModelRequiresSerial: Bool {
+        guard selectedModelId != 0 else { return false }
+        return apiClient.models.first { $0.id == selectedModelId }?.requireSerial ?? false
+    }
+
     private var canSave: Bool {
         !assetTag.trimmingCharacters(in: .whitespaces).isEmpty
             && selectedModelId != 0
             && selectedStatusId != 0
+            && (!selectedModelRequiresSerial || !serial.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     /// Next asset tag. Zero padded.
@@ -187,7 +193,10 @@ struct AddAssetSheet: View {
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
             }
-            TextField(L10n.string("serial_optional"), text: $serial)
+            TextField(
+                L10n.string(selectedModelRequiresSerial ? "serial_required" : "serial_optional"),
+                text: $serial
+            )
             if enableDellQrScan {
                 Button {
                     showingDellScanner = true

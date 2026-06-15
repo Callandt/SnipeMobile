@@ -164,14 +164,15 @@ struct MaintenanceDetailSheet: View {
         } message: {
             Text(L10n.string("delete_maintenance_confirm_message", record.decodedTitle))
         }
-        .alert(L10n.string("mark_complete_confirm_title"), isPresented: $showCompleteConfirm) {
-            TextField(L10n.string("note_optional"), text: $completeNote)
-            Button(L10n.string("cancel"), role: .cancel) {}
-            Button(L10n.string("mark_complete")) {
-                Task { await completeRecord() }
-            }
-        } message: {
-            Text(L10n.string("mark_complete_confirm_message"))
+        .sheet(isPresented: $showCompleteConfirm) {
+            CompletionActionSheet(
+                title: L10n.string("mark_complete_confirm_title"),
+                message: L10n.string("mark_complete_confirm_message"),
+                note: $completeNote,
+                confirmTitle: L10n.string("mark_complete"),
+                isSaving: isCompleting,
+                onSave: { Task { await completeRecord() } }
+            )
         }
         .alert(L10n.string("error"), isPresented: $showErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {}
@@ -241,31 +242,31 @@ struct MaintenanceDetailSheet: View {
     }
 
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label).fontWeight(.semibold)
-            Spacer()
             Text(value)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private func detailLinkRow(label: String, urlString: String) -> some View {
-        HStack {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label).fontWeight(.semibold)
-            Spacer()
             if let url = URL(string: urlString) {
                 Link(urlString, destination: url)
-                    .multilineTextAlignment(.trailing)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text(urlString)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func deleteRecord() async {
@@ -285,6 +286,7 @@ struct MaintenanceDetailSheet: View {
         isCompleting = true
         let ok = await apiClient.completeMaintenance(id: record.id, note: completeNote)
         isCompleting = false
+        showCompleteConfirm = false
         if ok {
             onMutated()
             dismiss()

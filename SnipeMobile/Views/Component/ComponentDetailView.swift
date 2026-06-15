@@ -290,22 +290,14 @@ struct ComponentDetailView: View {
 
     @ViewBuilder
     private func detailRow(label: String, value: String) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Text(label).bold()
-                Spacer(minLength: 8)
-                Text(value)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label).bold()
-                Text(value)
-                    .foregroundColor(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).bold()
+            Text(value)
+                .foregroundColor(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func infoRows() -> [AnyView] {
