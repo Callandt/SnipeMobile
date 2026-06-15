@@ -1563,10 +1563,29 @@ private struct LicensesContent: View {
     @Binding var isRefreshing: Bool
     @Binding var navigationPath: NavigationPath
 
+    @State private var filter = ListFilter()
+
+    private var dimensions: [FilterDimension<License>] {
+        [
+            FilterDimension(title: L10n.string("category")) { $0.decodedCategoryName },
+            FilterDimension(title: L10n.string("manufacturer")) { $0.decodedManufacturerName },
+            FilterDimension(title: L10n.string("supplier")) { $0.decodedSupplierName },
+            FilterDimension(title: L10n.string("company")) { $0.decodedCompanyName }
+        ]
+    }
+
+    private var filterOptions: [(title: String, values: [String])] {
+        listFilterOptions(apiClient.licenses, dimensions: dimensions)
+    }
+
     var filteredLicenses: [License] {
-        if searchText.isEmpty { return apiClient.licenses }
+        var items = apiClient.licenses
+        if filter.isActive {
+            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        }
+        if searchText.isEmpty { return items }
         let needle = searchText.lowercased()
-        return apiClient.licenses.filter {
+        return items.filter {
             $0.decodedName.lowercased().contains(needle) ||
             $0.decodedManufacturerName.lowercased().contains(needle) ||
             $0.decodedCategoryName.lowercased().contains(needle) ||
@@ -1595,9 +1614,12 @@ private struct LicensesContent: View {
                 List {
                     Section {
                         HStack {
-                            Label("\(apiClient.licenses.count)", systemImage: "doc.text.fill")
+                            Label("\(filteredLicenses.count)", systemImage: "doc.text.fill")
                                 .foregroundStyle(.primary)
                             Spacer()
+                            if filterOptions.contains(where: { !$0.values.isEmpty }) {
+                                ListFilterMenu(filter: $filter, options: filterOptions)
+                            }
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -1788,10 +1810,29 @@ private struct ConsumablesContent: View {
     @Binding var isRefreshing: Bool
     @Binding var navigationPath: NavigationPath
 
+    @State private var filter = ListFilter()
+
+    private var dimensions: [FilterDimension<Consumable>] {
+        [
+            FilterDimension(title: L10n.string("category")) { $0.decodedCategoryName },
+            FilterDimension(title: L10n.string("manufacturer")) { $0.decodedManufacturerName },
+            FilterDimension(title: L10n.string("company")) { $0.decodedCompanyName },
+            FilterDimension(title: L10n.string("location")) { $0.decodedLocationName }
+        ]
+    }
+
+    private var filterOptions: [(title: String, values: [String])] {
+        listFilterOptions(apiClient.consumables, dimensions: dimensions)
+    }
+
     var filteredConsumables: [Consumable] {
-        if searchText.isEmpty { return apiClient.consumables }
+        var items = apiClient.consumables
+        if filter.isActive {
+            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        }
+        if searchText.isEmpty { return items }
         let needle = searchText.lowercased()
-        return apiClient.consumables.filter {
+        return items.filter {
             $0.decodedName.lowercased().contains(needle) ||
             $0.decodedItemNo.lowercased().contains(needle) ||
             $0.decodedModelNumber.lowercased().contains(needle) ||
@@ -1821,9 +1862,12 @@ private struct ConsumablesContent: View {
                 List {
                     Section {
                         HStack {
-                            Label("\(apiClient.consumables.count)", systemImage: "shippingbox")
+                            Label("\(filteredConsumables.count)", systemImage: "shippingbox")
                                 .foregroundStyle(.primary)
                             Spacer()
+                            if filterOptions.contains(where: { !$0.values.isEmpty }) {
+                                ListFilterMenu(filter: $filter, options: filterOptions)
+                            }
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -1864,10 +1908,29 @@ private struct ComponentsContent: View {
     @Binding var isRefreshing: Bool
     @Binding var navigationPath: NavigationPath
 
+    @State private var filter = ListFilter()
+
+    private var dimensions: [FilterDimension<Component>] {
+        [
+            FilterDimension(title: L10n.string("category")) { $0.decodedCategoryName },
+            FilterDimension(title: L10n.string("manufacturer")) { $0.decodedManufacturerName },
+            FilterDimension(title: L10n.string("company")) { $0.decodedCompanyName },
+            FilterDimension(title: L10n.string("location")) { $0.decodedLocationName }
+        ]
+    }
+
+    private var filterOptions: [(title: String, values: [String])] {
+        listFilterOptions(apiClient.components, dimensions: dimensions)
+    }
+
     var filteredComponents: [Component] {
-        if searchText.isEmpty { return apiClient.components }
+        var items = apiClient.components
+        if filter.isActive {
+            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        }
+        if searchText.isEmpty { return items }
         let needle = searchText.lowercased()
-        return apiClient.components.filter {
+        return items.filter {
             $0.decodedName.lowercased().contains(needle) ||
             $0.decodedSerial.lowercased().contains(needle) ||
             $0.decodedModelNumber.lowercased().contains(needle) ||
@@ -1897,9 +1960,12 @@ private struct ComponentsContent: View {
                 List {
                     Section {
                         HStack {
-                            Label("\(apiClient.components.count)", systemImage: "cpu")
+                            Label("\(filteredComponents.count)", systemImage: "cpu")
                                 .foregroundStyle(.primary)
                             Spacer()
+                            if filterOptions.contains(where: { !$0.values.isEmpty }) {
+                                ListFilterMenu(filter: $filter, options: filterOptions)
+                            }
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -1982,9 +2048,27 @@ private struct AccessoriesContent: View {
     @Binding var isRefreshing: Bool
     @Binding var navigationPath: NavigationPath
 
+    @State private var filter = ListFilter()
+
+    private var dimensions: [FilterDimension<Accessory>] {
+        [
+            FilterDimension(title: L10n.string("category")) { $0.decodedCategoryName },
+            FilterDimension(title: L10n.string("manufacturer")) { $0.decodedManufacturerName },
+            FilterDimension(title: L10n.string("location")) { $0.decodedLocationName }
+        ]
+    }
+
+    private var filterOptions: [(title: String, values: [String])] {
+        listFilterOptions(apiClient.accessories, dimensions: dimensions)
+    }
+
     var filteredAccessories: [Accessory] {
-        if searchText.isEmpty { return apiClient.accessories }
-        return apiClient.accessories.filter {
+        var items = apiClient.accessories
+        if filter.isActive {
+            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        }
+        if searchText.isEmpty { return items }
+        return items.filter {
             $0.decodedName.lowercased().contains(searchText.lowercased()) ||
             $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
             $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
@@ -2014,9 +2098,12 @@ private struct AccessoriesContent: View {
                 List {
                     Section {
                         HStack {
-                            Label("\(apiClient.accessories.count)", systemImage: "mediastick")
+                            Label("\(filteredAccessories.count)", systemImage: "mediastick")
                                 .foregroundStyle(.primary)
                             Spacer()
+                            if filterOptions.contains(where: { !$0.values.isEmpty }) {
+                                ListFilterMenu(filter: $filter, options: filterOptions)
+                            }
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -2203,9 +2290,27 @@ private struct UsersContent: View {
     @Binding var isRefreshing: Bool
     @Binding var navigationPath: NavigationPath
 
+    @State private var filter = ListFilter()
+
+    private var dimensions: [FilterDimension<User>] {
+        [
+            FilterDimension(title: L10n.string("company")) { $0.decodedCompanyName },
+            FilterDimension(title: L10n.string("location")) { $0.decodedLocationName },
+            FilterDimension(title: L10n.string("job_title")) { $0.decodedJobtitle }
+        ]
+    }
+
+    private var filterOptions: [(title: String, values: [String])] {
+        listFilterOptions(apiClient.users, dimensions: dimensions)
+    }
+
     var filteredUsers: [User] {
-        if searchText.isEmpty { return apiClient.users }
-        return apiClient.users.filter {
+        var items = apiClient.users
+        if filter.isActive {
+            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        }
+        if searchText.isEmpty { return items }
+        return items.filter {
             $0.decodedName.lowercased().contains(searchText.lowercased()) ||
             $0.decodedFirstName.lowercased().contains(searchText.lowercased()) ||
             $0.decodedEmail.lowercased().contains(searchText.lowercased()) ||
@@ -2233,9 +2338,12 @@ private struct UsersContent: View {
                 List {
                     Section {
                         HStack {
-                            Label("\(apiClient.users.count)", systemImage: "person.2")
+                            Label("\(filteredUsers.count)", systemImage: "person.2")
                                 .foregroundStyle(.primary)
                             Spacer()
+                            if filterOptions.contains(where: { !$0.values.isEmpty }) {
+                                ListFilterMenu(filter: $filter, options: filterOptions)
+                            }
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
