@@ -507,6 +507,7 @@ struct MainSplitView: View {
     @State private var maintenanceLoadedOnce = false
     @State private var selectedMaintenance: AssetMaintenance? = nil
     @State private var showAddMaintenance = false
+    @State private var showBulkAudit = false
     @State private var isSelectingMaintenances = false
     @State private var selectedMaintenanceIds: Set<Int> = []
     @State private var maintenanceFilter: MaintenanceStatusFilter = .all
@@ -841,6 +842,21 @@ struct MainSplitView: View {
             BulkMaintenanceFormSheet(apiClient: apiClient)
                 .presentationDetents([.large])
         }
+        .sheet(isPresented: $showBulkAudit) {
+            BulkAuditView(apiClient: apiClient, onSave: {
+                if auditNotificationsEnabled {
+                    Task {
+                        await AuditNotificationManager.shared.updateSchedule(
+                            enabled: true,
+                            hour: auditNotificationHour,
+                            minute: auditNotificationMinute,
+                            assets: apiClient.assets
+                        )
+                    }
+                }
+            })
+            .presentationDetents([.large])
+        }
         .sheet(item: $selectedMaintenance, onDismiss: {
             Task { await loadAllMaintenances(force: true) }
         }) { record in
@@ -1154,13 +1170,20 @@ struct MainSplitView: View {
                     ToolbarItem(placement: .primaryAction) {
                         if isMaintenanceSubtabActive && isSelectingMaintenances {
                             EmptyView()
-                        } else if showMaintenance {
+                        } else if showMaintenance || enableAuditSubtab {
                             Menu {
                                 Button(action: { showAddAsset = true }) {
                                     Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
                                 }
-                                Button(action: { showAddMaintenance = true }) {
-                                    Label(L10n.string("add_maintenance"), systemImage: "wrench.and.screwdriver")
+                                if showMaintenance {
+                                    Button(action: { showAddMaintenance = true }) {
+                                        Label(L10n.string("add_maintenance"), systemImage: "wrench.and.screwdriver")
+                                    }
+                                }
+                                if enableAuditSubtab {
+                                    Button(action: { showBulkAudit = true }) {
+                                        Label(L10n.string("add_audit"), systemImage: "checklist")
+                                    }
                                 }
                             } label: {
                                 Image(systemName: "plus.circle")

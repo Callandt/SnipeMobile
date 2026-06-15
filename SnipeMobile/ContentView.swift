@@ -789,6 +789,7 @@ struct HardwareTab: View {
     @State private var maintenanceLoadedOnce = false
     @State private var selectedMaintenance: AssetMaintenance? = nil
     @State private var showingAddMaintenance = false
+    @State private var showingBulkAudit = false
     @State private var isSelectingMaintenances = false
     @State private var selectedMaintenanceIds: Set<Int> = []
     @State private var maintenanceFilter: MaintenanceStatusFilter = .all
@@ -1027,17 +1028,26 @@ struct HardwareTab: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 if isMaintenanceSubtabActive && isSelectingMaintenances {
                     EmptyView()
-                } else if showMaintenance {
+                } else if showMaintenance || enableAuditSubtab {
                     Menu {
                         Button {
                             showingAddAsset = true
                         } label: {
                             Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
                         }
-                        Button {
-                            showingAddMaintenance = true
-                        } label: {
-                            Label(L10n.string("add_maintenance"), systemImage: "wrench.and.screwdriver")
+                        if showMaintenance {
+                            Button {
+                                showingAddMaintenance = true
+                            } label: {
+                                Label(L10n.string("add_maintenance"), systemImage: "wrench.and.screwdriver")
+                            }
+                        }
+                        if enableAuditSubtab {
+                            Button {
+                                showingBulkAudit = true
+                            } label: {
+                                Label(L10n.string("add_audit"), systemImage: "checklist")
+                            }
                         }
                     } label: {
                         Image(systemName: "plus.circle")
@@ -1086,6 +1096,20 @@ struct HardwareTab: View {
             Task { await loadAllMaintenances(force: true) }
         }) {
             BulkMaintenanceFormSheet(apiClient: apiClient)
+        }
+        .sheet(isPresented: $showingBulkAudit) {
+            BulkAuditView(apiClient: apiClient, onSave: {
+                if auditNotificationsEnabled {
+                    Task {
+                        await AuditNotificationManager.shared.updateSchedule(
+                            enabled: true,
+                            hour: auditNotificationHour,
+                            minute: auditNotificationMinute,
+                            assets: apiClient.assets
+                        )
+                    }
+                }
+            })
         }
         .sheet(item: $selectedMaintenance, onDismiss: {
             Task { await loadAllMaintenances(force: true) }

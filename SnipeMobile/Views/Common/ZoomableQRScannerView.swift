@@ -24,13 +24,17 @@ struct ZoomableQRScannerView: UIViewControllerRepresentable {
 
     let completion: ScanCompletion
     let supportedTypes: [AVMetadataObject.ObjectType]
+    // Keep scanning after a hit instead of stopping (debounced).
+    let continuous: Bool
 
     init(
         completion: @escaping ScanCompletion,
-        supportedTypes: [AVMetadataObject.ObjectType] = [.qr]
+        supportedTypes: [AVMetadataObject.ObjectType] = [.qr],
+        continuous: Bool = false
     ) {
         self.completion = completion
         self.supportedTypes = supportedTypes
+        self.continuous = continuous
     }
 
     func makeCoordinator() -> Coordinator {
@@ -41,6 +45,7 @@ struct ZoomableQRScannerView: UIViewControllerRepresentable {
         let controller = ScannerViewController()
         controller.completion = context.coordinator.handle(result:)
         controller.supportedTypes = supportedTypes
+        controller.continuous = continuous
         return controller
     }
 
@@ -64,24 +69,44 @@ struct ZoomableQRScannerView: UIViewControllerRepresentable {
 final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var completion: ((Result<ScanResult, ScanError>) -> Void)?
     var supportedTypes: [AVMetadataObject.ObjectType] = [.qr]
+    var continuous: Bool = false
 
     private let session = AVCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer!
     private var videoDevice: AVCaptureDevice?
 
+    // Serialize all session calls. Starting/stopping across threads races
+    // inside libdispatch and can crash, especially during long scan sessions.
+    private let sessionQueue = DispatchQueue(label: "com.snipemobile.scanner.session")
+    private var isConfigured = false
+
     private var initialZoomFactor: CGFloat = 1.0
+
+    // Debounce state for continuous scanning.
+    private var lastScanValue: String?
+    private var lastScanTime: Date = .distantPast
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
         view.backgroundColor = .black
-        configureSession()
+        // Preview and gestures on main, session work on its own queue.
         configurePreview()
         configureGestures()
 
-        // startRunning blocks. Run off main.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.session.startRunning()
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.configureSession()
+            if self.isConfigured, !self.session.isRunning {
+                self.session.startRunning()
+            }
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        sessionQueue.async { [session] in
+            if session.isRunning { session.stopRunning() }
         }
     }
 
@@ -90,13 +115,22 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
         previewLayer?.frame = view.bounds
     }
 
+    private func failOnMain(_ error: ScanError) {
+        DispatchQueue.main.async { [weak self] in
+            self?.completion?(.failure(error))
+        }
+    }
+
+    // Runs on sessionQueue.
     private func configureSession() {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) ?? AVCaptureDevice.default(for: .video) else {
-            completion?(.failure(.badInput))
+            failOnMain(.badInput)
             return
         }
 
         videoDevice = device
+
+        session.beginConfiguration()
 
         do {
             let input = try AVCaptureDeviceInput(device: device)
@@ -104,11 +138,13 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
             if session.canAddInput(input) {
                 session.addInput(input)
             } else {
-                completion?(.failure(.badInput))
+                session.commitConfiguration()
+                failOnMain(.badInput)
                 return
             }
         } catch {
-            completion?(.failure(.initError(error)))
+            session.commitConfiguration()
+            failOnMain(.initError(error))
             return
         }
 
@@ -133,15 +169,20 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
             // Fall back to all symbologies if the filter set is empty on this device.
             let typesToUse = !filteredSupportedTypes.isEmpty ? filteredSupportedTypes : availableTypes
             guard !typesToUse.isEmpty else {
-                completion?(.failure(.badOutput))
+                session.commitConfiguration()
+                failOnMain(.badOutput)
                 return
             }
 
             metadataOutput.metadataObjectTypes = typesToUse
         } else {
-            completion?(.failure(.badOutput))
+            session.commitConfiguration()
+            failOnMain(.badOutput)
             return
         }
+
+        session.commitConfiguration()
+        isConfigured = true
     }
 
     private func configurePreview() {
@@ -191,6 +232,24 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
             return
         }
 
+        if continuous {
+            let now = Date()
+            // Drop repeats of the same code and add a short cooldown between hits.
+            if stringValue == lastScanValue, now.timeIntervalSince(lastScanTime) < 2.0 { return }
+            if now.timeIntervalSince(lastScanTime) < 0.6 { return }
+            lastScanValue = stringValue
+            lastScanTime = now
+
+            let result = ScanResult(
+                string: stringValue,
+                type: readable.type,
+                image: nil,
+                corners: []
+            )
+            completion?(.success(result))
+            return
+        }
+
         session.stopRunning()
 
         let transformedObject = previewLayer.transformedMetadataObject(for: readable) as? AVMetadataMachineReadableCodeObject
@@ -208,7 +267,11 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     }
 
     deinit {
-        session.stopRunning()
+        // Stop on the session queue to avoid racing an in-flight start/stop.
+        let session = self.session
+        sessionQueue.async {
+            if session.isRunning { session.stopRunning() }
+        }
     }
 }
 #endif

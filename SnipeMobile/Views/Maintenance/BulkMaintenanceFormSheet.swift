@@ -9,6 +9,7 @@ struct BulkMaintenanceFormSheet: View {
 
     @State private var selectedAssetIds: Set<Int> = []
     @State private var showAssetPicker = false
+    @State private var showAssetScanner = false
 
     @State private var title: String = ""
     @State private var selectedType: String = "Maintenance"
@@ -54,22 +55,12 @@ struct BulkMaintenanceFormSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(header: Text(L10n.string("assets"))) {
-                    Button {
-                        showAssetPicker = true
-                    } label: {
-                        HStack {
-                            Label(L10n.string("select_assets"), systemImage: "laptopcomputer")
-                            Spacer()
-                            Text(L10n.string("assets_selected_count", selectedAssetIds.count))
-                                .foregroundStyle(.secondary)
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .foregroundStyle(.primary)
-                }
+                AssetBulkSelectionSection(
+                    apiClient: apiClient,
+                    selectedAssetIds: $selectedAssetIds,
+                    showPicker: $showAssetPicker,
+                    showScanner: $showAssetScanner
+                )
                 Section(header: Text(L10n.string("general"))) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.string("name"))
@@ -123,6 +114,12 @@ struct BulkMaintenanceFormSheet: View {
                         .frame(minHeight: 80)
                 }
             }
+            .assetBulkSelectionDestinations(
+                apiClient: apiClient,
+                selectedAssetIds: $selectedAssetIds,
+                showPicker: $showAssetPicker,
+                showScanner: $showAssetScanner
+            )
             .navigationTitle(L10n.string("add_maintenance"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -135,9 +132,6 @@ struct BulkMaintenanceFormSheet: View {
                     }
                     .disabled(!canSave)
                 }
-            }
-            .navigationDestination(isPresented: $showAssetPicker) {
-                AssetMultiSelectView(assets: apiClient.assets, selectedAssetIds: $selectedAssetIds)
             }
         }
         .onAppear {
@@ -225,77 +219,3 @@ struct BulkMaintenanceFormSheet: View {
     }
 }
 
-// asset multi-select used by the bulk form
-private struct AssetMultiSelectView: View {
-    let assets: [Asset]
-    @Binding var selectedAssetIds: Set<Int>
-
-    @State private var searchText: String = ""
-
-    private var filteredAssets: [Asset] {
-        if searchText.isEmpty { return assets }
-        let q = searchText.lowercased()
-        return assets.filter {
-            $0.decodedName.lowercased().contains(q) ||
-            $0.decodedModelName.lowercased().contains(q) ||
-            $0.decodedAssetTag.lowercased().contains(q) ||
-            $0.decodedAssignedToName.lowercased().contains(q)
-        }
-    }
-
-    var body: some View {
-        List {
-            Section {
-                HStack {
-                    Text(L10n.string("assets_selected_count", selectedAssetIds.count))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if !selectedAssetIds.isEmpty {
-                        Button(L10n.string("clear_selection")) {
-                            selectedAssetIds.removeAll()
-                        }
-                        .font(.subheadline)
-                    }
-                }
-            }
-            Section {
-                ForEach(filteredAssets) { asset in
-                    Button {
-                        toggle(asset.id)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: selectedAssetIds.contains(asset.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(selectedAssetIds.contains(asset.id) ? Color.accentColor : Color.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
-                                    .font(.body)
-                                    .foregroundStyle(.primary)
-                                let subtitle = [asset.decodedAssetTag, asset.decodedName]
-                                    .filter { !$0.isEmpty }
-                                    .joined(separator: " · ")
-                                if !subtitle.isEmpty {
-                                    Text(subtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                        }
-                    }
-                    .foregroundStyle(.primary)
-                }
-            }
-        }
-        .searchable(text: $searchText, prompt: L10n.string("search_assets"))
-        .navigationTitle(L10n.string("select_assets"))
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func toggle(_ id: Int) {
-        if selectedAssetIds.contains(id) {
-            selectedAssetIds.remove(id)
-        } else {
-            selectedAssetIds.insert(id)
-        }
-    }
-}

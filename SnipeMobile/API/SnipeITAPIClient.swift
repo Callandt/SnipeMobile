@@ -2988,6 +2988,78 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    // Audits an asset via POST /hardware/audit (same as the web bulk audit).
+    func auditAsset(
+        assetTag: String,
+        assetId: Int? = nil,
+        locationId: Int? = nil,
+        updateLocation: Bool = false,
+        nextAuditDate: String? = nil,
+        note: String? = nil
+    ) async -> Bool {
+        let trimmedTag = assetTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !baseURL.isEmpty, !apiToken.isEmpty, !trimmedTag.isEmpty else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/audit") else { return false }
+
+        let cleanNextAudit = nextAuditDate?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var body: [String: Any] = ["asset_tag": trimmedTag]
+        if let locationId, locationId != 0 { body["location_id"] = locationId }
+        if updateLocation { body["update_location"] = true }
+        if let cleanNextAudit, !cleanNextAudit.isEmpty { body["next_audit_date"] = cleanNextAudit }
+        if let note {
+            let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedNote.isEmpty { body["note"] = trimmedNote }
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+
+            #if DEBUG
+            let responseStr = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
+            print("[SnipeMobile] POST /hardware/audit (\(trimmedTag)) status: \(http.statusCode) response: \(responseStr.prefix(300))")
+            #endif
+
+            if !(200...299).contains(http.statusCode) {
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Audit failed." }
+                return false
+            }
+            // Snipe-IT returns HTTP 200 even on validation failure; the real
+            // outcome is in the body's "status" field.
+            if (json?["status"] as? String)?.lowercased() == "error" {
+                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Audit failed." }
+                return false
+            }
+
+            // Some servers wipe next_audit_date on audit, so set it again. (#8456)
+            if let assetId, let cleanNextAudit, !cleanNextAudit.isEmpty {
+                let update = AssetUpdateRequest(
+                    name: nil, asset_tag: nil, serial: nil, model_id: nil,
+                    status_id: nil, category_id: nil, manufacturer_id: nil,
+                    supplier_id: nil, notes: nil, order_number: nil, location_id: nil,
+                    purchase_cost: nil, book_value: nil, custom_fields: nil,
+                    purchase_date: nil, next_audit_date: .value(cleanNextAudit),
+                    expected_checkin: nil, eol_date: nil, warranty_months: nil,
+                    image_delete: nil
+                )
+                _ = await updateAsset(assetId: assetId, update: update)
+            }
+            return true
+        } catch {
+            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
+            return false
+        }
+    }
+
     #if DEBUG
     private static func debugLogHardwareUpdate(assetId: Int, method: String, bodyObject: [String: Any]) {
         var logged = bodyObject
