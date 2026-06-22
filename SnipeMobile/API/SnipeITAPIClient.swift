@@ -177,9 +177,12 @@ class SnipeITAPIClient: ObservableObject {
             do {
                 (data, response) = try await urlSession.data(for: request)
             } catch {
-                // Server unreachable / timeout. Keep cached data, surface a notice.
+                // Server unreachable / timeout / certificate failure.
+                // Keep cached data, surface a notice.
                 if reportConnectionError {
-                    self.refreshErrorMessage = L10n.string("refresh_failed_unreachable")
+                    self.refreshErrorMessage = Self.isTLSCertificateError(error)
+                        ? L10n.string("refresh_failed_certificate")
+                        : L10n.string("refresh_failed_unreachable")
                     return nil
                 }
                 throw error
@@ -234,6 +237,37 @@ class SnipeITAPIClient: ObservableObject {
         config.waitsForConnectivity = false
         return URLSession(configuration: config)
     }()
+
+    // TLS/SSL cert failure (not just unreachable).
+    static func isTLSCertificateError(_ error: Error) -> Bool {
+        let codes: Set<URLError.Code> = [
+            .secureConnectionFailed,
+            .serverCertificateHasBadDate,
+            .serverCertificateUntrusted,
+            .serverCertificateHasUnknownRoot,
+            .serverCertificateNotYetValid,
+            .clientCertificateRejected,
+            .clientCertificateRequired
+        ]
+        if let urlError = error as? URLError, codes.contains(urlError.code) {
+            return true
+        }
+        // NSError fallback.
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            let certCodes: Set<Int> = [
+                NSURLErrorSecureConnectionFailed,
+                NSURLErrorServerCertificateHasBadDate,
+                NSURLErrorServerCertificateUntrusted,
+                NSURLErrorServerCertificateHasUnknownRoot,
+                NSURLErrorServerCertificateNotYetValid,
+                NSURLErrorClientCertificateRejected,
+                NSURLErrorClientCertificateRequired
+            ]
+            return certCodes.contains(nsError.code)
+        }
+        return false
+    }
 
     init() {
         self.isConfigured = UserDefaults.standard.bool(forKey: "isConfigured")
@@ -3564,6 +3598,9 @@ class SnipeITAPIClient: ObservableObject {
                 return "Invalid API credentials or URL."
             }
         } catch {
+            if Self.isTLSCertificateError(error) {
+                return L10n.string("refresh_failed_certificate")
+            }
             return "Could not connect to Snipe-IT. Check your URL and API key."
         }
     }

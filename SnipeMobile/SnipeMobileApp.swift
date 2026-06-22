@@ -404,7 +404,6 @@ struct MainSplitView: View {
     @State private var showAddComponent = false
     @State private var showComingSoonAlert = false
     @State private var showScanner = false
-    @State private var scannedAssetId: Int?
     @State private var isRefreshing = false
     @State private var searchText: String = ""
     @State private var awaitingAuditNavigationResolution = false
@@ -959,7 +958,7 @@ struct MainSplitView: View {
             )
             .presentationDetents([.large])
         }
-        .sheet(isPresented: $showScanner, onDismiss: scannerDismiss) {
+        .sheet(isPresented: $showScanner) {
             ZoomableQRScannerView(
                 completion: handleScanResult,
                 supportedTypes: [.qr, .dataMatrix, .code39, .code128, .ean13, .upce]
@@ -1025,14 +1024,10 @@ struct MainSplitView: View {
             auditNotificationNavResolved = false
             tryResolveAndOpenAuditTarget()
         }
-        .onChange(of: scannedAssetId) { _, new in
-            selectScannedAsset(id: new)
-        }
         .onChange(of: apiClient.assets.count) { _, _ in
             if awaitingAuditNavigationResolution {
                 tryResolveAndOpenAuditTarget()
             }
-            selectScannedAsset(id: scannedAssetId)
         }
     }
 
@@ -1042,23 +1037,6 @@ struct MainSplitView: View {
                 appSettings.appTheme == "light" ? .light :
                 appSettings.appTheme == "dark" ? .dark : nil
             )
-    }
-
-    private func scannerDismiss() {
-        if let id = scannedAssetId,
-           let asset = apiClient.assets.first(where: { $0.id == id }) {
-            selectedSection = .hardware
-            selectedAsset = asset
-            selectedAssetDetailTab = 0
-        }
-        scannedAssetId = nil
-    }
-
-    private func selectScannedAsset(id: Int?) {
-        guard let id = id, let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
-        selectedSection = .hardware
-        selectedAsset = asset
-        selectedAssetDetailTab = 0
     }
 
     private func saveAuditCompletionForIpad() async {
@@ -2336,56 +2314,30 @@ struct MainSplitView: View {
                 })
             }
 
-            func extractAssetTagFromByTagURL(from url: URL) -> String? {
-                guard url.path.lowercased().contains("/hardware/bytag") else { return nil }
-                guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-                let item = components.queryItems?.first(where: { name in
-                    name.name == "assetTag" || name.name == "asset_tag"
-                })
-                return item?.value
-            }
-
             @MainActor
             func openHardwareForScannedValueByTag(_ value: String) async {
                 let asset = await apiClient.fetchHardwareByTag(assetTag: value)
                 if let asset {
-                    // Patch cache so navigation can resolve the asset.
                     if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
                         apiClient.assets[idx] = asset
                     } else {
                         apiClient.assets.append(asset)
                     }
-                    scannedAssetId = asset.id
                     selectedSection = .hardware
+                    selectedAsset = asset
+                    selectedAssetDetailTab = 0
                 } else {
-                    scannedAssetId = nil
                     scanErrorMessage = L10n.string("asset_not_found_scanned_value", value)
                     showScanErrorAlert = true
                 }
             }
 
-            // Only QR codes carry a Snipe-IT URL with an internal asset id. A 1D barcode is
-            // the asset tag verbatim, so it must not be parsed as a URL/number (which would
-            // strip leading zeros); it falls through to the literal tag lookup below.
             if scanResult.type == .qr, let url = URL(string: scannedValue) {
-                // Snipe-IT QR
-                if let id = extractAssetId(from: url) {
-                    if let asset = apiClient.assets.first(where: { $0.id == id }) {
-                        scannedAssetId = asset.id
-                        selectedSection = .hardware
-                    } else if apiClient.assets.isEmpty {
-                        scannedAssetId = id
-                        selectedSection = .hardware
-                        Task { await apiClient.fetchPrimaryThenBackground() }
-                    } else {
-                        scannedAssetId = nil
-                        scanErrorMessage = L10n.string("asset_not_found_id", String(id))
-                        showScanErrorAlert = true
-                    }
+                if let link = SnipeITQRLink.parse(from: url) {
+                    Task { await openSnipeITQRLink(link) }
                     return
                 }
 
-                // Dell QR. Look up by serial.
                 if enableDellQrScan,
                    let host = url.host, host.lowercased().contains("dell"),
                    let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
@@ -2394,61 +2346,37 @@ struct MainSplitView: View {
                     if let asset = apiClient.assets.first(where: {
                         $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
                     }) {
-                        scannedAssetId = asset.id
                         selectedSection = .hardware
+                        selectedAsset = asset
+                        selectedAssetDetailTab = 0
                     } else if apiClient.assets.isEmpty {
                         Task {
                             await apiClient.fetchPrimaryThenBackground()
                             await MainActor.run {
                                 if let asset = findAsset(for: normalized) {
-                                    scannedAssetId = asset.id
                                     selectedSection = .hardware
+                                    selectedAsset = asset
+                                    selectedAssetDetailTab = 0
                                 } else {
-                                    scannedAssetId = nil
                                     promptAddDellAsset(url: url, serial: serial)
                                 }
                             }
                         }
                     } else {
-                        scannedAssetId = nil
                         promptAddDellAsset(url: url, serial: serial)
                     }
                     return
                 }
 
-                // bytag URL: https://.../hardware/bytag?assetTag=XYZ
-                if let assetTag = extractAssetTagFromByTagURL(from: url) {
-                    Task {
-                        let asset = await apiClient.fetchHardwareByTag(assetTag: assetTag)
-                        await MainActor.run {
-                            if let asset {
-                                // Patch cache so navigation can resolve the asset.
-                                if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
-                                    apiClient.assets[idx] = asset
-                                } else {
-                                    apiClient.assets.append(asset)
-                                }
-                                scannedAssetId = asset.id
-                                selectedSection = .hardware
-                            } else {
-                                scannedAssetId = nil
-                                scanErrorMessage = L10n.string("asset_not_found_scanned_value", assetTag)
-                                showScanErrorAlert = true
-                            }
-                        }
-                    }
-                    return
-                }
-
-                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
+                scanErrorMessage = L10n.string("invalid_qr_unrecognized")
                 showScanErrorAlert = true
                 return
             }
 
-            // 1D barcode: match raw value against assetTag/serial/altBarcode.
             if let asset = findAsset(for: scannedValue) {
-                scannedAssetId = asset.id
                 selectedSection = .hardware
+                selectedAsset = asset
+                selectedAssetDetailTab = 0
                 return
             } else {
                 Task {
@@ -2462,19 +2390,143 @@ struct MainSplitView: View {
         }
     }
 
+    @MainActor
+    private func openSnipeITQRLink(_ link: SnipeITQRLink) async {
+        func clearNonHardwareSelection() {
+            selectedAccessory = nil
+            selectedLicense = nil
+            selectedConsumable = nil
+            selectedComponent = nil
+        }
+
+        switch link {
+        case .hardwareByTag(let assetTag):
+            let asset = await apiClient.fetchHardwareByTag(assetTag: assetTag)
+            if let asset {
+                if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
+                    apiClient.assets[idx] = asset
+                } else {
+                    apiClient.assets.append(asset)
+                }
+                clearNonHardwareSelection()
+                selectedSection = .hardware
+                selectedAsset = asset
+                selectedAssetDetailTab = 0
+            } else {
+                scanErrorMessage = L10n.string("asset_not_found_scanned_value", assetTag)
+                showScanErrorAlert = true
+            }
+
+        case .hardware(let id):
+            clearNonHardwareSelection()
+            selectedSection = .hardware
+            if apiClient.assets.first(where: { $0.id == id }) == nil, apiClient.assets.isEmpty {
+                await apiClient.fetchPrimaryThenBackground()
+            }
+            if let asset = apiClient.assets.first(where: { $0.id == id }) {
+                selectedAsset = asset
+                selectedAssetDetailTab = 0
+            } else if let detailed = await apiClient.fetchHardwareDetails(assetId: id) {
+                apiClient.applyUpdatedAsset(detailed)
+                selectedAsset = detailed
+                selectedAssetDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+
+        case .component(let id):
+            stockSelectedRaw = StockSubmodule.components.rawValue
+            selectedAsset = nil
+            selectedAccessory = nil
+            selectedLicense = nil
+            selectedConsumable = nil
+            selectedSection = .stock
+            if apiClient.components.first(where: { $0.id == id }) == nil, apiClient.components.isEmpty {
+                await apiClient.fetchComponents()
+            }
+            if let component = apiClient.components.first(where: { $0.id == id }) {
+                selectedComponent = component
+                selectedComponentDetailTab = 0
+            } else if let detailed = await apiClient.fetchComponentDetails(componentId: id) {
+                apiClient.applyUpdatedComponent(detailed)
+                selectedComponent = detailed
+                selectedComponentDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+
+        case .consumable(let id):
+            stockSelectedRaw = StockSubmodule.consumables.rawValue
+            selectedAsset = nil
+            selectedAccessory = nil
+            selectedLicense = nil
+            selectedComponent = nil
+            selectedSection = .stock
+            if apiClient.consumables.first(where: { $0.id == id }) == nil, apiClient.consumables.isEmpty {
+                await apiClient.fetchConsumables()
+            }
+            if let consumable = apiClient.consumables.first(where: { $0.id == id }) {
+                selectedConsumable = consumable
+                selectedConsumableDetailTab = 0
+            } else if let detailed = await apiClient.fetchConsumableDetails(consumableId: id) {
+                apiClient.applyUpdatedConsumable(detailed)
+                selectedConsumable = detailed
+                selectedConsumableDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+
+        case .accessory(let id):
+            selectedAsset = nil
+            selectedLicense = nil
+            selectedConsumable = nil
+            selectedComponent = nil
+            selectedSection = .accessories
+            if apiClient.accessories.first(where: { $0.id == id }) == nil, apiClient.accessories.isEmpty {
+                await apiClient.fetchAccessories()
+            }
+            if let accessory = apiClient.accessories.first(where: { $0.id == id }) {
+                selectedAccessory = accessory
+                selectedAccessoryDetailTab = 0
+            } else if let detailed = await apiClient.fetchAccessoryDetails(accessoryId: id) {
+                apiClient.applyUpdatedAccessory(detailed)
+                selectedAccessory = detailed
+                selectedAccessoryDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+
+        case .license(let id):
+            selectedAsset = nil
+            selectedAccessory = nil
+            selectedConsumable = nil
+            selectedComponent = nil
+            selectedSection = .licenses
+            if apiClient.licenses.first(where: { $0.id == id }) == nil, apiClient.licenses.isEmpty {
+                await apiClient.fetchLicenses()
+            }
+            if let license = apiClient.licenses.first(where: { $0.id == id }) {
+                selectedLicense = license
+                selectedLicenseDetailTab = 0
+            } else if let detailed = await apiClient.fetchLicenseDetails(licenseId: id) {
+                apiClient.applyUpdatedLicense(detailed)
+                selectedLicense = detailed
+                selectedLicenseDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+        }
+    }
+
     private func promptAddDellAsset(url: URL, serial: String) {
         pendingDellURLForAdd = url
         pendingDellSerial = serial
         showAddDellAssetPrompt = true
-    }
-
-    private func extractAssetId(from url: URL) -> Int? {
-        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-           let path = components.path.components(separatedBy: "/").last,
-           let id = Int(path) {
-            return id
-        }
-        return nil
     }
 
     private func toggleSidebar() {

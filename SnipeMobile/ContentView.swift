@@ -167,7 +167,8 @@ struct ContentView: View {
     @StateObject private var apiClient = SnipeITAPIClient()
     @State private var selectedTab: MainTab = .hardware
     @State private var showingScanner = false
-    @State private var scannedAssetId: Int?
+    @State private var pendingQRLink: SnipeITQRLink?
+    @AppStorage("stockSelectedSubmodule") private var stockSelectedSubmoduleRaw: String = StockSubmodule.consumables.rawValue
     @State private var searchText: String = ""
     @State private var isRefreshing: Bool = false
     @State private var hasLoadedInitialAssets: Bool = false
@@ -265,9 +266,7 @@ struct ContentView: View {
             }
         }
         .modifier(TabBarMinimizeBehaviorModifier(isDetailVisible: isDetailViewActive))
-        .sheet(isPresented: $showingScanner, onDismiss: {
-            selectedTab = .hardware
-        }) {
+        .sheet(isPresented: $showingScanner) {
             ZoomableQRScannerView(
                 completion: handleScanResult,
                 supportedTypes: [.qr, .dataMatrix, .code39, .code128, .ean13, .upce]
@@ -386,7 +385,7 @@ struct ContentView: View {
                 searchText: $searchText,
                 isRefreshing: $isRefreshing,
                 hasLoadedInitialAssets: $hasLoadedInitialAssets,
-                scannedAssetId: $scannedAssetId,
+                pendingQRLink: $pendingQRLink,
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 showingAddAsset: $showingAddAsset,
@@ -405,7 +404,8 @@ struct ContentView: View {
                 showingScanner: $showingScanner,
                 showingAddAccessory: $showingAddAccessory,
                 navigationPath: $accessoriesPath,
-                isDetailViewActive: $isDetailViewActive
+                isDetailViewActive: $isDetailViewActive,
+                pendingQRLink: $pendingQRLink
             )
         case .licenses:
             LicensesTab(
@@ -415,7 +415,8 @@ struct ContentView: View {
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 navigationPath: $licensesPath,
-                isDetailViewActive: $isDetailViewActive
+                isDetailViewActive: $isDetailViewActive,
+                pendingQRLink: $pendingQRLink
             )
         case .stock:
             StockTab(
@@ -425,7 +426,8 @@ struct ContentView: View {
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 navigationPath: $stockPath,
-                isDetailViewActive: $isDetailViewActive
+                isDetailViewActive: $isDetailViewActive,
+                pendingQRLink: $pendingQRLink
             )
         case .directory:
             DirectoryTab(
@@ -493,15 +495,6 @@ struct ContentView: View {
                 })
             }
 
-            func extractAssetTagFromByTagURL(from url: URL) -> String? {
-                guard url.path.lowercased().contains("/hardware/bytag") else { return nil }
-                guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-                let item = components.queryItems?.first(where: { name in
-                    name.name == "assetTag" || name.name == "asset_tag"
-                })
-                return item?.value
-            }
-
             @MainActor
             func openHardwareForScannedValueByTag(_ value: String) async {
                 let asset = await apiClient.fetchHardwareByTag(assetTag: value)
@@ -512,33 +505,19 @@ struct ContentView: View {
                     } else {
                         apiClient.assets.append(asset)
                     }
-                    scannedAssetId = asset.id
+                    pendingQRLink = .hardware(id: asset.id)
                     selectedTab = .hardware
                 } else {
-                    scannedAssetId = nil
+                    pendingQRLink = nil
                     scanErrorMessage = L10n.string("asset_not_found_scanned_value", value)
                     showScanErrorAlert = true
                 }
             }
 
-            // Only QR codes carry a Snipe-IT URL with an internal asset id. A 1D barcode is
-            // the asset tag verbatim, so it must not be parsed as a URL/number (which would
-            // strip leading zeros); it falls through to the literal tag lookup below.
+            // QR = Snipe-IT URL; 1D barcode = literal tag (keeps leading zeros).
             if scanResult.type == .qr, let url = URL(string: scannedValue) {
-                // Snipe-IT QR: asset ID in path
-                if let id = extractAssetId(from: url) {
-                    if let asset = apiClient.assets.first(where: { $0.id == id }) {
-                        scannedAssetId = asset.id
-                        selectedTab = .hardware
-                    } else if apiClient.assets.isEmpty {
-                        scannedAssetId = id
-                        selectedTab = .hardware
-                        Task { await apiClient.fetchPrimaryThenBackground() }
-                    } else {
-                        scannedAssetId = nil
-                        scanErrorMessage = L10n.string("asset_not_found_id", String(id))
-                        showScanErrorAlert = true
-                    }
+                if let link = SnipeITQRLink.parse(from: url) {
+                    handleSnipeITQRLink(link)
                     return
                 }
 
@@ -551,60 +530,36 @@ struct ContentView: View {
                     if let asset = apiClient.assets.first(where: {
                         $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
                     }) {
-                        scannedAssetId = asset.id
+                        pendingQRLink = .hardware(id: asset.id)
                         selectedTab = .hardware
                     } else if apiClient.assets.isEmpty {
                         Task {
                             await apiClient.fetchPrimaryThenBackground()
                             await MainActor.run {
                                 if let asset = findAsset(for: normalized) {
-                                    scannedAssetId = asset.id
+                                    pendingQRLink = .hardware(id: asset.id)
                                     selectedTab = .hardware
                                 } else {
-                                    scannedAssetId = nil
+                                    pendingQRLink = nil
                                     promptAddDellAsset(url: url, serial: serial)
                                 }
                             }
                         }
                     } else {
-                        scannedAssetId = nil
+                        pendingQRLink = nil
                         promptAddDellAsset(url: url, serial: serial)
                     }
                     return
                 }
 
-                // bytag URL: https://.../hardware/bytag?assetTag=XYZ
-                if let assetTag = extractAssetTagFromByTagURL(from: url) {
-                    Task {
-                        let asset = await apiClient.fetchHardwareByTag(assetTag: assetTag)
-                        await MainActor.run {
-                            if let asset {
-                                // Patch cache so navigation can resolve the asset.
-                                if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
-                                    apiClient.assets[idx] = asset
-                                } else {
-                                    apiClient.assets.append(asset)
-                                }
-                                scannedAssetId = asset.id
-                                selectedTab = .hardware
-                            } else {
-                                scannedAssetId = nil
-                                scanErrorMessage = L10n.string("asset_not_found_scanned_value", assetTag)
-                                showScanErrorAlert = true
-                            }
-                        }
-                    }
-                    return
-                }
-
-                scanErrorMessage = L10n.string("invalid_qr_no_asset_id")
+                scanErrorMessage = L10n.string("invalid_qr_unrecognized")
                 showScanErrorAlert = true
                 return
             }
 
             // 1D barcode: match raw value against assetTag/serial/altBarcode.
             if let asset = findAsset(for: scannedValue) {
-                scannedAssetId = asset.id
+                pendingQRLink = .hardware(id: asset.id)
                 selectedTab = .hardware
                 return
             } else if apiClient.assets.isEmpty {
@@ -626,20 +581,159 @@ struct ContentView: View {
         }
     }
 
+    private func handleSnipeITQRLink(_ link: SnipeITQRLink) {
+        switch link {
+        case .hardwareByTag(let assetTag):
+            Task {
+                let asset = await apiClient.fetchHardwareByTag(assetTag: assetTag)
+                await MainActor.run {
+                    if let asset {
+                        if let idx = apiClient.assets.firstIndex(where: { $0.id == asset.id }) {
+                            apiClient.assets[idx] = asset
+                        } else {
+                            apiClient.assets.append(asset)
+                        }
+                        pendingQRLink = .hardware(id: asset.id)
+                        selectedTab = .hardware
+                    } else {
+                        pendingQRLink = nil
+                        scanErrorMessage = L10n.string("asset_not_found_scanned_value", assetTag)
+                        showScanErrorAlert = true
+                    }
+                }
+            }
+
+        case .hardware(let id):
+            pendingQRLink = link
+            selectedTab = .hardware
+            if apiClient.assets.first(where: { $0.id == id }) == nil {
+                Task {
+                    if apiClient.assets.isEmpty {
+                        await apiClient.fetchPrimaryThenBackground()
+                    }
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
+
+        case .component(let id):
+            stockSelectedSubmoduleRaw = StockSubmodule.components.rawValue
+            pendingQRLink = link
+            selectedTab = .stock
+            if apiClient.components.first(where: { $0.id == id }) == nil {
+                Task {
+                    if apiClient.components.isEmpty {
+                        await apiClient.fetchComponents()
+                    }
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
+
+        case .consumable(let id):
+            stockSelectedSubmoduleRaw = StockSubmodule.consumables.rawValue
+            pendingQRLink = link
+            selectedTab = .stock
+            if apiClient.consumables.first(where: { $0.id == id }) == nil {
+                Task {
+                    if apiClient.consumables.isEmpty {
+                        await apiClient.fetchConsumables()
+                    }
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
+
+        case .accessory(let id):
+            pendingQRLink = link
+            selectedTab = .accessories
+            if apiClient.accessories.first(where: { $0.id == id }) == nil {
+                Task {
+                    if apiClient.accessories.isEmpty {
+                        await apiClient.fetchAccessories()
+                    }
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
+
+        case .license(let id):
+            pendingQRLink = link
+            selectedTab = .licenses
+            if apiClient.licenses.first(where: { $0.id == id }) == nil {
+                Task {
+                    if apiClient.licenses.isEmpty {
+                        await apiClient.fetchLicenses()
+                    }
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func resolveMissingQRLink(_ link: SnipeITQRLink, id: Int) async {
+        let resolved: Bool
+        switch link {
+        case .hardware:
+            if apiClient.assets.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if let detailed = await apiClient.fetchHardwareDetails(assetId: id) {
+                apiClient.applyUpdatedAsset(detailed)
+                resolved = true
+            } else {
+                resolved = false
+            }
+        case .component:
+            if apiClient.components.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if let detailed = await apiClient.fetchComponentDetails(componentId: id) {
+                apiClient.applyUpdatedComponent(detailed)
+                resolved = true
+            } else {
+                resolved = false
+            }
+        case .consumable:
+            if apiClient.consumables.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if let detailed = await apiClient.fetchConsumableDetails(consumableId: id) {
+                apiClient.applyUpdatedConsumable(detailed)
+                resolved = true
+            } else {
+                resolved = false
+            }
+        case .accessory:
+            if apiClient.accessories.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if let detailed = await apiClient.fetchAccessoryDetails(accessoryId: id) {
+                apiClient.applyUpdatedAccessory(detailed)
+                resolved = true
+            } else {
+                resolved = false
+            }
+        case .license:
+            if apiClient.licenses.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if let detailed = await apiClient.fetchLicenseDetails(licenseId: id) {
+                apiClient.applyUpdatedLicense(detailed)
+                resolved = true
+            } else {
+                resolved = false
+            }
+        case .hardwareByTag:
+            resolved = true
+        }
+
+        if resolved {
+            pendingQRLink = link
+        } else {
+            pendingQRLink = nil
+            scanErrorMessage = link.notFoundMessage(id: id)
+            showScanErrorAlert = true
+        }
+    }
+
     /// Prompt to create a new asset when a Dell QR has no match in Snipe-IT.
     private func promptAddDellAsset(url: URL, serial: String) {
         pendingDellURLForAdd = url
         pendingDellSerial = serial
         showAddDellAssetPrompt = true
-    }
-
-    private func extractAssetId(from url: URL) -> Int? {
-        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-           let path = components.path.components(separatedBy: "/").last,
-           let id = Int(path) {
-            return id
-        }
-        return nil
     }
 }
 
@@ -762,7 +856,7 @@ struct HardwareTab: View {
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
     @Binding var hasLoadedInitialAssets: Bool
-    @Binding var scannedAssetId: Int?
+    @Binding var pendingQRLink: SnipeITQRLink?
     @Binding var showingSettings: Bool
     @Binding var showingScanner: Bool
     @Binding var showingAddAsset: Bool
@@ -915,13 +1009,13 @@ struct HardwareTab: View {
             if apiClient.isConfigured && apiClient.statusLabels.isEmpty {
                 Task { await apiClient.fetchStatusLabels() }
             }
-            tryPushScannedAsset()
+            tryPushPendingQRLink()
         }
-        .onChange(of: scannedAssetId) { _, _ in
-            tryPushScannedAsset()
+        .onChange(of: pendingQRLink) { _, _ in
+            tryPushPendingQRLink()
         }
         .onChange(of: apiClient.assets) { _, _ in
-            tryPushScannedAsset()
+            tryPushPendingQRLink()
         }
         .sheet(isPresented: $showAuditCompletionSheet) {
             CompletionActionSheet(
@@ -1503,10 +1597,11 @@ struct HardwareTab: View {
         }
     }
 
-    private func tryPushScannedAsset() {
-        guard let id = scannedAssetId, let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
+    private func tryPushPendingQRLink() {
+        guard case .hardware(let id) = pendingQRLink,
+              let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
         navigationPath.append(asset)
-        scannedAssetId = nil
+        pendingQRLink = nil
     }
 }
 
@@ -1521,6 +1616,7 @@ struct AccessoriesTab: View {
     @Binding var showingAddAccessory: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
+    @Binding var pendingQRLink: SnipeITQRLink?
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -1530,7 +1626,12 @@ struct AccessoriesTab: View {
                 isRefreshing: $isRefreshing,
                 navigationPath: $navigationPath
             )
-            .onAppear { isDetailViewActive = false }
+            .onAppear {
+                isDetailViewActive = false
+                tryPushPendingQRLink()
+            }
+            .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.accessories) { _, _ in tryPushPendingQRLink() }
             .navigationTitle(L10n.string("tab_accessories"))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -1564,6 +1665,13 @@ struct AccessoriesTab: View {
             .background(Color(.systemBackground).ignoresSafeArea())
         }
     }
+
+    private func tryPushPendingQRLink() {
+        guard case .accessory(let id) = pendingQRLink,
+              let accessory = apiClient.accessories.first(where: { $0.id == id }) else { return }
+        navigationPath.append(accessory)
+        pendingQRLink = nil
+    }
 }
 
 // MARK: - Licenses Tab
@@ -1576,6 +1684,7 @@ struct LicensesTab: View {
     @Binding var showingScanner: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
+    @Binding var pendingQRLink: SnipeITQRLink?
 
     @State private var showingAddLicense = false
 
@@ -1587,7 +1696,12 @@ struct LicensesTab: View {
                 isRefreshing: $isRefreshing,
                 navigationPath: $navigationPath
             )
-            .onAppear { isDetailViewActive = false }
+            .onAppear {
+                isDetailViewActive = false
+                tryPushPendingQRLink()
+            }
+            .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.licenses) { _, _ in tryPushPendingQRLink() }
             .navigationTitle(L10n.string("tab_licenses"))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -1626,6 +1740,13 @@ struct LicensesTab: View {
                 )
             }
         }
+    }
+
+    private func tryPushPendingQRLink() {
+        guard case .license(let id) = pendingQRLink,
+              let license = apiClient.licenses.first(where: { $0.id == id }) else { return }
+        navigationPath.append(license)
+        pendingQRLink = nil
     }
 }
 
@@ -1736,6 +1857,7 @@ struct StockTab: View {
     @Binding var showingScanner: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
+    @Binding var pendingQRLink: SnipeITQRLink?
 
     @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
@@ -1794,7 +1916,13 @@ struct StockTab: View {
                     )
                 }
             }
-            .onAppear { isDetailViewActive = false }
+            .onAppear {
+                isDetailViewActive = false
+                tryPushPendingQRLink()
+            }
+            .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.components) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.consumables) { _, _ in tryPushPendingQRLink() }
             .navigationTitle(selectedSubmodule.localizedTitle)
             .toolbar {
                 if enabledSubmodules.count > 1 {
@@ -1872,6 +2000,23 @@ struct StockTab: View {
                     }
                 )
             }
+        }
+    }
+
+    private func tryPushPendingQRLink() {
+        switch pendingQRLink {
+        case .component(let id):
+            guard selectedSubmodule == .components,
+                  let component = apiClient.components.first(where: { $0.id == id }) else { return }
+            navigationPath.append(component)
+            pendingQRLink = nil
+        case .consumable(let id):
+            guard selectedSubmodule == .consumables,
+                  let consumable = apiClient.consumables.first(where: { $0.id == id }) else { return }
+            navigationPath.append(consumable)
+            pendingQRLink = nil
+        default:
+            return
         }
     }
 }

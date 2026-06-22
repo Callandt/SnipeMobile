@@ -272,6 +272,11 @@ struct LicenseDetailView: View {
                             seatCard(seat, kind: .assigned)
                         }
                     }
+                    Text(L10n.string("license_seats_assigned_hint"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 2)
                 }
                 if !groups.free.isEmpty {
                     seatGroupHeader(
