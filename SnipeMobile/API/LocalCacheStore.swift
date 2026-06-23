@@ -4,6 +4,7 @@ import Foundation
 struct SnipeDataCacheSnapshot: Codable {
     var assets: [Asset] = []
     var users: [User] = []
+    var currentUser: User? = nil
     var accessories: [Accessory] = []
     var licenses: [License] = []
     var consumables: [Consumable] = []

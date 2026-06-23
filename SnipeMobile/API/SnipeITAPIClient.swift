@@ -9,6 +9,7 @@ private func print(_ items: Any..., separator: String = " ", terminator: String 
 class SnipeITAPIClient: ObservableObject {
     @Published var assets: [Asset] = [] { didSet { scheduleCacheSave() } }
     @Published var users: [User] = [] { didSet { scheduleCacheSave() } }
+    @Published var currentUser: User? { didSet { scheduleCacheSave() } }
     @Published var accessories: [Accessory] = [] { didSet { scheduleCacheSave() } }
     @Published var licenses: [License] = [] { didSet { scheduleCacheSave() } }
     @Published var consumables: [Consumable] = [] { didSet { scheduleCacheSave() } }
@@ -78,6 +79,7 @@ class SnipeITAPIClient: ObservableObject {
         let snapshot = SnipeDataCacheSnapshot(
             assets: assets,
             users: users,
+            currentUser: currentUser,
             accessories: accessories,
             licenses: licenses,
             consumables: consumables,
@@ -104,6 +106,9 @@ class SnipeITAPIClient: ObservableObject {
         if !snapshot.assets.isEmpty { hasCompletedInitialLoad = true }
         if assets.isEmpty { assets = snapshot.assets }
         if users.isEmpty { users = snapshot.users }
+        if currentUser == nil, let cached = snapshot.currentUser {
+            currentUser = snapshot.users.first(where: { $0.id == cached.id }) ?? cached
+        }
         if accessories.isEmpty { accessories = snapshot.accessories }
         if licenses.isEmpty { licenses = snapshot.licenses }
         if consumables.isEmpty { consumables = snapshot.consumables }
@@ -269,9 +274,14 @@ class SnipeITAPIClient: ObservableObject {
         return false
     }
 
+    private var fetchCurrentUserTask: Task<Void, Never>? = nil
+
     init() {
         self.isConfigured = UserDefaults.standard.bool(forKey: "isConfigured")
         loadCachedDataIfAvailable()
+        if isConfigured, !baseURL.isEmpty {
+            Task { await self.fetchCurrentUser() }
+        }
         NotificationCenter.default.addObserver(forName: .cloudSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
@@ -290,6 +300,7 @@ class SnipeITAPIClient: ObservableObject {
                 self.isConfigured = false
                 self.assets = []
                 self.users = []
+                self.currentUser = nil
                 self.accessories = []
                 self.licenses = []
                 self.consumables = []
@@ -309,6 +320,7 @@ class SnipeITAPIClient: ObservableObject {
         if isDifferentServer {
             cacheSaveTask?.cancel()
             LocalCacheStore.clearAll()
+            currentUser = nil
         }
         UserDefaults.standard.set(normalizedBaseURL, forKey: "baseURL")
         KeychainSecretStore.set(apiToken, for: .apiToken)
@@ -350,8 +362,10 @@ class SnipeITAPIClient: ObservableObject {
         errorMessage = nil
         refreshErrorMessage = nil
 
+        await fetchCurrentUser()
         await fetchAssets()
         await fetchUsers()
+        reconcileCurrentUserWithUsersList()
         await fetchAccessories()
         await fetchLicenses()
         await fetchConsumables()
@@ -620,6 +634,7 @@ class SnipeITAPIClient: ObservableObject {
             ) else { return }
             await MainActor.run {
                 self.users = rows.sorted { $0.name < $1.name }
+                self.reconcileCurrentUserWithUsersList()
             }
         } catch {
             await MainActor.run {
@@ -628,6 +643,85 @@ class SnipeITAPIClient: ObservableObject {
                 print("Error details: \(error)")
                 #endif
             }
+        }
+    }
+
+    func ensureCheckoutUserReady() async {
+        await fetchCurrentUser()
+        reconcileCurrentUserWithUsersList()
+    }
+
+    func fetchCurrentUser() async {
+        if let existing = fetchCurrentUserTask {
+            await existing.value
+            return
+        }
+
+        let task = Task { await self.performFetchCurrentUser() }
+        fetchCurrentUserTask = task
+        await task.value
+        fetchCurrentUserTask = nil
+    }
+
+    private func performFetchCurrentUser() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/users/me") else { return }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else { return }
+
+            guard let user = Self.decodeUser(from: data) else { return }
+            currentUser = user
+            reconcileCurrentUserWithUsersList()
+        } catch {
+            #if DEBUG
+            print("Error fetching current user: \(error)")
+            #endif
+        }
+    }
+
+    private func reconcileCurrentUserWithUsersList() {
+        guard let id = currentUser?.id,
+              let match = users.first(where: { $0.id == id }) else { return }
+        currentUser = match
+    }
+
+    var defaultCheckoutUser: User? {
+        guard let currentUser else { return nil }
+        return users.first(where: { $0.id == currentUser.id }) ?? currentUser
+    }
+
+    func filteredCheckoutUsers(searchText: String) -> [User] {
+        let pinnedId = defaultCheckoutUser?.id
+        var filtered = users.filter {
+            searchText.isEmpty ||
+            $0.decodedName.localizedCaseInsensitiveContains(searchText) ||
+            $0.decodedEmail.localizedCaseInsensitiveContains(searchText)
+        }
+
+        if let pinned = defaultCheckoutUser {
+            let matchesSearch = searchText.isEmpty ||
+                pinned.decodedName.localizedCaseInsensitiveContains(searchText) ||
+                pinned.decodedEmail.localizedCaseInsensitiveContains(searchText)
+            if matchesSearch, !filtered.contains(where: { $0.id == pinned.id }) {
+                filtered.insert(pinned, at: 0)
+            }
+        }
+
+        return filtered.sorted { lhs, rhs in
+            if let pinnedId {
+                if lhs.id == pinnedId { return true }
+                if rhs.id == pinnedId { return false }
+            }
+            return lhs.decodedName.localizedCaseInsensitiveCompare(rhs.decodedName) == .orderedAscending
         }
     }
 
@@ -644,25 +738,28 @@ class SnipeITAPIClient: ObservableObject {
             let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode) else { return nil }
-
-            if let user = try? JSONDecoder().decode(User.self, from: data) {
-                return user
-            }
-
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return nil
-            }
-
-            if let payload = json["payload"] as? [String: Any],
-               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
-               let user = try? JSONDecoder().decode(User.self, from: payloadData) {
-                return user
-            }
-
-            return nil
+            return Self.decodeUser(from: data)
         } catch {
             return nil
         }
+    }
+
+    private static func decodeUser(from data: Data) -> User? {
+        if let user = try? JSONDecoder().decode(User.self, from: data) {
+            return user
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        if let payload = json["payload"] as? [String: Any],
+           let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+           let user = try? JSONDecoder().decode(User.self, from: payloadData) {
+            return user
+        }
+
+        return nil
     }
 
     func fetchAccessories() async {
@@ -868,10 +965,9 @@ class SnipeITAPIClient: ObservableObject {
             let preview = String(data: data.prefix(500), encoding: .utf8) ?? "<non-UTF8>"
             print("[SnipeMobile] POST /consumables status=\(httpResponse.statusCode) body=\(preview)")
             #endif
-            let status = (json?["status"] as? String)?.lowercased()
-            let isError = status == "error"
+            let isError = Self.isSnipeApiErrorResponse(json)
             let newId = Self.idFromApiPayload(json?["payload"])
-            let httpOK = (200...299).contains(httpResponse.statusCode)
+            let httpOK = Self.isSnipeApiHttpSuccess(httpResponse.statusCode)
             let success = httpOK && !isError && newId != nil
             let msg = Self.extractApiErrorMessage(from: json ?? [:])
                 ?? (success ? L10n.string("consumable_created") : L10n.string("create_failed"))
@@ -937,11 +1033,11 @@ class SnipeITAPIClient: ObservableObject {
                     return false
                 }
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let isError = (json?["status"] as? String)?.lowercased() == "error"
+                let isError = Self.isSnipeApiErrorResponse(json)
                 let msg = Self.extractApiErrorMessage(from: json ?? [:])
                     ?? (httpResponse.statusCode == 200 && !isError ? L10n.string("saved") : L10n.string("create_failed"))
                 await MainActor.run { self.lastApiMessage = msg }
-                if (200...299).contains(httpResponse.statusCode), !isError {
+                if Self.isSnipeApiHttpSuccess(httpResponse.statusCode), !isError {
                     if let updated: Consumable = decodedPatchPayload(from: data) {
                         await MainActor.run { replaceCachedItem(updated, in: &self.consumables, id: \.id) }
                     }
@@ -968,21 +1064,19 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Check-out successful." : "Check-out failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                let isError = (json?["status"] as? String) == "error"
-                if httpResponse.statusCode == 200, !isError {
-                    await refreshConsumableInCache(consumableId: consumableId)
-                    syncAllInBackground()
-                    return true
-                }
-                return false
-            }
-            return false
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Check-out successful.",
+                defaultFailureMessage: "Check-out failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            await refreshConsumableInCache(consumableId: consumableId)
+            syncAllInBackground()
+            return true
         } catch {
             await MainActor.run { self.lastApiMessage = "Error checking out consumable: \(error.localizedDescription)" }
             return false
@@ -1138,19 +1232,21 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Component created!" : "Create failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200,
-                   let payload = json?["payload"] as? [String: Any],
-                   let newId = payload["id"] as? Int {
-                    Task { await self.fetchComponents() }
-                    return (true, newId)
-                }
-                return (false, nil)
+            guard let httpResponse = response as? HTTPURLResponse else { return (false, nil) }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let hasNewId = (json?["payload"] as? [String: Any])?["id"] as? Int != nil
+            let base = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Component created!",
+                defaultFailureMessage: "Create failed."
+            )
+            let success = base.success && hasNewId
+            let msg = success ? base.message : (Self.extractApiErrorMessage(from: json ?? [:]) ?? base.message)
+            await MainActor.run { self.lastApiMessage = msg }
+            if success, let newId = (json?["payload"] as? [String: Any])?["id"] as? Int {
+                Task { await self.fetchComponents() }
+                return (true, newId)
             }
             return (false, nil)
         } catch {
@@ -1202,22 +1298,21 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200 {
-                    if let updated: Component = decodedPatchPayload(from: data) {
-                        await MainActor.run { replaceCachedItem(updated, in: &self.components, id: \.id) }
-                    }
-                    Task { await self.fetchComponents() }
-                    return true
-                }
-                return false
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Saved.",
+                defaultFailureMessage: "Save failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            if let updated: Component = decodedPatchPayload(from: data) {
+                await MainActor.run { replaceCachedItem(updated, in: &self.components, id: \.id) }
             }
-            return false
+            Task { await self.fetchComponents() }
+            return true
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
             return false
@@ -1238,21 +1333,19 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Check-out successful." : "Check-out failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                let isError = (json?["status"] as? String) == "error"
-                if httpResponse.statusCode == 200, !isError {
-                    await refreshComponentInCache(componentId: componentId)
-                    syncAllInBackground()
-                    return true
-                }
-                return false
-            }
-            return false
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Check-out successful.",
+                defaultFailureMessage: "Check-out failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            await refreshComponentInCache(componentId: componentId)
+            syncAllInBackground()
+            return true
         } catch {
             await MainActor.run { self.lastApiMessage = "Error checking out component: \(error.localizedDescription)" }
             return false
@@ -1277,12 +1370,12 @@ class SnipeITAPIClient: ObservableObject {
         do {
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return "No response." }
-            guard (200...299).contains(http.statusCode) else {
+            guard Self.isSnipeApiHttpSuccess(http.statusCode) else {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return "HTTP \(http.statusCode): \(preview)"
             }
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["status"] as? String, status == "error" {
+               Self.isSnipeApiErrorResponse(json) {
                 return Self.extractApiErrorMessage(from: json) ?? "Check-in failed."
             }
             await refreshComponentInCache(componentId: componentId)
@@ -1798,12 +1891,12 @@ class SnipeITAPIClient: ObservableObject {
             print("[SnipeMobile] PUT /licenses/\(licenseId)/seats/\(seatId) (\(label)) sent=\(bodyPreview) status=\(http.statusCode) body=\(resPreview)")
             #endif
 
-            guard (200...299).contains(http.statusCode) else {
+            guard Self.isSnipeApiHttpSuccess(http.statusCode) else {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return "HTTP \(http.statusCode): \(preview)"
             }
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["status"] as? String, status == "error" {
+               Self.isSnipeApiErrorResponse(json) {
                 return Self.extractApiErrorMessage(from: json) ?? "Check-out failed."
             }
             return nil
@@ -1831,20 +1924,12 @@ class SnipeITAPIClient: ObservableObject {
             guard let http = response as? HTTPURLResponse else { return (false, nil, "No response.") }
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-            guard (200...299).contains(http.statusCode) else {
+            guard Self.isSnipeApiHttpSuccess(http.statusCode) else {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return (false, nil, "HTTP \(http.statusCode): \(preview)")
             }
-            if let json, let status = json["status"] as? String, status == "error" {
-                if let messages = json["messages"] as? [String: Any],
-                   let first = messages.values.first as? [Any], let msg = first.first as? String {
-                    return (false, nil, msg)
-                }
-                if let messages = json["messages"] as? [String: Any],
-                   let first = messages.values.first as? String {
-                    return (false, nil, first)
-                }
-                return (false, nil, (json["messages"] as? String) ?? "Create failed.")
+            if let json, Self.isSnipeApiErrorResponse(json) {
+                return (false, nil, Self.extractApiErrorMessage(from: json) ?? "Create failed.")
             }
             let newId = (json?["payload"] as? [String: Any])?["id"] as? Int
             Task { await self.fetchLicenses() }
@@ -1871,21 +1956,13 @@ class SnipeITAPIClient: ObservableObject {
         do {
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return "No response." }
-            guard (200...299).contains(http.statusCode) else {
+            guard Self.isSnipeApiHttpSuccess(http.statusCode) else {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return "HTTP \(http.statusCode): \(preview)"
             }
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["status"] as? String, status == "error" {
-                if let messages = json["messages"] as? [String: Any],
-                   let first = messages.values.first as? [Any], let msg = first.first as? String {
-                    return msg
-                }
-                if let messages = json["messages"] as? [String: Any],
-                   let first = messages.values.first as? String {
-                    return first
-                }
-                return (json["messages"] as? String) ?? "Save failed."
+               Self.isSnipeApiErrorResponse(json) {
+                return Self.extractApiErrorMessage(from: json) ?? "Save failed."
             }
             if let updated: License = decodedPatchPayload(from: data) {
                 await MainActor.run { replaceCachedItem(updated, in: &self.licenses, id: \.id) }
@@ -1920,7 +1997,7 @@ class SnipeITAPIClient: ObservableObject {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return (false, nil, "HTTP \(http.statusCode): \(preview)")
             }
-            if let json, let status = json["status"] as? String, status == "error" {
+            if let json, Self.isSnipeApiErrorResponse(json) {
                 return (false, nil, Self.extractApiErrorMessage(from: json) ?? "Create failed.")
             }
             let newId = (json?["payload"] as? [String: Any])?["id"] as? Int
@@ -1953,7 +2030,7 @@ class SnipeITAPIClient: ObservableObject {
                 return "HTTP \(http.statusCode): \(preview)"
             }
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["status"] as? String, status == "error" {
+               Self.isSnipeApiErrorResponse(json) {
                 return Self.extractApiErrorMessage(from: json) ?? "Save failed."
             }
             if let updated: User = decodedPatchPayload(from: data) {
@@ -1989,7 +2066,7 @@ class SnipeITAPIClient: ObservableObject {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return (false, nil, "HTTP \(http.statusCode): \(preview)")
             }
-            if let json, let status = json["status"] as? String, status == "error" {
+            if let json, Self.isSnipeApiErrorResponse(json) {
                 return (false, nil, Self.extractApiErrorMessage(from: json) ?? "Create failed.")
             }
             let newId = (json?["payload"] as? [String: Any])?["id"] as? Int
@@ -2022,7 +2099,7 @@ class SnipeITAPIClient: ObservableObject {
                 return "HTTP \(http.statusCode): \(preview)"
             }
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["status"] as? String, status == "error" {
+               Self.isSnipeApiErrorResponse(json) {
                 return Self.extractApiErrorMessage(from: json) ?? "Save failed."
             }
             if let updated: Location = decodedPatchPayload(from: data) {
@@ -2066,9 +2143,8 @@ class SnipeITAPIClient: ObservableObject {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return "HTTP \(http.statusCode): \(preview)"
             }
-            // Snipe-IT returns 200 with status="error" on validation failures.
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["status"] as? String, status == "error" {
+               Self.isSnipeApiErrorResponse(json) {
                 return Self.extractApiErrorMessage(from: json) ?? "Check-in failed."
             }
             await refreshLicenseInCache(licenseId: licenseId)
@@ -2084,7 +2160,7 @@ class SnipeITAPIClient: ObservableObject {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return try? JSONDecoder().decode(T.self, from: data)
         }
-        if (json["status"] as? String) == "error" { return nil }
+        if Self.isSnipeApiErrorResponse(json) { return nil }
         guard let payload = json["payload"], !(payload is NSNull),
               let payloadDict = payload as? [String: Any],
               let payloadData = try? JSONSerialization.data(withJSONObject: payloadDict),
@@ -2175,17 +2251,61 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    static func extractApiErrorMessage(from json: [String: Any]) -> String? {
+    static func extractApiErrorMessage(from json: [String: Any], joinAll: Bool = false) -> String? {
         if let str = json["message"] as? String, !str.isEmpty { return str }
-        if let str = json["messages"] as? String, !str.isEmpty { return str }
-        if let dict = json["messages"] as? [String: Any] {
-            for value in dict.values {
-                if let s = value as? String, !s.isEmpty { return s }
-                if let arr = value as? [Any], let s = arr.first as? String, !s.isEmpty { return s }
-            }
+        var messages: [String] = []
+        messages.append(contentsOf: stringsFromFieldDictionary(json["messages"]))
+        messages.append(contentsOf: stringsFromFieldDictionary(json["errors"]))
+        if !messages.isEmpty {
+            return joinAll ? messages.joined(separator: "\n") : messages[0]
         }
         if let str = json["error"] as? String, !str.isEmpty { return str }
         return nil
+    }
+
+    private static func stringsFromFieldValue(_ value: Any) -> [String] {
+        if let str = value as? String, !str.isEmpty { return [str] }
+        if let arr = value as? [Any] {
+            return arr.compactMap { item in
+                guard let s = item as? String, !s.isEmpty else { return nil }
+                return s
+            }
+        }
+        return []
+    }
+
+    private static func stringsFromFieldDictionary(_ value: Any?) -> [String] {
+        if let str = value as? String, !str.isEmpty { return [str] }
+        guard let dict = value as? [String: Any] else { return [] }
+        return dict.values.flatMap { stringsFromFieldValue($0) }
+    }
+
+    private static func isSnipeApiErrorResponse(_ json: [String: Any]?) -> Bool {
+        guard let json else { return false }
+        if (json["status"] as? String)?.lowercased() == "error" { return true }
+        if json["errors"] is [String: Any] {
+            let status = (json["status"] as? String)?.lowercased()
+            if status == nil || status == "error" { return true }
+        }
+        return false
+    }
+
+    private static func isSnipeApiHttpSuccess(_ statusCode: Int) -> Bool {
+        (200...299).contains(statusCode)
+    }
+
+    static func evaluateWriteResponse(
+        json: [String: Any]?,
+        httpStatus: Int,
+        defaultSuccessMessage: String,
+        defaultFailureMessage: String
+    ) -> (success: Bool, message: String) {
+        let httpOK = isSnipeApiHttpSuccess(httpStatus)
+        let isError = isSnipeApiErrorResponse(json)
+        let success = httpOK && !isError
+        let message = extractApiErrorMessage(from: json ?? [:])
+            ?? (success ? defaultSuccessMessage : defaultFailureMessage)
+        return (success, message)
     }
 
     private static func isHTMLResponse(_ data: Data) -> Bool {
@@ -2354,8 +2474,9 @@ class SnipeITAPIClient: ObservableObject {
 
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+            if let httpResponse = response as? HTTPURLResponse {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                guard httpResponse.statusCode == 200, !Self.isSnipeApiErrorResponse(json) else { return false }
                 await refreshAssetInCache(assetId: assetId, responseJSON: json)
                 syncAllInBackground()
                 return true
@@ -2382,22 +2503,22 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: checkoutBody)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Check-out successful!" : "Check-out failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200 {
-                    await refreshAssetInCache(assetId: assetId, responseJSON: json)
-                    if let parentId = body["assigned_asset"] as? Int {
-                        await refreshAssetInCache(assetId: parentId)
-                    }
-                    syncAllInBackground()
-                }
-                return httpResponse.statusCode == 200
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Check-out successful!",
+                defaultFailureMessage: "Check-out failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            await refreshAssetInCache(assetId: assetId, responseJSON: json)
+            if let parentId = body["assigned_asset"] as? Int {
+                await refreshAssetInCache(assetId: parentId)
             }
-            return false
+            syncAllInBackground()
+            return true
         } catch {
             await MainActor.run {
                 self.lastApiMessage = "Error checking out: \(error.localizedDescription)"
@@ -2639,28 +2760,14 @@ class SnipeITAPIClient: ObservableObject {
 
     private static func parseValidationError(json: [String: Any]?, statusCode: Int) -> (String, Bool) {
         typealias Dict = [String: Any]
-        func allMessages(from dict: Dict?) -> [String] {
-            guard let dict = dict else { return [] }
-            var list: [String] = []
-            for (_, val) in dict {
-                if let arr = val as? [String] {
-                    list.append(contentsOf: arr.filter { !$0.isEmpty })
-                } else if let s = val as? String, !s.isEmpty {
-                    list.append(s)
-                }
-            }
-            return list
-        }
         func hasSerialOrAssetTagError(_ dict: Dict?) -> Bool {
             guard let dict = dict else { return false }
             return dict["serial"] != nil || dict["asset_tag"] != nil
         }
         let errors = json?["errors"] as? Dict
         let messagesDict = json?["messages"] as? Dict
-        let messagesList = allMessages(from: errors) + allMessages(from: messagesDict)
-        let combined = messagesList.isEmpty
-            ? (json?["error"] as? String ?? (statusCode == 200 ? "Asset created!" : "Create failed."))
-            : messagesList.joined(separator: "\n")
+        let combined = extractApiErrorMessage(from: json ?? [:], joinAll: true)
+            ?? (isSnipeApiHttpSuccess(statusCode) ? "Asset created!" : "Create failed.")
         let isDuplicate = hasSerialOrAssetTagError(errors) || hasSerialOrAssetTagError(messagesDict)
         return (combined, isDuplicate)
     }
@@ -2784,7 +2891,7 @@ class SnipeITAPIClient: ObservableObject {
             await MainActor.run { self.lastApiMessage = msg }
 
             if httpResponse.statusCode == 200 {
-                let isSnipeError = (json?["status"] as? String)?.lowercased() == "error"
+                let isSnipeError = Self.isSnipeApiErrorResponse(json)
                 let isSnipeSuccess = (json?["status"] as? String)?.lowercased() == "success"
                 let hasPayload = (json?["payload"] as? [String: Any])?["id"] != nil
 
@@ -2902,20 +3009,21 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Accessory created!" : "Create failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200, let payload = json, let row = payload["payload"] as? [String: Any], row["id"] != nil {
-                    // Reload accessories
-                    Task { await self.fetchAccessories() }
-                    return true
-                }
-                return false
-            }
-            return false
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let hasNewId = (json?["payload"] as? [String: Any])?["id"] != nil
+            let base = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Accessory created!",
+                defaultFailureMessage: "Create failed."
+            )
+            let success = base.success && hasNewId
+            let msg = success ? base.message : (Self.extractApiErrorMessage(from: json ?? [:]) ?? base.message)
+            await MainActor.run { self.lastApiMessage = msg }
+            guard success else { return false }
+            Task { await self.fetchAccessories() }
+            return true
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
             return false
@@ -2978,22 +3086,21 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Saved." : "Save failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200 {
-                    if let updated: Accessory = decodedPatchPayload(from: data) {
-                        await MainActor.run { replaceCachedItem(updated, in: &self.accessories, id: \.id) }
-                    }
-                    Task { await self.fetchAccessories() }
-                    return true
-                }
-                return false
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Saved.",
+                defaultFailureMessage: "Save failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            if let updated: Accessory = decodedPatchPayload(from: data) {
+                await MainActor.run { replaceCachedItem(updated, in: &self.accessories, id: \.id) }
             }
-            return false
+            Task { await self.fetchAccessories() }
+            return true
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
             return false
@@ -3040,21 +3147,21 @@ class SnipeITAPIClient: ObservableObject {
             print("[SnipeMobile] DELETE /hardware/\(assetId) status=\(httpResponse.statusCode) response=\(responseStr.prefix(400))")
             #endif
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let msg = (json?["messages"] as? String)
-                ?? (json?["messages"] as? [String: Any]).flatMap { $0.values.first as? String }
-                ?? json?["error"] as? String
-                ?? (httpResponse.statusCode == 200 ? "Asset verwijderd." : "Verwijderen mislukt.")
-            await MainActor.run { self.lastApiMessage = msg }
-            if httpResponse.statusCode == 200 {
-                await MainActor.run {
-                    self.assets.removeAll { $0.id == assetId }
-                }
-                #if DEBUG
-                print("[SnipeMobile] DELETE /hardware/\(assetId) — succes, uit cache verwijderd")
-                #endif
-                return true
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Asset verwijderd.",
+                defaultFailureMessage: "Verwijderen mislukt."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            await MainActor.run {
+                self.assets.removeAll { $0.id == assetId }
             }
-            return false
+            #if DEBUG
+            print("[SnipeMobile] DELETE /hardware/\(assetId) — succes, uit cache verwijderd")
+            #endif
+            return true
         } catch {
             #if DEBUG
             print("[SnipeMobile] DELETE /hardware/\(assetId) error: \(error)")
@@ -3133,23 +3240,24 @@ class SnipeITAPIClient: ObservableObject {
             #endif
 
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let isError = (json?["status"] as? String) == "error"
-            let msg = Self.extractApiErrorMessage(from: json ?? [:])
-                ?? (httpResponse.statusCode == 200 && !isError ? "Changes saved!" : "Save failed.")
-            await MainActor.run { self.lastApiMessage = msg }
-            if httpResponse.statusCode == 200, !isError {
-                if let updated: Asset = decodedPatchPayload(from: data) {
-                    await MainActor.run { replaceCachedItem(updated, in: &self.assets, id: \.id) }
-                }
-                // Refetch after image change; PATCH payload may omit image URL.
-                if image != nil || update.image_delete == 1 {
-                    if let details = await fetchHardwareDetails(assetId: assetId) {
-                        await MainActor.run { applyUpdatedAsset(details) }
-                    }
-                }
-                return true
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Changes saved!",
+                defaultFailureMessage: "Save failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            if let updated: Asset = decodedPatchPayload(from: data) {
+                await MainActor.run { replaceCachedItem(updated, in: &self.assets, id: \.id) }
             }
-            return false
+            // PATCH may omit image URL.
+            if image != nil || update.image_delete == 1 {
+                if let details = await fetchHardwareDetails(assetId: assetId) {
+                    await MainActor.run { applyUpdatedAsset(details) }
+                }
+            }
+            return true
         } catch {
             await MainActor.run {
                 self.lastApiMessage = "Error updating asset: \(error.localizedDescription)"
@@ -3199,13 +3307,11 @@ class SnipeITAPIClient: ObservableObject {
             print("[SnipeMobile] POST /hardware/audit (\(trimmedTag)) status: \(http.statusCode) response: \(responseStr.prefix(300))")
             #endif
 
-            if !(200...299).contains(http.statusCode) {
+            if !Self.isSnipeApiHttpSuccess(http.statusCode) {
                 await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Audit failed." }
                 return false
             }
-            // Snipe-IT returns HTTP 200 even on validation failure; the real
-            // outcome is in the body's "status" field.
-            if (json?["status"] as? String)?.lowercased() == "error" {
+            if Self.isSnipeApiErrorResponse(json) {
                 await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Audit failed." }
                 return false
             }
@@ -3431,8 +3537,9 @@ class SnipeITAPIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+            if let httpResponse = response as? HTTPURLResponse {
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                guard httpResponse.statusCode == 200, !Self.isSnipeApiErrorResponse(json) else { return false }
                 await refreshAssetInCache(assetId: assetId, responseJSON: json)
                 syncAllInBackground()
                 return true
@@ -3455,19 +3562,19 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let msg = (json?["messages"] as? [String: Any])?.values.first as? String
-                    ?? json?["error"] as? String
-                    ?? (httpResponse.statusCode == 200 ? "Check-in successful!" : "Check-in failed.")
-                await MainActor.run { self.lastApiMessage = msg }
-                if httpResponse.statusCode == 200 {
-                    await refreshAssetInCache(assetId: assetId, responseJSON: json)
-                    syncAllInBackground()
-                }
-                return httpResponse.statusCode == 200
-            }
-            return false
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Check-in successful!",
+                defaultFailureMessage: "Check-in failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
+            await refreshAssetInCache(assetId: assetId, responseJSON: json)
+            syncAllInBackground()
+            return true
         } catch {
             await MainActor.run {
                 self.lastApiMessage = "Error checking in: \(error.localizedDescription)"
@@ -3494,7 +3601,7 @@ class SnipeITAPIClient: ObservableObject {
             print("[SnipeMobile] POST /accessories/\(accessoryId)/checkout status=\(httpResponse.statusCode) body=\(preview)")
             #endif
 
-            guard (200...299).contains(httpResponse.statusCode) else {
+            guard Self.isSnipeApiHttpSuccess(httpResponse.statusCode) else {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 await MainActor.run {
                     self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:])
@@ -3503,26 +3610,14 @@ class SnipeITAPIClient: ObservableObject {
                 return false
             }
 
-            if let json, let status = json["status"] as? String, status == "error" {
-                await MainActor.run {
-                    self.lastApiMessage = Self.extractApiErrorMessage(from: json) ?? "Check-out failed."
-                }
-                return false
-            }
-
-            let msg: String
-            if let str = json?["messages"] as? String, !str.isEmpty {
-                msg = str
-            } else if let dict = json?["messages"] as? [String: Any],
-                      let first = dict.values.first as? String, !first.isEmpty {
-                msg = first
-            } else if let dict = json?["messages"] as? [String: Any],
-                      let arr = dict.values.first as? [Any], let first = arr.first as? String {
-                msg = first
-            } else {
-                msg = "Check-out successful."
-            }
-            await MainActor.run { self.lastApiMessage = msg }
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Check-out successful.",
+                defaultFailureMessage: "Check-out failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
             await refreshAccessoryInCache(accessoryId: accessoryId)
             syncAllInBackground()
             return true
@@ -3543,10 +3638,17 @@ class SnipeITAPIClient: ObservableObject {
         let body: [String: Any] = ["checkedout_id": checkedoutId]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
-            let (_, response) = try await urlSession.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                return false
-            }
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: httpResponse.statusCode,
+                defaultSuccessMessage: "Check-in successful.",
+                defaultFailureMessage: "Check-in failed."
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            guard result.success else { return false }
             await refreshAccessoryInCache(accessoryId: accessoryId)
             syncAllInBackground()
             return true
@@ -3798,14 +3900,14 @@ class SnipeITAPIClient: ObservableObject {
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            if !(200...299).contains(http.statusCode) {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Create failed." }
-                return false
-            }
-            // Snipe-IT returns HTTP 200 even on validation failure; the real
-            // outcome is in the body's "status" field.
-            if (json?["status"] as? String)?.lowercased() == "error" {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Create failed." }
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: http.statusCode,
+                defaultSuccessMessage: "Maintenance created.",
+                defaultFailureMessage: "Create failed."
+            )
+            if !result.success {
+                await MainActor.run { self.lastApiMessage = result.message }
                 return false
             }
             return true
@@ -3830,12 +3932,14 @@ class SnipeITAPIClient: ObservableObject {
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            if !(200...299).contains(http.statusCode) {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Update failed." }
-                return false
-            }
-            if (json?["status"] as? String)?.lowercased() == "error" {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Update failed." }
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: http.statusCode,
+                defaultSuccessMessage: "Update failed.",
+                defaultFailureMessage: "Update failed."
+            )
+            if !result.success {
+                await MainActor.run { self.lastApiMessage = result.message }
                 return false
             }
             return true
@@ -3864,12 +3968,14 @@ class SnipeITAPIClient: ObservableObject {
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            if !(200...299).contains(http.statusCode) {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Complete failed." }
-                return false
-            }
-            if (json?["status"] as? String)?.lowercased() == "error" {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Complete failed." }
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: http.statusCode,
+                defaultSuccessMessage: "Complete failed.",
+                defaultFailureMessage: "Complete failed."
+            )
+            if !result.success {
+                await MainActor.run { self.lastApiMessage = result.message }
                 return false
             }
             return true
@@ -3892,12 +3998,14 @@ class SnipeITAPIClient: ObservableObject {
             let (data, response) = try await urlSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return false }
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            if !(200...299).contains(http.statusCode) {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Delete failed." }
-                return false
-            }
-            if (json?["status"] as? String)?.lowercased() == "error" {
-                await MainActor.run { self.lastApiMessage = Self.extractApiErrorMessage(from: json ?? [:]) ?? "Delete failed." }
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: http.statusCode,
+                defaultSuccessMessage: "Delete failed.",
+                defaultFailureMessage: "Delete failed."
+            )
+            if !result.success {
+                await MainActor.run { self.lastApiMessage = result.message }
                 return false
             }
             return true
@@ -3942,8 +4050,11 @@ extension SnipeITAPIClient {
                 let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else { return (nil, "No response.") }
                 let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                guard (200...299).contains(http.statusCode) else {
+                guard Self.isSnipeApiHttpSuccess(http.statusCode) else {
                     return (nil, Self.extractApiErrorMessage(from: json ?? [:]) ?? "HTTP \(http.statusCode)")
+                }
+                if Self.isSnipeApiErrorResponse(json) {
+                    return (nil, Self.extractApiErrorMessage(from: json ?? [:]) ?? "Request failed.")
                 }
                 guard let json else {
                     return (nil, "Invalid response.")
@@ -4037,7 +4148,7 @@ extension SnipeITAPIClient {
                 return ManagementWriteResult(success: false, message: "No response.", id: nil)
             }
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            guard (200...299).contains(http.statusCode) else {
+            guard Self.isSnipeApiHttpSuccess(http.statusCode) else {
                 let preview = String(data: data.prefix(300), encoding: .utf8) ?? ""
                 return ManagementWriteResult(
                     success: false,
@@ -4045,7 +4156,7 @@ extension SnipeITAPIClient {
                     id: nil
                 )
             }
-            if (json?["status"] as? String)?.lowercased() == "error" {
+            if Self.isSnipeApiErrorResponse(json) {
                 return ManagementWriteResult(
                     success: false,
                     message: Self.extractApiErrorMessage(from: json ?? [:]) ?? "Request failed.",
@@ -4053,7 +4164,7 @@ extension SnipeITAPIClient {
                 )
             }
             let newId = (json?["payload"] as? [String: Any])?["id"] as? Int
-            let message = (json?["messages"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let message = Self.extractApiErrorMessage(from: json ?? [:])
             return ManagementWriteResult(success: true, message: message, id: newId)
         } catch {
             return ManagementWriteResult(success: false, message: error.localizedDescription, id: nil)

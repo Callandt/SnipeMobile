@@ -109,6 +109,7 @@ struct LicenseCheckoutSheet: View {
             .onAppear {
                 if apiClient.assets.isEmpty { Task { await apiClient.fetchAssets() } }
             }
+            .defaultCheckoutUserSelection(apiClient: apiClient, selectedUser: $selectedUser)
         }
     }
 
@@ -119,13 +120,7 @@ struct LicenseCheckoutSheet: View {
     }
 
     private var filteredUsers: [User] {
-        apiClient.users
-            .filter {
-                userSearchText.isEmpty ||
-                $0.decodedName.localizedCaseInsensitiveContains(userSearchText) ||
-                $0.decodedEmail.localizedCaseInsensitiveContains(userSearchText)
-            }
-            .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
+        apiClient.filteredCheckoutUsers(searchText: userSearchText)
     }
 
     private var filteredAssets: [Asset] {

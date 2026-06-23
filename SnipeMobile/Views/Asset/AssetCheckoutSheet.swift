@@ -100,6 +100,7 @@ struct AssetCheckoutSheet: View {
             .onAppear {
                 if apiClient.assets.isEmpty { Task { await apiClient.fetchAssets() } }
             }
+            .defaultCheckoutUserSelection(apiClient: apiClient, selectedUser: $selectedUser)
             .alert(L10n.string("result"), isPresented: $showResult) {
                 Button(L10n.string("ok"), role: .cancel) { }
             } message: {
@@ -123,13 +124,7 @@ struct AssetCheckoutSheet: View {
     }
 
     var filteredUsers: [User] {
-        apiClient.users
-            .filter {
-                userSearchText.isEmpty ||
-                $0.decodedName.localizedCaseInsensitiveContains(userSearchText) ||
-                $0.decodedEmail.localizedCaseInsensitiveContains(userSearchText)
-            }
-            .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
+        apiClient.filteredCheckoutUsers(searchText: userSearchText)
     }
 
     var filteredLocations: [Location] {

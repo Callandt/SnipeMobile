@@ -340,3 +340,31 @@ struct CheckoutAssetRow: View {
         }
     }
 }
+
+private struct DefaultCheckoutUserModifier: ViewModifier {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var selectedUser: User?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear(perform: applyDefault)
+            .onChange(of: apiClient.defaultCheckoutUser?.id) { _, _ in
+                applyDefault()
+            }
+            .task {
+                await apiClient.ensureCheckoutUserReady()
+                applyDefault()
+            }
+    }
+
+    private func applyDefault() {
+        guard selectedUser == nil else { return }
+        selectedUser = apiClient.defaultCheckoutUser
+    }
+}
+
+extension View {
+    func defaultCheckoutUserSelection(apiClient: SnipeITAPIClient, selectedUser: Binding<User?>) -> some View {
+        modifier(DefaultCheckoutUserModifier(apiClient: apiClient, selectedUser: selectedUser))
+    }
+}
