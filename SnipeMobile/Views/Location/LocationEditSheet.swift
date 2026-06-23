@@ -59,19 +59,19 @@ struct LocationEditSheet: View {
 
     private var generalSection: some View {
         Section(L10n.string("general")) {
-            TextField(L10n.string("name"), text: $name)
+            TextField(L10n.fieldLabel("name", required: true), text: $name)
             let sortedLocations = apiClient.locations
                 .filter { $0.id != location.id }
                 .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
             if !sortedLocations.isEmpty {
                 AdaptivePickerRow(
-                    title: L10n.string("parent_location_optional"),
+                    title: L10n.string("parent_location"),
                     items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                     selection: $selectedParentId,
                     emptyOption: (0, L10n.string("choose_location"))
                 )
             }
-            TextField(L10n.string("currency_optional"), text: $currency)
+            TextField(L10n.string("currency"), text: $currency)
                 .autocapitalization(.allCharacters)
                 .disableAutocorrection(true)
         }
@@ -79,12 +79,12 @@ struct LocationEditSheet: View {
 
     private var addressSection: some View {
         Section(L10n.string("address")) {
-            TextField(L10n.string("address_optional"), text: $address)
-            TextField(L10n.string("address2_optional"), text: $address2)
-            TextField(L10n.string("city_optional"), text: $city)
-            TextField(L10n.string("state_optional"), text: $state)
-            TextField(L10n.string("country_optional"), text: $country)
-            TextField(L10n.string("zip_optional"), text: $zip)
+            TextField(L10n.string("address"), text: $address)
+            TextField(L10n.string("address2"), text: $address2)
+            TextField(L10n.string("city"), text: $city)
+            TextField(L10n.string("state"), text: $state)
+            TextField(L10n.string("country"), text: $country)
+            TextField(L10n.string("zip"), text: $zip)
         }
     }
 
@@ -92,13 +92,13 @@ struct LocationEditSheet: View {
 
     private func prefill() {
         name = location.decodedName
-        address = location.address ?? ""
-        address2 = location.address2 ?? ""
-        city = location.city ?? ""
-        state = location.state ?? ""
-        country = location.country ?? ""
-        zip = location.zip ?? ""
-        currency = location.currency ?? ""
+        address = HTMLDecoder.decode(location.address ?? "")
+        address2 = HTMLDecoder.decode(location.address2 ?? "")
+        city = HTMLDecoder.decode(location.city ?? "")
+        state = HTMLDecoder.decode(location.state ?? "")
+        country = HTMLDecoder.decode(location.country ?? "")
+        zip = HTMLDecoder.decode(location.zip ?? "")
+        currency = HTMLDecoder.decode(location.currency ?? "")
         selectedParentId = location.parent?.id ?? 0
 
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }

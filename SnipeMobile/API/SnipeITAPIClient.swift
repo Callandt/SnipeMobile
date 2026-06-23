@@ -3963,6 +3963,31 @@ extension SnipeITAPIClient {
         return (all, nil)
     }
 
+    /// GET a single management row (e.g. full status label including color).
+    func managementFetchRow(path: String, id: Int) async -> [String: Any]? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty,
+              let url = URL(string: "\(baseURL)\(path)/\(id)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            if let payload = json["payload"], !(payload is NSNull),
+               let row = payload as? [String: Any] {
+                return row
+            }
+            if json["id"] as? Int != nil { return json }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
     func managementCreate(path: String, body: [String: Any]) async -> ManagementWriteResult {
         await managementWrite(urlString: "\(baseURL)\(path)", method: "POST", body: body)
     }

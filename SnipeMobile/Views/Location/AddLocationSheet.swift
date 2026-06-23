@@ -70,19 +70,19 @@ struct AddLocationSheet: View {
 
     private var generalSection: some View {
         Section(L10n.string("general")) {
-            TextField(L10n.string("name"), text: $name)
+            TextField(L10n.fieldLabel("name", required: true), text: $name)
             if !apiClient.locations.isEmpty {
                 let sortedLocations = apiClient.locations.sorted {
                     $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
                 }
                 AdaptivePickerRow(
-                    title: L10n.string("parent_location_optional"),
+                    title: L10n.string("parent_location"),
                     items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                     selection: $selectedParentId,
                     emptyOption: (0, L10n.string("choose_location"))
                 )
             }
-            TextField(L10n.string("currency_optional"), text: $currency)
+            TextField(L10n.string("currency"), text: $currency)
                 .autocapitalization(.allCharacters)
                 .disableAutocorrection(true)
         }
@@ -90,12 +90,12 @@ struct AddLocationSheet: View {
 
     private var addressSection: some View {
         Section(L10n.string("address")) {
-            TextField(L10n.string("address_optional"), text: $address)
-            TextField(L10n.string("address2_optional"), text: $address2)
-            TextField(L10n.string("city_optional"), text: $city)
-            TextField(L10n.string("state_optional"), text: $state)
-            TextField(L10n.string("country_optional"), text: $country)
-            TextField(L10n.string("zip_optional"), text: $zip)
+            TextField(L10n.string("address"), text: $address)
+            TextField(L10n.string("address2"), text: $address2)
+            TextField(L10n.string("city"), text: $city)
+            TextField(L10n.string("state"), text: $state)
+            TextField(L10n.string("country"), text: $country)
+            TextField(L10n.string("zip"), text: $zip)
         }
     }
 

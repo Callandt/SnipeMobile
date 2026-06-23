@@ -169,7 +169,7 @@ struct FieldsetDetailView: View {
     // MARK: - Helpers
 
     private func fieldName(_ row: [String: Any]) -> String {
-        HTMLDecoder.decode(ManagementValue.scalarString(row["name"]))
+        ManagementValue.displayString(row["name"])
     }
 
     private func fieldElement(_ row: [String: Any]) -> String? {
@@ -346,7 +346,7 @@ private struct FieldAssociatePicker: View {
     }
 
     private func name(_ row: [String: Any]) -> String {
-        HTMLDecoder.decode(ManagementValue.scalarString(row["name"]))
+        ManagementValue.displayString(row["name"])
     }
 
     private func element(_ row: [String: Any]) -> String? {

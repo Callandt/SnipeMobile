@@ -230,7 +230,7 @@ struct AssetEditSheet: View {
                 TextField(L10n.string("name"), text: $editName)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.string("serial") + (modelRequiresSerial ? " *" : ""))
+                Text(L10n.fieldLabel("serial", required: modelRequiresSerial))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 TextField(L10n.string("serial"), text: $editSerial)
@@ -263,7 +263,7 @@ struct AssetEditSheet: View {
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !supplierPairs.isEmpty {
                     AdaptivePickerRow(
-                        title: L10n.string("supplier_optional"),
+                        title: L10n.string("supplier"),
                         items: supplierPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedSupplierId,
                         emptyOption: (0, "—")
@@ -278,7 +278,7 @@ struct AssetEditSheet: View {
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !companyPairs.isEmpty {
                     AdaptivePickerRow(
-                        title: L10n.string("company_optional"),
+                        title: L10n.string("company"),
                         items: companyPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedCompanyId,
                         emptyOption: (0, "—")

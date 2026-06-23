@@ -179,22 +179,22 @@ struct AddAssetSheet: View {
 
     private var generalSection: some View {
         Section(header: Text(L10n.string("general"))) {
-            TextField(L10n.string("name_optional"), text: $name)
+            TextField(L10n.string("name"), text: $name)
             if autoFillAssetTag {
                 HStack {
-                    Text(L10n.string("asset_tag"))
+                    Text(L10n.fieldLabel("asset_tag", required: true))
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text(assetTag.isEmpty ? nextAvailableAssetTag : assetTag)
                         .foregroundStyle(.primary)
                 }
             } else {
-                TextField(L10n.string("asset_tag"), text: $assetTag)
+                TextField(L10n.fieldLabel("asset_tag", required: true), text: $assetTag)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
             }
             TextField(
-                L10n.string(selectedModelRequiresSerial ? "serial_required" : "serial_optional"),
+                L10n.fieldLabel("serial", required: selectedModelRequiresSerial),
                 text: $serial
             )
             if enableDellQrScan {
@@ -210,7 +210,7 @@ struct AddAssetSheet: View {
                 HTMLDecoder.decode($0.name).localizedCaseInsensitiveCompare(HTMLDecoder.decode($1.name)) == .orderedAscending
             }
             AdaptivePickerRow(
-                title: L10n.string("model"),
+                title: L10n.fieldLabel("model", required: true),
                 items: sortedModels.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedModelId,
                 emptyOption: (0, L10n.string("choose_model"))
@@ -221,7 +221,7 @@ struct AddAssetSheet: View {
                 displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
             }
             AdaptivePickerRow(
-                title: L10n.string("status"),
+                title: L10n.fieldLabel("status", required: true),
                 items: sortedStatuses.map { (value: $0.id, label: displayName(for: $0)) },
                 selection: $selectedStatusId,
                 emptyOption: (0, L10n.string("choose_status"))
@@ -231,7 +231,7 @@ struct AddAssetSheet: View {
                     $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
                 }
                 AdaptivePickerRow(
-                    title: L10n.string("location_optional"),
+                    title: L10n.string("location"),
                     items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                     selection: Binding(
                         get: { selectedLocationId ?? 0 },
@@ -245,7 +245,7 @@ struct AddAssetSheet: View {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
                 AdaptivePickerRow(
-                    title: L10n.string("company_optional"),
+                    title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: $0.name) },
                     selection: Binding(
                         get: { selectedCompanyId ?? 0 },
@@ -260,8 +260,8 @@ struct AddAssetSheet: View {
 
     private var purchaseSection: some View {
         Section(header: Text(L10n.string("purchase_warranty"))) {
-            TextField(L10n.string("order_number_optional"), text: $orderNumber)
-            TextField(L10n.string("purchase_price_optional"), text: $purchaseCost)
+            TextField(L10n.string("order_number"), text: $orderNumber)
+            TextField(L10n.string("purchase_price"), text: $purchaseCost)
                 .keyboardType(.decimalPad)
             Toggle(L10n.string("purchase_date"), isOn: $hasPurchaseDate)
             if hasPurchaseDate {
@@ -271,14 +271,14 @@ struct AddAssetSheet: View {
             if hasEolDate {
                 DatePicker("", selection: $eolDate, displayedComponents: .date)
             }
-            TextField(L10n.string("warranty_months_optional"), text: $warrantyMonths)
+            TextField(L10n.string("warranty_months"), text: $warrantyMonths)
                 .keyboardType(.numberPad)
             if !suppliersFromAssets.isEmpty {
                 let sortedSuppliers = suppliersFromAssets.sorted {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
                 AdaptivePickerRow(
-                    title: L10n.string("supplier_optional"),
+                    title: L10n.string("supplier"),
                     items: sortedSuppliers.map { (value: $0.id, label: $0.name) },
                     selection: Binding(
                         get: { selectedSupplierId ?? 0 },

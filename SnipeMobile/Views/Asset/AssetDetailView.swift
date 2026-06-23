@@ -431,18 +431,18 @@ struct AssetDetailView: View {
     }
 
     private func prepareAndShowEditSheet() {
-        editName = currentAsset.name
-        editAssetTag = currentAsset.assetTag
-        editSerial = currentAsset.serial ?? ""
-        editNotes = currentAsset.notes ?? ""
-        editOrderNumber = currentAsset.orderNumber ?? ""
+        editName = currentAsset.decodedName
+        editAssetTag = currentAsset.decodedAssetTag
+        editSerial = currentAsset.decodedSerial
+        editNotes = currentAsset.decodedNotes
+        editOrderNumber = HTMLDecoder.decode(currentAsset.orderNumber ?? "")
         editPurchaseCost = currentAsset.purchaseCost ?? ""
         let hasPurchaseCost = (currentAsset.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
         editBookValue = hasPurchaseCost ? (currentAsset.bookValue ?? "") : ""
         editCustomFields = [:]
         if let customFields = currentAsset.customFields {
             for (key, field) in customFields {
-                editCustomFields[key] = field.value ?? ""
+                editCustomFields[key] = HTMLDecoder.decode(field.value ?? "")
             }
         }
         let modelIds = Set(apiClient.assets.compactMap { $0.model?.id })

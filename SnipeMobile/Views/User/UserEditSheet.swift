@@ -70,19 +70,19 @@ struct UserEditSheet: View {
 
     private var generalSection: some View {
         Section(L10n.string("general")) {
-            TextField(L10n.string("first_name"), text: $firstName)
-            TextField(L10n.string("last_name_optional"), text: $lastName)
-            TextField(L10n.string("username"), text: $username)
+            TextField(L10n.fieldLabel("first_name", required: true), text: $firstName)
+            TextField(L10n.string("last_name"), text: $lastName)
+            TextField(L10n.fieldLabel("username", required: true), text: $username)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
-            TextField(L10n.string("email_optional"), text: $email)
+            TextField(L10n.string("email"), text: $email)
                 .keyboardType(.emailAddress)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
-            TextField(L10n.string("jobtitle_optional"), text: $jobtitle)
-            TextField(L10n.string("phone_optional"), text: $phone)
+            TextField(L10n.string("jobtitle"), text: $jobtitle)
+            TextField(L10n.string("phone"), text: $phone)
                 .keyboardType(.phonePad)
-            TextField(L10n.string("employee_number_optional"), text: $employeeNumber)
+            TextField(L10n.string("employee_number"), text: $employeeNumber)
         }
     }
 
@@ -93,7 +93,7 @@ struct UserEditSheet: View {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
                 AdaptivePickerRow(
-                    title: L10n.string("company_optional"),
+                    title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                     selection: $selectedCompanyId,
                     emptyOption: (0, L10n.string("choose_company"))
@@ -104,7 +104,7 @@ struct UserEditSheet: View {
                     $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
                 }
                 AdaptivePickerRow(
-                    title: L10n.string("location_optional"),
+                    title: L10n.string("location"),
                     items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                     selection: $selectedLocationId,
                     emptyOption: (0, L10n.string("choose_location"))
@@ -123,7 +123,7 @@ struct UserEditSheet: View {
     private var securitySection: some View {
         Section(L10n.string("security")) {
             Toggle(L10n.string("activated"), isOn: $activated)
-            SecureField(L10n.string("new_password_optional"), text: $password)
+            SecureField(L10n.string("new_password"), text: $password)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
                 .textContentType(.newPassword)

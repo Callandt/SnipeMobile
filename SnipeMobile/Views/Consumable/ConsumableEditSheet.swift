@@ -73,15 +73,15 @@ struct ConsumableEditSheet: View {
         selectedCategoryId = consumable.category?.id ?? 0
         quantity = consumable.qty ?? 1
         minAmt = consumable.minAmt ?? 0
-        itemNo = consumable.itemNo ?? ""
-        modelNumber = consumable.modelNumber ?? ""
+        itemNo = consumable.decodedItemNo
+        modelNumber = consumable.decodedModelNumber
         selectedLocationId = consumable.location?.id
         selectedCompanyId = consumable.company?.id
         selectedManufacturerId = consumable.manufacturer?.id
         selectedSupplierId = consumable.supplier?.id
-        orderNumber = consumable.orderNumber ?? ""
+        orderNumber = HTMLDecoder.decode(consumable.orderNumber ?? "")
         purchaseCost = consumable.purchaseCost ?? ""
-        notes = consumable.notes ?? ""
+        notes = HTMLDecoder.decode(consumable.notes ?? "")
         if let pd = consumable.purchaseDate, !pd.isEmpty {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
@@ -108,19 +108,19 @@ struct ConsumableEditSheet: View {
 
     private var generalSection: some View {
         Section(header: Text(L10n.string("general"))) {
-            TextField(L10n.string("name"), text: $name)
+            TextField(L10n.fieldLabel("name", required: true), text: $name)
             AdaptivePickerRow(
-                title: L10n.string("category"),
+                title: L10n.fieldLabel("category", required: true),
                 items: apiClient.categories(for: "consumable").map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedCategoryId,
                 emptyOption: (0, L10n.string("choose_category"))
             )
-            TextField(L10n.string("item_no_optional"), text: $itemNo)
-            TextField(L10n.string("model_number_optional"), text: $modelNumber)
+            TextField(L10n.string("item_no"), text: $itemNo)
+            TextField(L10n.string("model_number"), text: $modelNumber)
             if !apiClient.locations.isEmpty {
                 let sortedLocations = apiClient.locations.sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
                 AdaptivePickerRow(
-                    title: L10n.string("location_optional"),
+                    title: L10n.string("location"),
                     items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                     selection: Binding(
                         get: { selectedLocationId ?? 0 },
@@ -132,7 +132,7 @@ struct ConsumableEditSheet: View {
             if !apiClient.companies.isEmpty {
                 let sortedCompanies = apiClient.companies.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 AdaptivePickerRow(
-                    title: L10n.string("company_optional"),
+                    title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: $0.name) },
                     selection: Binding(
                         get: { selectedCompanyId ?? 0 },
@@ -147,7 +147,7 @@ struct ConsumableEditSheet: View {
     private var stockSection: some View {
         Section(header: Text(L10n.string("stock_usage"))) {
             HStack {
-                Text(L10n.string("quantity"))
+                Text(L10n.fieldLabel("quantity", required: true))
                 Spacer()
                 TextField("", value: $quantity, format: .number)
                     .keyboardType(.numberPad)
@@ -167,8 +167,8 @@ struct ConsumableEditSheet: View {
 
     private var purchaseSection: some View {
         Section(header: Text(L10n.string("purchase_only"))) {
-            TextField(L10n.string("order_number_optional"), text: $orderNumber)
-            TextField(L10n.string("purchase_price_optional"), text: $purchaseCost)
+            TextField(L10n.string("order_number"), text: $orderNumber)
+            TextField(L10n.string("purchase_price"), text: $purchaseCost)
                 .keyboardType(.decimalPad)
             Toggle(L10n.string("purchase_date"), isOn: $hasPurchaseDate)
             if hasPurchaseDate {
@@ -176,7 +176,7 @@ struct ConsumableEditSheet: View {
             }
             if !apiClient.manufacturers.isEmpty {
                 AdaptivePickerRow(
-                    title: L10n.string("manufacturer_optional"),
+                    title: L10n.string("manufacturer"),
                     items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                     selection: Binding(
                         get: { selectedManufacturerId ?? 0 },
@@ -187,7 +187,7 @@ struct ConsumableEditSheet: View {
             }
             if !apiClient.suppliers.isEmpty {
                 AdaptivePickerRow(
-                    title: L10n.string("supplier_optional"),
+                    title: L10n.string("supplier"),
                     items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                     selection: Binding(
                         get: { selectedSupplierId ?? 0 },

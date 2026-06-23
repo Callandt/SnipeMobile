@@ -68,7 +68,7 @@ struct CompletionActionSheet: View {
                         }
                     }
 
-                    TextField(L10n.string("note_optional"), text: $note, axis: .vertical)
+                    TextField(L10n.string("note"), text: $note, axis: .vertical)
                         .lineLimit(2...4)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)

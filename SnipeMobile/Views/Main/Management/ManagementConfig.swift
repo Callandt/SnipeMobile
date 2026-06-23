@@ -16,6 +16,11 @@ enum ManagementValue {
         }
     }
 
+    /// User-facing text from raw API values (decodes `&quot;`, `&#039;`, etc.).
+    static func displayString(_ any: Any?) -> String {
+        HTMLDecoder.decode(scalarString(any))
+    }
+
     // id from a nested object or a flat value
     static func nestedId(_ row: [String: Any], _ key: String) -> String {
         if let dict = row[key] as? [String: Any] {
@@ -168,8 +173,15 @@ struct ManagementFormField: Identifiable {
     var id: String { bodyKey }
 
     func currentValue(from row: [String: Any]) -> String {
-        if let reader = rowValueReader { return reader(row) }
-        return ManagementValue.scalarString(row[bodyKey])
+        let raw: String
+        if let reader = rowValueReader { raw = reader(row) }
+        else { raw = ManagementValue.scalarString(row[bodyKey]) }
+        switch kind {
+        case .text, .multiline, .url, .email, .phone:
+            return HTMLDecoder.decode(raw)
+        default:
+            return raw
+        }
     }
 
     var isToggle: Bool {
@@ -192,7 +204,10 @@ struct ManagementEntityConfig {
     // singular noun for "New X" / "Edit X"
     let singularKey: String
     let fields: [ManagementFormField]
-    var titleReader: ([String: Any]) -> String = { ManagementValue.scalarString($0["name"]).isEmpty ? "—" : HTMLDecoder.decode(ManagementValue.scalarString($0["name"])) }
+    var titleReader: ([String: Any]) -> String = {
+        let name = ManagementValue.displayString($0["name"])
+        return name.isEmpty ? "—" : name
+    }
     var subtitleReader: (([String: Any]) -> String?)? = nil
 
     var optionSources: [ManagementOptionSource] {
@@ -287,7 +302,7 @@ extension ManagementEntity {
                     ManagementFormField(bodyKey: "type", titleKey: "mgmt_status_type", kind: .picker(.statusType), required: true,
                                         defaultValue: "deployable",
                                         rowValueReader: { ManagementValue.scalarString($0["type"]).lowercased() }),
-                    ManagementFormField(bodyKey: "color", titleKey: "mgmt_color", kind: .colorHex),
+                    ManagementFormField(bodyKey: "color", titleKey: "mgmt_color", kind: .colorHex, defaultValue: "AA3399"),
                     ManagementFormField(bodyKey: "show_in_nav", titleKey: "mgmt_show_in_nav", kind: .toggle),
                     ManagementFormField(bodyKey: "default_label", titleKey: "mgmt_default_label", kind: .toggle),
                     ManagementFormField(bodyKey: "notes", titleKey: "notes", kind: .multiline)
@@ -322,7 +337,7 @@ extension ManagementEntity {
                     ManagementFormField(bodyKey: "notes", titleKey: "notes", kind: .multiline)
                 ],
                 subtitleReader: { row in
-                    let number = ManagementValue.scalarString(row["model_number"])
+                    let number = ManagementValue.displayString(row["model_number"])
                     if !number.isEmpty { return number }
                     return ManagementValue.nestedName(row, "category")
                 }
@@ -386,7 +401,7 @@ extension ManagementEntity {
                     ManagementFormField(bodyKey: "notes", titleKey: "notes", kind: .multiline)
                 ],
                 subtitleReader: { row in
-                    let city = ManagementValue.scalarString(row["city"])
+                    let city = ManagementValue.displayString(row["city"])
                     return city.isEmpty ? nil : city
                 }
             )

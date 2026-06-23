@@ -74,13 +74,13 @@ struct LicenseEditSheet: View {
 
     private var generalSection: some View {
         Section(L10n.string("general")) {
-            TextField(L10n.string("name"), text: $name)
+            TextField(L10n.fieldLabel("name", required: true), text: $name)
             TextField(L10n.string("product_key"), text: $serial)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
             if !apiClient.categories.isEmpty {
                 AdaptivePickerRow(
-                    title: L10n.string("category"),
+                    title: L10n.fieldLabel("category", required: true),
                     items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                     selection: $selectedCategoryId,
                     emptyOption: (0, L10n.string("choose_category"))
@@ -88,7 +88,7 @@ struct LicenseEditSheet: View {
             }
             if !apiClient.manufacturers.isEmpty {
                 AdaptivePickerRow(
-                    title: L10n.string("manufacturer_optional"),
+                    title: L10n.string("manufacturer"),
                     items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                     selection: $selectedManufacturerId,
                     emptyOption: (0, L10n.string("choose_manufacturer"))
@@ -99,7 +99,7 @@ struct LicenseEditSheet: View {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
                 AdaptivePickerRow(
-                    title: L10n.string("company_optional"),
+                    title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: $0.name) },
                     selection: $selectedCompanyId,
                     emptyOption: (0, L10n.string("choose_company"))
@@ -111,7 +111,7 @@ struct LicenseEditSheet: View {
     private var seatsSection: some View {
         Section(L10n.string("seats")) {
             HStack {
-                Text(L10n.string("seats"))
+                Text(L10n.fieldLabel("seats", required: true))
                 Spacer()
                 TextField("", value: $seats, format: .number)
                     .keyboardType(.numberPad)
@@ -143,9 +143,9 @@ struct LicenseEditSheet: View {
 
     private var purchaseSection: some View {
         Section(L10n.string("purchase_only")) {
-            TextField(L10n.string("order_number_optional"), text: $orderNumber)
-            TextField(L10n.string("purchase_order_optional"), text: $purchaseOrder)
-            TextField(L10n.string("purchase_price_optional"), text: $purchaseCost)
+            TextField(L10n.string("order_number"), text: $orderNumber)
+            TextField(L10n.string("purchase_order"), text: $purchaseOrder)
+            TextField(L10n.string("purchase_price"), text: $purchaseCost)
                 .keyboardType(.decimalPad)
             Toggle(L10n.string("purchase_date"), isOn: $hasPurchaseDate)
             if hasPurchaseDate {
@@ -161,7 +161,7 @@ struct LicenseEditSheet: View {
             }
             if !apiClient.suppliers.isEmpty {
                 AdaptivePickerRow(
-                    title: L10n.string("supplier_optional"),
+                    title: L10n.string("supplier"),
                     items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                     selection: $selectedSupplierId,
                     emptyOption: (0, L10n.string("choose_supplier"))
@@ -186,8 +186,8 @@ struct LicenseEditSheet: View {
         minAmt = license.minAmt ?? 0
         licensedToName = license.decodedLicenseName
         licensedToEmail = license.decodedLicenseEmail
-        orderNumber = license.orderNumber ?? ""
-        purchaseOrder = license.purchaseOrder ?? ""
+        orderNumber = HTMLDecoder.decode(license.orderNumber ?? "")
+        purchaseOrder = HTMLDecoder.decode(license.purchaseOrder ?? "")
         purchaseCost = license.purchaseCost ?? ""
         notes = license.decodedNotes
         reassignable = license.reassignable ?? true

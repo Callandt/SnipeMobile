@@ -53,7 +53,7 @@ struct ManagementFormView: View {
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .onAppear(perform: setup)
+            .task(id: existing?.id) { await loadFormValues() }
             .alert(L10n.string("result"), isPresented: $showResult) {
                 Button(L10n.string("ok")) {
                     if didSucceed { dismiss() }
@@ -85,7 +85,7 @@ struct ManagementFormView: View {
 
     @ViewBuilder
     private func fieldRow(_ field: ManagementFormField) -> some View {
-        let label = L10n.string(field.titleKey) + (field.required ? " *" : "")
+        let label = L10n.fieldLabel(field.titleKey, required: field.required)
         switch field.kind {
         case .text:
             TextField(label, text: stringBinding(field.bodyKey))
@@ -116,7 +116,11 @@ struct ManagementFormView: View {
         case .toggle:
             Toggle(label, isOn: boolBinding(field.bodyKey))
         case .colorHex:
-            HexColorRow(title: label, hex: stringBinding(field.bodyKey))
+            HexColorRow(
+                title: label,
+                hex: stringBinding(field.bodyKey),
+                emptyHint: isEdit ? L10n.string("mgmt_color_empty_hint") : nil
+            )
         case .picker(let source):
             AdaptivePickerRow(
                 title: label,
@@ -166,28 +170,33 @@ struct ManagementFormView: View {
 
     // MARK: - Lifecycle
 
-    private func setup() {
-        if values.isEmpty {
-            var initial: [String: String] = [:]
-            for field in config.fields {
-                if let row = existing?.raw {
-                    initial[field.bodyKey] = field.currentValue(from: row)
-                } else if let defaultValue = field.defaultValue {
-                    initial[field.bodyKey] = defaultValue
-                } else if field.isToggle {
-                    initial[field.bodyKey] = "0"
-                }
+    private func loadFormValues() async {
+        var row = existing?.raw
+        if let existing {
+            if let fresh = await apiClient.managementFetchRow(path: config.path, id: existing.id) {
+                row = fresh
             }
-            // Custom regex: show the CUSTOM REGEX picker + text field.
-            if config.optionSources.contains(where: { $0.isFieldFormat }) {
-                let format = initial["format"] ?? ""
-                if format.lowercased().hasPrefix("regex:") {
-                    customRegex = format
-                    initial["format"] = customRegexSentinel
-                }
-            }
-            values = initial
         }
+
+        var initial: [String: String] = [:]
+        for field in config.fields {
+            if let row {
+                initial[field.bodyKey] = field.currentValue(from: row)
+            } else if let defaultValue = field.defaultValue {
+                initial[field.bodyKey] = defaultValue
+            } else if field.isToggle {
+                initial[field.bodyKey] = "0"
+            }
+        }
+        if config.optionSources.contains(where: { $0.isFieldFormat }) {
+            let format = initial["format"] ?? ""
+            if format.lowercased().hasPrefix("regex:") {
+                customRegex = format
+                initial["format"] = customRegexSentinel
+            }
+        }
+        values = initial
+
         for source in config.optionSources {
             source.ensureLoaded(client: apiClient)
         }
@@ -279,6 +288,7 @@ struct ManagementFormView: View {
 private struct HexColorRow: View {
     let title: String
     @Binding var hex: String
+    var emptyHint: String? = nil
 
     @State private var color: Color = .gray
     @State private var text: String = ""
@@ -303,11 +313,14 @@ private struct HexColorRow: View {
                         )
                 }
             }
+            if let emptyHint, HexColor.normalize(hex).isEmpty {
+                Text(emptyHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .onAppear {
-            let normalized = HexColor.normalize(hex)
-            text = normalized
-            if let parsed = Color(hexString: normalized) { color = parsed }
+        .onChange(of: hex, initial: true) { _, newHex in
+            syncFromHex(newHex)
         }
         .onChange(of: color) { _, newColor in
             let newHex = newColor.toHexString()
@@ -318,11 +331,22 @@ private struct HexColorRow: View {
         }
         .onChange(of: text) { _, newText in
             let normalized = HexColor.normalize(newText)
-            if normalized != newText { text = normalized; return }
+            if normalized != newText {
+                text = normalized
+                return
+            }
             hex = normalized
             if normalized.count == 6, let parsed = Color(hexString: normalized) {
                 color = parsed
             }
+        }
+    }
+
+    private func syncFromHex(_ raw: String) {
+        let normalized = HexColor.normalize(raw)
+        if text != normalized { text = normalized }
+        if normalized.count == 6, let parsed = Color(hexString: normalized) {
+            color = parsed
         }
     }
 }
