@@ -116,11 +116,7 @@ struct ManagementFormView: View {
         case .toggle:
             Toggle(label, isOn: boolBinding(field.bodyKey))
         case .colorHex:
-            HexColorRow(
-                title: label,
-                hex: stringBinding(field.bodyKey),
-                emptyHint: isEdit ? L10n.string("mgmt_color_empty_hint") : nil
-            )
+            HexColorRow(title: label, hex: stringBinding(field.bodyKey))
         case .picker(let source):
             AdaptivePickerRow(
                 title: label,
@@ -288,7 +284,6 @@ struct ManagementFormView: View {
 private struct HexColorRow: View {
     let title: String
     @Binding var hex: String
-    var emptyHint: String? = nil
 
     @State private var color: Color = .gray
     @State private var text: String = ""
@@ -312,11 +307,6 @@ private struct HexColorRow: View {
                                 .strokeBorder(.quaternary, lineWidth: 1)
                         )
                 }
-            }
-            if let emptyHint, HexColor.normalize(hex).isEmpty {
-                Text(emptyHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .onChange(of: hex, initial: true) { _, newHex in
