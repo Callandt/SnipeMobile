@@ -2294,6 +2294,38 @@ class SnipeITAPIClient: ObservableObject {
         (200...299).contains(statusCode)
     }
 
+    private static func decodeBase64Pdf(_ base64: String) -> Data? {
+        var cleaned = base64.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.lowercased().hasPrefix("data:"), let comma = cleaned.firstIndex(of: ",") {
+            cleaned = String(cleaned[cleaned.index(after: comma)...])
+        }
+        guard let data = Data(base64Encoded: cleaned, options: .ignoreUnknownCharacters), !data.isEmpty else {
+            return nil
+        }
+        return data
+    }
+
+    // JSON payload.pdf or raw PDF bytes.
+    private static func extractLabelPdfData(from data: Data, json: [String: Any]?, http: HTTPURLResponse) -> Data? {
+        if data.starts(with: Data("%PDF".utf8)) { return data }
+
+        let contentType = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+        if contentType.contains("application/pdf") { return data }
+
+        if let payload = json?["payload"] as? [String: Any],
+           let pdfBase64 = payload["pdf"] as? String,
+           let pdfData = decodeBase64Pdf(pdfBase64) {
+            return pdfData
+        }
+
+        if let pdfBase64 = json?["pdf"] as? String,
+           let pdfData = decodeBase64Pdf(pdfBase64) {
+            return pdfData
+        }
+
+        return nil
+    }
+
     static func evaluateWriteResponse(
         json: [String: Any]?,
         httpStatus: Int,
@@ -3263,6 +3295,75 @@ class SnipeITAPIClient: ObservableObject {
                 self.lastApiMessage = "Error updating asset: \(error.localizedDescription)"
             }
             return false
+        }
+    }
+
+    // POST /hardware/labels.
+    @discardableResult
+    func generateAssetLabels(assetTags: [String]) async -> Data? {
+        let tags = assetTags
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            await MainActor.run { self.lastApiMessage = L10n.string("labels_generate_failed") }
+            return nil
+        }
+        guard !tags.isEmpty else {
+            await MainActor.run { self.lastApiMessage = L10n.string("labels_no_asset_tags") }
+            return nil
+        }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/labels") else {
+            await MainActor.run { self.lastApiMessage = L10n.string("labels_generate_failed") }
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["asset_tags": tags])
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                await MainActor.run { self.lastApiMessage = L10n.string("labels_generate_failed") }
+                return nil
+            }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+
+            #if DEBUG
+            let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? "?"
+            if data.starts(with: Data("%PDF".utf8)) {
+                print("[SnipeMobile] POST /hardware/labels (\(tags.count) tags) status: \(http.statusCode) response: <raw PDF, \(data.count) bytes>")
+            } else if let preview = String(data: data.prefix(240), encoding: .utf8) {
+                print("[SnipeMobile] POST /hardware/labels (\(tags.count) tags) status: \(http.statusCode) content-type: \(contentType) response: \(preview)…")
+            } else {
+                print("[SnipeMobile] POST /hardware/labels (\(tags.count) tags) status: \(http.statusCode) content-type: \(contentType) response: <binary \(data.count) bytes>")
+            }
+            #endif
+
+            if !Self.isSnipeApiHttpSuccess(http.statusCode) || Self.isSnipeApiErrorResponse(json) {
+                let message: String
+                if let payload = json?["payload"] as? [String: Any],
+                   let detail = payload["error_message"] as? String, !detail.isEmpty {
+                    message = detail
+                } else {
+                    message = Self.extractApiErrorMessage(from: json ?? [:]) ?? L10n.string("labels_generate_failed")
+                }
+                await MainActor.run { self.lastApiMessage = message }
+                return nil
+            }
+
+            if let pdfData = Self.extractLabelPdfData(from: data, json: json, http: http) {
+                return pdfData
+            }
+
+            await MainActor.run { self.lastApiMessage = L10n.string("labels_generate_failed") }
+            return nil
+        } catch {
+            await MainActor.run { self.lastApiMessage = error.localizedDescription }
+            return nil
         }
     }
 

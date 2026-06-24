@@ -23,6 +23,17 @@ enum MaintenanceStatusFilter: String, CaseIterable, Identifiable {
         case .completed: return record.isCompleted
         }
     }
+
+    static func available(in records: [AssetMaintenance]) -> [MaintenanceStatusFilter] {
+        var filters: [MaintenanceStatusFilter] = [.all]
+        if records.contains(where: { !$0.isCompleted }) { filters.append(.inProgress) }
+        if records.contains(where: { $0.isCompleted }) { filters.append(.completed) }
+        return filters
+    }
+
+    static func hasChoices(in records: [AssetMaintenance]) -> Bool {
+        available(in: records).count > 1
+    }
 }
 
 // overview row, also used in bulk-select mode

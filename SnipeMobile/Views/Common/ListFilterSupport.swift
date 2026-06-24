@@ -46,24 +46,26 @@ struct ListFilterMenu: View {
     }
 
     var body: some View {
-        Menu {
-            ForEach(options, id: \.title) { option in
-                dimensionPicker(title: option.title, values: option.values)
-            }
-            if filter.isActive {
-                Divider()
-                Button(role: .destructive) {
-                    filter.clear()
-                } label: {
-                    Label(L10n.string("filter_clear"), systemImage: "xmark.circle")
+        if hasOptions {
+            Menu {
+                ForEach(options, id: \.title) { option in
+                    dimensionPicker(title: option.title, values: option.values)
                 }
+                if filter.isActive {
+                    Divider()
+                    Button(role: .destructive) {
+                        filter.clear()
+                    } label: {
+                        Label(L10n.string("filter_clear"), systemImage: "xmark.circle")
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(filter.isActive ? L10n.string("filter_active_count", filter.activeCount) : L10n.string("filter"))
+                    Image(systemName: filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }
+                .font(.subheadline)
             }
-        } label: {
-            HStack(spacing: 4) {
-                Text(filter.isActive ? L10n.string("filter_active_count", filter.activeCount) : L10n.string("filter"))
-                Image(systemName: filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-            }
-            .font(.subheadline)
         }
     }
 

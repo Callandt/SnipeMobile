@@ -510,6 +510,7 @@ struct MainSplitView: View {
     @State private var selectedAuditAsset: Asset? = nil
     @State private var showAddMaintenance = false
     @State private var showBulkAudit = false
+    @State private var showBulkLabels = false
     @State private var isSelectingMaintenances = false
     @State private var selectedMaintenanceIds: Set<Int> = []
     @State private var maintenanceFilter: MaintenanceStatusFilter = .all
@@ -698,18 +699,22 @@ struct MainSplitView: View {
     }
 
     private var maintenanceFilterMenu: some View {
-        Menu {
-            Picker(L10n.string("filter"), selection: $maintenanceFilter) {
-                ForEach(MaintenanceStatusFilter.allCases) { filter in
-                    Text(filter.localizedTitle).tag(filter)
+        Group {
+            if MaintenanceStatusFilter.hasChoices(in: apiClient.maintenances) {
+                Menu {
+                    Picker(L10n.string("filter"), selection: $maintenanceFilter) {
+                        ForEach(MaintenanceStatusFilter.available(in: apiClient.maintenances)) { filter in
+                            Text(filter.localizedTitle).tag(filter)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(maintenanceFilter.localizedTitle)
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                    .font(.subheadline)
                 }
             }
-        } label: {
-            HStack(spacing: 4) {
-                Text(maintenanceFilter.localizedTitle)
-                Image(systemName: "line.3.horizontal.decrease.circle")
-            }
-            .font(.subheadline)
         }
     }
 
@@ -865,6 +870,10 @@ struct MainSplitView: View {
                 }
             })
             .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showBulkLabels) {
+            BulkLabelView(apiClient: apiClient)
+                .presentationDetents([.large])
         }
         .sheet(item: $selectedMaintenance, onDismiss: {
             Task { await loadAllMaintenances(force: true) }
@@ -1176,15 +1185,25 @@ struct MainSplitView: View {
                                         Label(L10n.string("add_audit"), systemImage: "checklist")
                                     }
                                 }
+                                Button(action: { showBulkLabels = true }) {
+                                    Label(L10n.string("generate_labels"), systemImage: "tag")
+                                }
                             } label: {
                                 Image(systemName: "plus.circle")
                             }
                             .accessibilityLabel(L10n.string("add"))
                         } else {
-                            Button(action: { showAddAsset = true }) {
+                            Menu {
+                                Button(action: { showAddAsset = true }) {
+                                    Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
+                                }
+                                Button(action: { showBulkLabels = true }) {
+                                    Label(L10n.string("generate_labels"), systemImage: "tag")
+                                }
+                            } label: {
                                 Image(systemName: "plus.circle")
                             }
-                            .accessibilityLabel(L10n.string("add_asset"))
+                            .accessibilityLabel(L10n.string("add"))
                         }
                     }
                 }

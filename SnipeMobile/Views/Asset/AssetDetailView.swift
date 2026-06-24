@@ -56,6 +56,11 @@ struct AssetDetailView: View {
     @State private var detailImageURL: String? = nil
     @State private var imageDisplayToken = UUID()
     @State private var ephemeralNotice: EphemeralNotice?
+    @State private var isGeneratingLabel = false
+    @State private var labelPdfURL: URL?
+    @State private var showLabelPdf = false
+    @State private var showLabelError = false
+    @State private var labelErrorMessage = ""
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
 
     /// From apiClient or passed in.
@@ -320,9 +325,20 @@ struct AssetDetailView: View {
                     .minimumScaleFactor(0.7)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/hardware/\(currentAsset.id)") {
-                    Link(destination: url) {
-                        Image(systemName: "safari")
+                HStack(spacing: 12) {
+                    if !currentAsset.decodedAssetTag.isEmpty {
+                        Button {
+                            Task { await generateLabel() }
+                        } label: {
+                            Image(systemName: "barcode.viewfinder")
+                        }
+                        .disabled(isGeneratingLabel)
+                        .accessibilityLabel(L10n.string("print_label"))
+                    }
+                    if let url = URL(string: "\(apiClient.baseURL)/hardware/\(currentAsset.id)") {
+                        Link(destination: url) {
+                            Image(systemName: "safari")
+                        }
                     }
                 }
             }
@@ -406,6 +422,55 @@ struct AssetDetailView: View {
             if !newValue, selectedTab == 2 { selectedTab = 0 }
         }
         .ephemeralNotice($ephemeralNotice)
+        .overlay {
+            if isGeneratingLabel {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text(L10n.string("generating_labels"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .sheet(isPresented: $showLabelPdf, onDismiss: { labelPdfURL = nil }) {
+            if let labelPdfURL {
+                LabelPdfSheet(pdfURL: labelPdfURL)
+            }
+        }
+        .alert(L10n.string("print_label"), isPresented: $showLabelError) {
+            Button(L10n.string("ok"), role: .cancel) {}
+        } message: {
+            Text(labelErrorMessage)
+        }
+    }
+
+    @MainActor
+    private func generateLabel() async {
+        let tag = currentAsset.decodedAssetTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tag.isEmpty else {
+            labelErrorMessage = L10n.string("labels_no_asset_tags")
+            showLabelError = true
+            return
+        }
+        isGeneratingLabel = true
+        defer { isGeneratingLabel = false }
+
+        if let data = await apiClient.generateAssetLabels(assetTags: [tag]) {
+            guard let url = LabelPdfSupport.writeTemporaryPdf(data, preferredName: "label-\(tag)") else {
+                labelErrorMessage = L10n.string("labels_generate_failed")
+                showLabelError = true
+                return
+            }
+            labelPdfURL = url
+            showLabelPdf = true
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } else {
+            labelErrorMessage = apiClient.lastApiMessage ?? L10n.string("labels_generate_failed")
+            showLabelError = true
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
     }
 
     private func refreshDetailImage() async {

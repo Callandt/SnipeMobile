@@ -16,6 +16,7 @@ struct AssetBulkSelectionSection: View {
     @Binding var selectedAssetIds: Set<Int>
     @Binding var showPicker: Bool
     @Binding var showScanner: Bool
+    var allowsScanning: Bool = true
 
     private var selectedAssets: [Asset] {
         apiClient.assets
@@ -38,12 +39,14 @@ struct AssetBulkSelectionSection: View {
             }
             .foregroundStyle(.primary)
 
-            Button {
-                showScanner = true
-            } label: {
-                Label(L10n.string("scan_assets"), systemImage: "qrcode.viewfinder")
+            if allowsScanning {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label(L10n.string("scan_assets"), systemImage: "qrcode.viewfinder")
+                }
+                .foregroundStyle(.primary)
             }
-            .foregroundStyle(.primary)
         } header: {
             HStack {
                 Text(L10n.string("assets"))
