@@ -27,6 +27,19 @@ struct MaintenanceDetailSheet: View {
         MaintenanceLinkedAssetInfo.resolve(record: record, asset: linkedAsset)
     }
 
+    private var resolvedImageURL: URL? {
+        guard let raw = record.image?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        if let absolute = URL(string: raw), absolute.scheme != nil {
+            return absolute
+        }
+        if raw.hasPrefix("/") {
+            return URL(string: "\(apiClient.baseURL)\(raw)")
+        }
+        return nil
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -35,6 +48,34 @@ struct MaintenanceDetailSheet: View {
 
                     if let assetInfo {
                         assetHeaderCard(assetInfo)
+                    }
+
+                    if let imageURL = resolvedImageURL {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(L10n.string("image"))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            AsyncImage(url: imageURL) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxHeight: 220)
+                                        .frame(maxWidth: .infinity)
+                                case .failure:
+                                    Image(systemName: "photo")
+                                        .foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity, minHeight: 140)
+                                default:
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity, minHeight: 140)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
                     }
 
                     VStack(spacing: 10) {

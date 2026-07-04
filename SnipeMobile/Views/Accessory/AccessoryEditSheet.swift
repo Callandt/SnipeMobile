@@ -195,6 +195,8 @@ struct AccessoryEditSheet: View {
 
     private func saveAccessory() {
         guard selectedCategoryId != 0 else { return }
+        // Commit numeric TextField edits before reading @State (Save can be tapped while still focused).
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         isSaving = true
         let formatter: DateFormatter = {
             let f = DateFormatter()
@@ -209,7 +211,7 @@ struct AccessoryEditSheet: View {
                 name: name.trimmingCharacters(in: .whitespaces),
                 categoryId: selectedCategoryId,
                 quantity: quantity,
-                minAmt: minAmt > 0 ? minAmt : nil,
+                minAmt: minAmt,
                 orderNumber: orderNumber.isEmpty ? nil : orderNumber.trimmingCharacters(in: .whitespaces),
                 purchaseCost: purchaseCost.isEmpty ? nil : purchaseCost.trimmingCharacters(in: .whitespaces),
                 purchaseDate: purchaseDateStr,

@@ -13,11 +13,16 @@ struct MaintenanceFormSheet: View {
     @State private var selectedTypeId: Int = 0
     @State private var selectedSupplierId: Int = 0
     @State private var cost: String = ""
+    @State private var url: String = ""
     @State private var notes: String = ""
     @State private var isWarranty: Bool = false
     @State private var startDate: Date = Date()
     @State private var hasCompletionDate: Bool = false
     @State private var completionDate: Date = Date()
+    @State private var responsibleSearchText: String = ""
+    @State private var selectedResponsibleUser: User? = nil
+    @State private var selectedImage: UIImage? = nil
+    @State private var removeExistingImage: Bool = false
     @State private var isSaving: Bool = false
     @State private var showErrorAlert: Bool = false
     @State private var errorMessage: String = ""
@@ -45,6 +50,19 @@ struct MaintenanceFormSheet: View {
 
     private var canSave: Bool {
         !title.trimmingCharacters(in: .whitespaces).isEmpty && typeIsValid && !isSaving
+    }
+
+    private var existingImageURL: URL? {
+        guard let raw = record?.image?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        if let absolute = URL(string: raw), absolute.scheme != nil {
+            return absolute
+        }
+        if raw.hasPrefix("/") {
+            return URL(string: "\(apiClient.baseURL)\(raw)")
+        }
+        return nil
     }
 
     var body: some View {
@@ -78,6 +96,14 @@ struct MaintenanceFormSheet: View {
                         DatePicker(L10n.string("completion_date"), selection: $completionDate, displayedComponents: .date)
                     }
                 }
+                Section(header: Text(L10n.string("responsible_party"))) {
+                    CheckoutUserPickerContent(
+                        searchText: $responsibleSearchText,
+                        users: apiClient.filteredCheckoutUsers(searchText: responsibleSearchText),
+                        selectedUserId: selectedResponsibleUser?.id,
+                        onSelect: { selectedResponsibleUser = $0 }
+                    )
+                }
                 Section(header: Text(L10n.string("financial"))) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.string("cost"))
@@ -98,6 +124,17 @@ struct MaintenanceFormSheet: View {
                 Section {
                     Toggle(L10n.string("is_warranty"), isOn: $isWarranty)
                 }
+                Section(header: Text(L10n.string("url"))) {
+                    TextField(L10n.string("url"), text: $url)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+                AssetPhotoSection(
+                    selectedImage: $selectedImage,
+                    existingImageURL: existingImageURL,
+                    removeExistingImage: $removeExistingImage
+                )
                 Section(header: Text(L10n.string("notes"))) {
                     TextEditor(text: $notes)
                         .frame(minHeight: 80)
@@ -121,6 +158,9 @@ struct MaintenanceFormSheet: View {
             prefill()
             if apiClient.suppliers.isEmpty {
                 Task { await apiClient.fetchSuppliers() }
+            }
+            if apiClient.users.isEmpty {
+                Task { await apiClient.fetchUsers() }
             }
             if apiClient.maintenanceTypes.isEmpty {
                 Task {
@@ -155,19 +195,27 @@ struct MaintenanceFormSheet: View {
     }
 
     private func prefill() {
-        guard let r = record else { return }
-        title = r.decodedTitle
-        selectedType = r.assetMaintenanceType ?? r.maintenanceType ?? "Maintenance"
-        selectedSupplierId = r.supplier?.id ?? 0
-        cost = r.cost ?? ""
-        notes = r.decodedNotes
-        isWarranty = r.isWarranty
-        if let startStr = r.startDate?.date, let date = dateFormatter.date(from: startStr) {
-            startDate = date
-        }
-        if let endStr = r.completionDate?.date, let date = dateFormatter.date(from: endStr) {
-            hasCompletionDate = true
-            completionDate = date
+        if let r = record {
+            title = r.decodedTitle
+            selectedType = r.assetMaintenanceType ?? r.maintenanceType ?? "Maintenance"
+            selectedSupplierId = r.supplier?.id ?? 0
+            cost = r.cost ?? ""
+            url = r.url ?? ""
+            notes = r.decodedNotes
+            isWarranty = r.isWarranty
+            if let partyId = r.responsibleParty?.id {
+                selectedResponsibleUser = apiClient.users.first(where: { $0.id == partyId })
+                    ?? User(id: partyId, name: r.responsibleParty?.name ?? "", first_name: r.responsibleParty?.name ?? "")
+            }
+            if let startStr = r.startDate?.date, let date = dateFormatter.date(from: startStr) {
+                startDate = date
+            }
+            if let endStr = r.completionDate?.date, let date = dateFormatter.date(from: endStr) {
+                hasCompletionDate = true
+                completionDate = date
+            }
+        } else {
+            selectedResponsibleUser = apiClient.defaultCheckoutUser
         }
     }
 
@@ -179,7 +227,9 @@ struct MaintenanceFormSheet: View {
         let endStr = hasCompletionDate ? dateFormatter.string(from: completionDate) : nil
         let supplierIdOpt: Int? = selectedSupplierId == 0 ? nil : selectedSupplierId
         let costOpt: String? = NumberFormatHelpers.normalizeDecimalForAPI(cost)
+        let urlOpt: String? = url.trimmingCharacters(in: .whitespaces).isEmpty ? nil : url.trimmingCharacters(in: .whitespaces)
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
+        let responsibleIdOpt: Int? = selectedResponsibleUser?.id
 
         // send both so the legacy string column stays populated too
         let typeIdOpt: Int? = usesTypeIds ? (selectedTypeId == 0 ? nil : selectedTypeId) : nil
@@ -196,11 +246,14 @@ struct MaintenanceFormSheet: View {
                 supplier_id: supplierIdOpt,
                 cost: costOpt,
                 notes: notesOpt,
+                url: urlOpt,
+                responsible_party_id: responsibleIdOpt,
                 start_date: startStr,
                 completion_date: endStr,
-                is_warranty: isWarranty
+                is_warranty: isWarranty,
+                image_delete: (selectedImage == nil && removeExistingImage) ? 1 : nil
             )
-            ok = await apiClient.updateMaintenance(id: existing.id, update: update)
+            ok = await apiClient.updateMaintenance(id: existing.id, update: update, image: selectedImage)
         } else {
             let create = MaintenanceCreateRequest(
                 asset_id: assetId,
@@ -210,11 +263,13 @@ struct MaintenanceFormSheet: View {
                 supplier_id: supplierIdOpt,
                 cost: costOpt,
                 notes: notesOpt,
+                url: urlOpt,
+                responsible_party_id: responsibleIdOpt,
                 start_date: startStr,
                 completion_date: endStr,
                 is_warranty: isWarranty
             )
-            ok = await apiClient.createMaintenance(create)
+            ok = await apiClient.createMaintenance(create, image: selectedImage)
         }
 
         if ok {

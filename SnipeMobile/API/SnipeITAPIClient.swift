@@ -1664,27 +1664,31 @@ class SnipeITAPIClient: ObservableObject {
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let rows = json["rows"] as? [[String: Any]] else { return [] }
 
-            var results: [AssetAssignedComponent] = []
+            // Same component can appear on multiple pivot rows; sum assigned_qty per component.
+            var aggregated: [Int: (component: Component, assignedQty: Int)] = [:]
             for row in rows {
                 let qty = row["assigned_qty"] as? Int ?? 1
+                let component: Component?
                 if let componentDict = row["component"] as? [String: Any],
-                   let componentData = try? JSONSerialization.data(withJSONObject: componentDict),
-                   let component = try? JSONDecoder().decode(Component.self, from: componentData) {
-                    results.append(AssetAssignedComponent(component: component, assignedQty: qty))
-                    continue
+                   let componentData = try? JSONSerialization.data(withJSONObject: componentDict) {
+                    component = try? JSONDecoder().decode(Component.self, from: componentData)
+                } else if let componentDict = row["name"] as? [String: Any],
+                          let componentData = try? JSONSerialization.data(withJSONObject: componentDict) {
+                    component = try? JSONDecoder().decode(Component.self, from: componentData)
+                } else if let componentId = row["id"] as? Int {
+                    component = components.first(where: { $0.id == componentId })
+                } else {
+                    component = nil
                 }
-                if let componentDict = row["name"] as? [String: Any],
-                   let componentData = try? JSONSerialization.data(withJSONObject: componentDict),
-                   let component = try? JSONDecoder().decode(Component.self, from: componentData) {
-                    results.append(AssetAssignedComponent(component: component, assignedQty: qty))
-                    continue
-                }
-                if let componentId = row["id"] as? Int,
-                   let cached = components.first(where: { $0.id == componentId }) {
-                    results.append(AssetAssignedComponent(component: cached, assignedQty: qty))
+                guard let component else { continue }
+                if var existing = aggregated[component.id] {
+                    existing.assignedQty += qty
+                    aggregated[component.id] = existing
+                } else {
+                    aggregated[component.id] = (component, qty)
                 }
             }
-            return results
+            return aggregated.values.map { AssetAssignedComponent(component: $0.component, assignedQty: $0.assignedQty) }
         } catch {
             #if DEBUG
             print("fetchAssetComponents error: \(error)")
@@ -2229,6 +2233,9 @@ class SnipeITAPIClient: ObservableObject {
         if method == "PUT" {
             // Laravel needs POST + _method for multipart file uploads.
             fieldsWithMethod["_method"] = "PUT"
+            httpMethod = "POST"
+        } else if method == "PATCH" {
+            fieldsWithMethod["_method"] = "PATCH"
             httpMethod = "POST"
         }
         var request = URLRequest(url: url)
@@ -3008,9 +3015,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        if let min = minAmt, min > 0 {
-            body["min_amt"] = min
-        }
+        body["min_amt"] = minAmt ?? 0
         if let v = orderNumber, !v.isEmpty {
             body["order_number"] = v
         }
@@ -3088,9 +3093,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        if let min = minAmt {
-            body["min_amt"] = min
-        }
+        body["min_amt"] = minAmt ?? 0
         if let v = orderNumber, !v.isEmpty {
             body["order_number"] = v
         }
@@ -3986,21 +3989,39 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    func createMaintenance(_ body: MaintenanceCreateRequest) async -> Bool {
+    func createMaintenance(_ body: MaintenanceCreateRequest, image: UIImage? = nil) async -> Bool {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances") else { return false }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         do {
-            request.httpBody = try JSONEncoder().encode(body)
-            let (data, response) = try await urlSession.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return false }
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let encoded = try JSONEncoder().encode(body)
+            let bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
+            let responseData: Data
+            let http: HTTPURLResponse
+
+            if let image, let jpeg = image.snipeJPEGUploadData() {
+                let result = try await sendHardwareMultipart(
+                    url: url,
+                    method: "POST",
+                    fields: hardwareFormFields(from: bodyObject),
+                    imageData: jpeg
+                )
+                responseData = result.0
+                http = result.1
+            } else {
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = encoded
+                let pair = try await urlSession.data(for: request)
+                responseData = pair.0
+                guard let response = pair.1 as? HTTPURLResponse else { return false }
+                http = response
+            }
+
+            let json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
             let result = Self.evaluateWriteResponse(
                 json: json,
                 httpStatus: http.statusCode,
@@ -4018,21 +4039,39 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    func updateMaintenance(id: Int, update: MaintenanceUpdateRequest) async -> Bool {
+    func updateMaintenance(id: Int, update: MaintenanceUpdateRequest, image: UIImage? = nil) async -> Bool {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)") else { return false }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         do {
-            request.httpBody = try JSONEncoder().encode(update)
-            let (data, response) = try await urlSession.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return false }
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let encoded = try JSONEncoder().encode(update)
+            let bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
+            let responseData: Data
+            let http: HTTPURLResponse
+
+            if let image, let jpeg = image.snipeJPEGUploadData() {
+                let result = try await sendHardwareMultipart(
+                    url: url,
+                    method: "PATCH",
+                    fields: hardwareFormFields(from: bodyObject),
+                    imageData: jpeg
+                )
+                responseData = result.0
+                http = result.1
+            } else {
+                var request = URLRequest(url: url)
+                request.httpMethod = "PATCH"
+                request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = encoded
+                let pair = try await urlSession.data(for: request)
+                responseData = pair.0
+                guard let response = pair.1 as? HTTPURLResponse else { return false }
+                http = response
+            }
+
+            let json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
             let result = Self.evaluateWriteResponse(
                 json: json,
                 httpStatus: http.statusCode,

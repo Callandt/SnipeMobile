@@ -1331,6 +1331,7 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
     let completionDate: DateInfo?
     let isWarranty: Bool
     let url: String?
+    let image: String?
     let maintenanceTime: Int?
     let createdBy: CreatedBy?
     let responsibleParty: CreatedBy?
@@ -1369,7 +1370,7 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, supplier, cost, notes, url, asset
+        case id, title, supplier, cost, notes, url, image, asset
         case assetId = "asset_id"
         case assetName = "asset_name"
         case assetTag = "asset_tag"
@@ -1405,6 +1406,7 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         completionDate = try? c.decodeIfPresent(DateInfo.self, forKey: .completionDate)
         isWarranty = (try? c.decodeIfPresent(Bool.self, forKey: .isWarranty)) ?? false
         url = try? c.decodeIfPresent(String.self, forKey: .url)
+        image = try? c.decodeIfPresent(String.self, forKey: .image)
         maintenanceTime = try? c.decodeIfPresent(Int.self, forKey: .maintenanceTime)
         createdBy = try? c.decodeIfPresent(CreatedBy.self, forKey: .createdBy)
         responsibleParty = try? c.decodeIfPresent(CreatedBy.self, forKey: .responsibleParty)
@@ -1431,6 +1433,7 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         try c.encodeIfPresent(completionDate, forKey: .completionDate)
         try c.encode(isWarranty, forKey: .isWarranty)
         try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(image, forKey: .image)
         try c.encodeIfPresent(maintenanceTime, forKey: .maintenanceTime)
         try c.encodeIfPresent(createdBy, forKey: .createdBy)
         try c.encodeIfPresent(responsibleParty, forKey: .responsibleParty)
@@ -1469,15 +1472,18 @@ struct MaintenanceCreateRequest: Encodable {
     let supplier_id: Int?
     let cost: String?
     let notes: String?
+    let url: String?
+    let responsible_party_id: Int?
     let start_date: String
     let completion_date: String?
     let is_warranty: Bool
 
     enum CodingKeys: String, CodingKey {
-        case asset_id, name, cost, notes
+        case asset_id, name, cost, notes, url
         case asset_maintenance_type
         case maintenance_type_id
         case supplier_id
+        case responsible_party_id
         case start_date
         case completion_date
         case is_warranty
@@ -1492,6 +1498,8 @@ struct MaintenanceCreateRequest: Encodable {
         try c.encodeIfPresent(supplier_id, forKey: .supplier_id)
         try c.encodeIfPresent(cost, forKey: .cost)
         try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(responsible_party_id, forKey: .responsible_party_id)
         try c.encode(start_date, forKey: .start_date)
         try c.encodeIfPresent(completion_date, forKey: .completion_date)
         try c.encode(is_warranty, forKey: .is_warranty)
@@ -1505,18 +1513,23 @@ struct MaintenanceUpdateRequest: Encodable {
     let supplier_id: Int?
     let cost: String?
     let notes: String?
+    let url: String?
+    let responsible_party_id: Int?
     let start_date: String?
     let completion_date: String?
     let is_warranty: Bool?
+    let image_delete: Int?
 
     enum CodingKeys: String, CodingKey {
-        case name, cost, notes
+        case name, cost, notes, url
         case asset_maintenance_type
         case maintenance_type_id
         case supplier_id
+        case responsible_party_id
         case start_date
         case completion_date
         case is_warranty
+        case image_delete
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1527,8 +1540,11 @@ struct MaintenanceUpdateRequest: Encodable {
         try c.encodeIfPresent(supplier_id, forKey: .supplier_id)
         try c.encodeIfPresent(cost, forKey: .cost)
         try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(responsible_party_id, forKey: .responsible_party_id)
         try c.encodeIfPresent(start_date, forKey: .start_date)
         try c.encodeIfPresent(completion_date, forKey: .completion_date)
         try c.encodeIfPresent(is_warranty, forKey: .is_warranty)
+        try c.encodeIfPresent(image_delete, forKey: .image_delete)
     }
 } 
