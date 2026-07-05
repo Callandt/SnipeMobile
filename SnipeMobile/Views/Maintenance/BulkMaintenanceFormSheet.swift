@@ -22,7 +22,9 @@ struct BulkMaintenanceFormSheet: View {
     @State private var startDate: Date = Date()
     @State private var hasCompletionDate: Bool = false
     @State private var completionDate: Date = Date()
-    @State private var selectedResponsibleId: Int = 0
+    @State private var userSearchText: String = ""
+    @State private var selectedUser: User? = nil
+    @State private var responsibleWasCleared = false
     @State private var selectedImage: UIImage? = nil
 
     @State private var isSaving: Bool = false
@@ -50,11 +52,8 @@ struct BulkMaintenanceFormSheet: View {
         )
     }
 
-    private var responsiblePickerReady: Bool {
-        MaintenanceFormPickerSupport.hasValidPickerTag(
-            id: selectedResponsibleId,
-            in: apiClient.users.map(\.id)
-        )
+    private var filteredUsers: [User] {
+        apiClient.filteredCheckoutUsers(searchText: userSearchText)
     }
 
     private var typeIsValid: Bool {
@@ -103,23 +102,20 @@ struct BulkMaintenanceFormSheet: View {
                         }
                     }
                 }
+                Section(header: Text(L10n.string("responsible_party"))) {
+                    MaintenanceOptionalResponsibleUserSection(
+                        searchText: $userSearchText,
+                        selectedUser: $selectedUser,
+                        wasCleared: $responsibleWasCleared,
+                        users: filteredUsers,
+                        isLoading: apiClient.users.isEmpty
+                    )
+                }
                 Section(header: Text(L10n.string("dates"))) {
                     DatePicker(L10n.string("start_date"), selection: $startDate, displayedComponents: .date)
                     Toggle(L10n.string("set_completion_date"), isOn: $hasCompletionDate)
                     if hasCompletionDate {
                         DatePicker(L10n.string("completion_date"), selection: $completionDate, displayedComponents: .date)
-                    }
-                }
-                Section(header: Text(L10n.string("responsible_party"))) {
-                    if responsiblePickerReady {
-                        Picker(L10n.string("responsible_party"), selection: $selectedResponsibleId) {
-                            ForEach(apiClient.users, id: \.id) { user in
-                                Text(user.decodedName).tag(user.id)
-                            }
-                        }
-                    } else {
-                        Text(L10n.string("loading"))
-                            .foregroundStyle(.secondary)
                     }
                 }
                 Section(header: Text(L10n.string("financial"))) {
@@ -222,11 +218,11 @@ struct BulkMaintenanceFormSheet: View {
                 options: legacyTypeOptions
             )
         }
-        MaintenanceFormPickerSupport.reconcileResponsibleSelection(
-            selectedId: &selectedResponsibleId,
+        MaintenanceFormPickerSupport.reconcileResponsibleUser(
+            selectedUser: &selectedUser,
             users: apiClient.users,
             preferredId: nil,
-            defaultUser: apiClient.defaultCheckoutUser
+            wasCleared: responsibleWasCleared
         )
     }
 
@@ -241,7 +237,7 @@ struct BulkMaintenanceFormSheet: View {
         let costOpt: String? = NumberFormatHelpers.normalizeDecimalForAPI(cost)
         let urlOpt: String? = url.trimmingCharacters(in: .whitespaces).isEmpty ? nil : url.trimmingCharacters(in: .whitespaces)
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
-        let responsibleIdOpt: Int? = selectedResponsibleId == 0 ? nil : selectedResponsibleId
+        let responsibleIdOpt: Int? = selectedUser?.id
 
         // send both so the legacy string column stays populated too
         let typeIdOpt: Int? = usesTypeIds ? (selectedTypeId == 0 ? nil : selectedTypeId) : nil

@@ -284,23 +284,16 @@ enum MaintenanceFormPickerSupport {
         }
     }
 
-    static func reconcileResponsibleSelection(
-        selectedId: inout Int,
+    static func reconcileResponsibleUser(
+        selectedUser: inout User?,
         users: [User],
         preferredId: Int?,
-        defaultUser: User?
+        wasCleared: Bool
     ) {
+        guard !wasCleared else { return }
         guard !users.isEmpty else { return }
-        if users.contains(where: { $0.id == selectedId }) { return }
-        if let preferredId, users.contains(where: { $0.id == preferredId }) {
-            selectedId = preferredId
-            return
-        }
-        if let defaultUser, users.contains(where: { $0.id == defaultUser.id }) {
-            selectedId = defaultUser.id
-            return
-        }
-        selectedId = users[0].id
+        guard selectedUser == nil, let preferredId else { return }
+        selectedUser = users.first(where: { $0.id == preferredId })
     }
 
     static func hasValidPickerTag(id: Int, in ids: [Int]) -> Bool {

@@ -1533,6 +1533,8 @@ struct MaintenanceUpdateRequest: Encodable {
     let notes: String?
     let url: String?
     let responsible_party_id: Int?
+    /// When true, explicitly clears responsible_party on the server.
+    let clear_responsible_party: Bool
     let start_date: String?
     let completion_date: String?
     let is_warranty: Bool?
@@ -1559,7 +1561,11 @@ struct MaintenanceUpdateRequest: Encodable {
         try c.encodeIfPresent(cost, forKey: .cost)
         try c.encodeIfPresent(notes, forKey: .notes)
         try c.encodeIfPresent(url, forKey: .url)
-        try c.encodeIfPresent(responsible_party_id, forKey: .responsible_party_id)
+        if clear_responsible_party {
+            try c.encodeNil(forKey: .responsible_party_id)
+        } else if let responsible_party_id {
+            try c.encode(responsible_party_id, forKey: .responsible_party_id)
+        }
         try c.encodeIfPresent(start_date, forKey: .start_date)
         try c.encodeIfPresent(completion_date, forKey: .completion_date)
         try c.encodeIfPresent(is_warranty, forKey: .is_warranty)

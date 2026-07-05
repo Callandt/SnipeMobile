@@ -19,7 +19,9 @@ struct MaintenanceFormSheet: View {
     @State private var startDate: Date = Date()
     @State private var hasCompletionDate: Bool = false
     @State private var completionDate: Date = Date()
-    @State private var selectedResponsibleId: Int = 0
+    @State private var userSearchText: String = ""
+    @State private var selectedUser: User? = nil
+    @State private var responsibleWasCleared = false
     @State private var selectedImage: UIImage? = nil
     @State private var removeExistingImage: Bool = false
     @State private var isSaving: Bool = false
@@ -52,11 +54,8 @@ struct MaintenanceFormSheet: View {
         )
     }
 
-    private var responsiblePickerReady: Bool {
-        MaintenanceFormPickerSupport.hasValidPickerTag(
-            id: selectedResponsibleId,
-            in: apiClient.users.map(\.id)
-        )
+    private var filteredUsers: [User] {
+        apiClient.filteredCheckoutUsers(searchText: userSearchText)
     }
 
     private var typeIsValid: Bool {
@@ -109,23 +108,20 @@ struct MaintenanceFormSheet: View {
                         }
                     }
                 }
+                Section(header: Text(L10n.string("responsible_party"))) {
+                    MaintenanceOptionalResponsibleUserSection(
+                        searchText: $userSearchText,
+                        selectedUser: $selectedUser,
+                        wasCleared: $responsibleWasCleared,
+                        users: filteredUsers,
+                        isLoading: apiClient.users.isEmpty
+                    )
+                }
                 Section(header: Text(L10n.string("dates"))) {
                     DatePicker(L10n.string("start_date"), selection: $startDate, displayedComponents: .date)
                     Toggle(L10n.string("set_completion_date"), isOn: $hasCompletionDate)
                     if hasCompletionDate {
                         DatePicker(L10n.string("completion_date"), selection: $completionDate, displayedComponents: .date)
-                    }
-                }
-                Section(header: Text(L10n.string("responsible_party"))) {
-                    if responsiblePickerReady {
-                        Picker(L10n.string("responsible_party"), selection: $selectedResponsibleId) {
-                            ForEach(apiClient.users, id: \.id) { user in
-                                Text(user.decodedName).tag(user.id)
-                            }
-                        }
-                    } else {
-                        Text(L10n.string("loading"))
-                            .foregroundStyle(.secondary)
                     }
                 }
                 Section(header: Text(L10n.string("financial"))) {
@@ -219,11 +215,11 @@ struct MaintenanceFormSheet: View {
                 options: legacyTypeOptions
             )
         }
-        MaintenanceFormPickerSupport.reconcileResponsibleSelection(
-            selectedId: &selectedResponsibleId,
+        MaintenanceFormPickerSupport.reconcileResponsibleUser(
+            selectedUser: &selectedUser,
             users: apiClient.users,
             preferredId: record?.responsibleParty?.id,
-            defaultUser: apiClient.defaultCheckoutUser
+            wasCleared: responsibleWasCleared
         )
     }
 
@@ -237,7 +233,7 @@ struct MaintenanceFormSheet: View {
             notes = r.decodedNotes
             isWarranty = r.isWarranty
             if let partyId = r.responsibleParty?.id {
-                selectedResponsibleId = partyId
+                selectedUser = apiClient.users.first { $0.id == partyId }
             }
             if let startStr = r.startDate?.date, let date = dateFormatter.date(from: startStr) {
                 startDate = date
@@ -246,8 +242,6 @@ struct MaintenanceFormSheet: View {
                 hasCompletionDate = true
                 completionDate = date
             }
-        } else if let defaultId = apiClient.defaultCheckoutUser?.id {
-            selectedResponsibleId = defaultId
         }
     }
 
@@ -261,7 +255,6 @@ struct MaintenanceFormSheet: View {
         let costOpt: String? = NumberFormatHelpers.normalizeDecimalForAPI(cost)
         let urlOpt: String? = url.trimmingCharacters(in: .whitespaces).isEmpty ? nil : url.trimmingCharacters(in: .whitespaces)
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
-        let responsibleIdOpt: Int? = selectedResponsibleId == 0 ? nil : selectedResponsibleId
 
         // send both so the legacy string column stays populated too
         let typeIdOpt: Int? = usesTypeIds ? (selectedTypeId == 0 ? nil : selectedTypeId) : nil
@@ -277,7 +270,8 @@ struct MaintenanceFormSheet: View {
             cost: costOpt,
             notes: notesOpt,
             url: urlOpt,
-            responsible_party_id: responsibleIdOpt,
+            responsible_party_id: selectedUser?.id,
+            clear_responsible_party: responsibleWasCleared,
             start_date: startStr,
             completion_date: endStr,
             is_warranty: isWarranty,
@@ -303,7 +297,7 @@ struct MaintenanceFormSheet: View {
                 cost: costOpt,
                 notes: notesOpt,
                 url: urlOpt,
-                responsible_party_id: responsibleIdOpt,
+                responsible_party_id: selectedUser?.id,
                 start_date: startStr,
                 completion_date: endStr,
                 is_warranty: isWarranty
