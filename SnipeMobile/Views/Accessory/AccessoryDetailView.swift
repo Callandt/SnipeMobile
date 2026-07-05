@@ -203,7 +203,7 @@ struct AccessoryDetailView: View {
         .onChange(of: accessory.id) { reloadCheckedOut(clearImageWhenAbsent: true) }
         .sheet(isPresented: $showEditSheet) {
             AccessoryEditSheet(apiClient: apiClient, accessory: currentAccessory, isPresented: $showEditSheet, onSuccess: {
-                Task { await apiClient.fetchAccessories() }
+                Task { await apiClient.refreshAccessoryInCache(accessoryId: accessory.id) }
             })
         }
         .sheet(isPresented: $showCheckoutSheet) {

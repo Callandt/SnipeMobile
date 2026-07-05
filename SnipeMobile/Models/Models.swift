@@ -706,10 +706,10 @@ extension Accessory {
         let category = try? container.decodeIfPresent(Category.self, forKey: .category)
         let company = try? container.decodeIfPresent(Company.self, forKey: .company)
         let supplier = try? container.decodeIfPresent(Supplier.self, forKey: .supplier)
-        let qty = try? container.decodeIfPresent(Int.self, forKey: .qty)
-        let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
-        let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
-        let checkoutsCount = try? container.decodeIfPresent(Int.self, forKey: .checkoutsCount)
+        let qty = Self.decodeOptionalInt(from: container, forKey: .qty)
+        let minAmt = Self.decodeOptionalInt(from: container, forKey: .minAmt)
+        let remaining = Self.decodeOptionalInt(from: container, forKey: .remaining)
+        let checkoutsCount = Self.decodeOptionalInt(from: container, forKey: .checkoutsCount)
         let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
         let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
         let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
@@ -737,6 +737,22 @@ extension Accessory {
             modelNumber: modelNumber,
             image: image
         )
+    }
+
+    private static func decodeOptionalInt(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int? {
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) { return value }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return Int(trimmed)
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return Int(value)
+        }
+        return nil
     }
 }
 

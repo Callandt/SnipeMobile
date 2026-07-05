@@ -8,8 +8,8 @@ struct AccessoryEditSheet: View {
 
     @State private var name: String = ""
     @State private var selectedCategoryId: Int = 0
-    @State private var quantity: Int = 1
-    @State private var minAmt: Int = 0
+    @State private var quantityText: String = "1"
+    @State private var minAmtText: String = ""
     @State private var modelNumber: String = ""
     @State private var selectedLocationId: Int?
     @State private var selectedCompanyId: Int?
@@ -48,8 +48,8 @@ struct AccessoryEditSheet: View {
             .onAppear {
                 name = accessory.decodedName
                 selectedCategoryId = accessory.category?.id ?? 0
-                quantity = accessory.qty ?? 1
-                minAmt = accessory.minAmt ?? 0
+                quantityText = String(accessory.qty ?? 1)
+                minAmtText = accessory.minAmt.map(String.init) ?? ""
                 modelNumber = HTMLDecoder.decode(accessory.modelNumber ?? "")
                 selectedLocationId = accessory.location?.id
                 selectedCompanyId = accessory.company?.id
@@ -118,7 +118,7 @@ struct AccessoryEditSheet: View {
             HStack {
                 Text(L10n.fieldLabel("quantity", required: true))
                 Spacer()
-                TextField("", value: $quantity, format: .number)
+                TextField("", text: $quantityText)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
@@ -126,7 +126,7 @@ struct AccessoryEditSheet: View {
             HStack {
                 Text(L10n.string("minimum_amount"))
                 Spacer()
-                TextField("", value: $minAmt, format: .number)
+                TextField("", text: $minAmtText)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
@@ -193,10 +193,16 @@ struct AccessoryEditSheet: View {
         }
     }
 
+    private func parsedQuantity() -> Int {
+        max(1, Int(quantityText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1)
+    }
+
+    private func parsedMinAmt() -> Int {
+        max(0, Int(minAmtText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0)
+    }
+
     private func saveAccessory() {
         guard selectedCategoryId != 0 else { return }
-        // Commit numeric TextField edits before reading @State (Save can be tapped while still focused).
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         isSaving = true
         let formatter: DateFormatter = {
             let f = DateFormatter()
@@ -205,6 +211,8 @@ struct AccessoryEditSheet: View {
             return f
         }()
         let purchaseDateStr = hasPurchaseDate ? formatter.string(from: purchaseDate) : nil
+        let quantity = parsedQuantity()
+        let minAmt = parsedMinAmt()
         Task {
             let success = await apiClient.updateAccessory(
                 accessoryId: accessory.id,

@@ -3088,6 +3088,7 @@ class SnipeITAPIClient: ObservableObject {
         request.httpMethod = "PATCH"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         var body: [String: Any] = [
             "name": name,
             "category_id": categoryId,
@@ -3131,9 +3132,7 @@ class SnipeITAPIClient: ObservableObject {
             )
             await MainActor.run { self.lastApiMessage = result.message }
             guard result.success else { return false }
-            if let updated: Accessory = decodedPatchPayload(from: data) {
-                await MainActor.run { replaceCachedItem(updated, in: &self.accessories, id: \.id) }
-            }
+            await refreshAccessoryInCache(accessoryId: accessoryId)
             Task { await self.fetchAccessories() }
             return true
         } catch {

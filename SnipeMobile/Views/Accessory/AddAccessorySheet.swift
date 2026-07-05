@@ -5,8 +5,8 @@ struct AddAccessorySheet: View {
     @Binding var isPresented: Bool
     @State private var name = ""
     @State private var selectedCategoryId: Int = 0
-    @State private var quantity: Int = 1
-    @State private var minAmt: Int = 0
+    @State private var quantityText = "1"
+    @State private var minAmtText = ""
     @State private var modelNumber = ""
     @State private var selectedLocationId: Int?
     @State private var selectedCompanyId: Int?
@@ -90,7 +90,7 @@ struct AddAccessorySheet: View {
             HStack {
                 Text(L10n.fieldLabel("quantity", required: true))
                 Spacer()
-                TextField("", value: $quantity, format: .number)
+                TextField("", text: $quantityText)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
@@ -98,7 +98,7 @@ struct AddAccessorySheet: View {
             HStack {
                 Text(L10n.string("minimum_amount"))
                 Spacer()
-                TextField("", value: $minAmt, format: .number)
+                TextField("", text: $minAmtText)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
@@ -165,6 +165,14 @@ struct AddAccessorySheet: View {
         }
     }
 
+    private func parsedQuantity() -> Int {
+        max(1, Int(quantityText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1)
+    }
+
+    private func parsedMinAmt() -> Int {
+        max(0, Int(minAmtText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0)
+    }
+
     private func saveAccessory() {
         guard selectedCategoryId != 0 else { return }
         isSaving = true
@@ -175,6 +183,8 @@ struct AddAccessorySheet: View {
             return f
         }()
         let purchaseDateStr = hasPurchaseDate ? formatter.string(from: purchaseDate) : nil
+        let quantity = parsedQuantity()
+        let minAmt = parsedMinAmt()
         Task {
             let success = await apiClient.createAccessory(
                 name: name.trimmingCharacters(in: .whitespaces),
