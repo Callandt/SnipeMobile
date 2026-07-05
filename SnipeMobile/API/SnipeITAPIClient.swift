@@ -2238,17 +2238,33 @@ class SnipeITAPIClient: ObservableObject {
             fieldsWithMethod["_method"] = "PATCH"
             httpMethod = "POST"
         }
+        let body = buildMultipartBody(boundary: boundary, fields: fieldsWithMethod, imageData: imageData)
         var request = URLRequest(url: url)
         request.httpMethod = httpMethod
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.httpBody = buildMultipartBody(boundary: boundary, fields: fieldsWithMethod, imageData: imageData)
+        request.httpBody = body
         let (data, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
         return (data, http)
+    }
+
+    private func prepareMaintenanceImagePayload(_ image: UIImage?) -> (jpeg: Data?, imageSource: String?) {
+        guard let image else { return (nil, nil) }
+        return (image.snipeJPEGUploadData(), image.snipeBase64ImageSource())
+    }
+
+    private func makeMaintenanceJSONRequest(url: URL, method: String, bodyData: Data) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = bodyData
+        return request
     }
 
     @MainActor
@@ -3988,37 +4004,80 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    func fetchMaintenance(id: Int) async -> AssetMaintenance? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else { return nil }
+
+            if let record = try? JSONDecoder().decode(AssetMaintenance.self, from: data) {
+                return record
+            }
+            if let record: AssetMaintenance = decodedPatchPayload(from: data) {
+                return record
+            }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
     func createMaintenance(_ body: MaintenanceCreateRequest, image: UIImage? = nil) async -> Bool {
-        guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
-        guard let url = URL(string: "\(baseURL)/api/v1/maintenances") else { return false }
+        (await createMaintenanceReturningId(body, image: image)) != nil
+    }
+
+    /// Returns the new maintenance id from the create response payload.
+    private func createMaintenanceReturningId(_ body: MaintenanceCreateRequest, image: UIImage? = nil) async -> Int? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/maintenances") else { return nil }
 
         do {
             let encoded = try JSONEncoder().encode(body)
-            let bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
-            let responseData: Data
-            let http: HTTPURLResponse
+            var bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
+            let imagePayload = prepareMaintenanceImagePayload(image)
+            var responseData: Data
+            var http: HTTPURLResponse
 
-            if let image, let jpeg = image.snipeJPEGUploadData() {
+            if let jpeg = imagePayload.jpeg {
                 let result = try await sendHardwareMultipart(
                     url: url,
                     method: "POST",
                     fields: hardwareFormFields(from: bodyObject),
                     imageData: jpeg
                 )
-                responseData = result.0
-                http = result.1
-            } else {
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-                request.setValue("application/json", forHTTPHeaderField: "Accept")
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.httpBody = encoded
-                let pair = try await urlSession.data(for: request)
-                responseData = pair.0
-                guard let response = pair.1 as? HTTPURLResponse else { return false }
-                http = response
+                let json = (try? JSONSerialization.jsonObject(with: result.0)) as? [String: Any]
+                let multipartResult = Self.evaluateWriteResponse(
+                    json: json,
+                    httpStatus: result.1.statusCode,
+                    defaultSuccessMessage: "Maintenance created.",
+                    defaultFailureMessage: "Create failed."
+                )
+                if multipartResult.success {
+                    return maintenanceIdFromResponse(result.0)
+                }
+                if let imageSource = imagePayload.imageSource {
+                    bodyObject["image_source"] = imageSource
+                } else {
+                    await MainActor.run { self.lastApiMessage = multipartResult.message }
+                    return nil
+                }
+            } else if let imageSource = imagePayload.imageSource {
+                bodyObject["image_source"] = imageSource
             }
+
+            let jsonBody = try JSONSerialization.data(withJSONObject: bodyObject)
+            let pair = try await urlSession.data(for: makeMaintenanceJSONRequest(url: url, method: "POST", bodyData: jsonBody))
+            guard let httpResponse = pair.1 as? HTTPURLResponse else { return nil }
+            responseData = pair.0
+            http = httpResponse
 
             let json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
             let result = Self.evaluateWriteResponse(
@@ -4029,52 +4088,121 @@ class SnipeITAPIClient: ObservableObject {
             )
             if !result.success {
                 await MainActor.run { self.lastApiMessage = result.message }
-                return false
+                return nil
             }
-            return true
+            return maintenanceIdFromResponse(responseData)
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
-            return false
+            return nil
         }
     }
 
-    func updateMaintenance(id: Int, update: MaintenanceUpdateRequest, image: UIImage? = nil) async -> Bool {
+    private func maintenanceIdFromResponse(_ data: Data) -> Int? {
+        if let record: AssetMaintenance = decodedPatchPayload(from: data) {
+            return record.id
+        }
+        if let record = try? JSONDecoder().decode(AssetMaintenance.self, from: data) {
+            return record.id
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let id = json["id"] as? Int { return id }
+        if let payload = json["payload"] as? [String: Any], let id = payload["id"] as? Int { return id }
+        return nil
+    }
+
+    /// Returns the maintenance id on success (may differ from `id` when the image was changed).
+    func updateMaintenance(
+        id: Int,
+        assetId: Int,
+        update: MaintenanceUpdateRequest,
+        image: UIImage? = nil,
+        wasCompleted: Bool = false
+    ) async -> Int? {
+        let wantsImageChange = image != nil || update.image_delete == 1
+        if wantsImageChange {
+            return await updateMaintenanceRecreatingForImage(
+                id: id,
+                assetId: assetId,
+                update: update,
+                image: image,
+                wasCompleted: wasCompleted
+            )
+        }
+        guard await updateMaintenanceFields(id: id, update: update) else { return nil }
+        return id
+    }
+
+    /// Snipe-IT's REST update endpoint does not call `handleImages()`; recreate via store instead.
+    private func updateMaintenanceRecreatingForImage(
+        id: Int,
+        assetId: Int,
+        update: MaintenanceUpdateRequest,
+        image: UIImage?,
+        wasCompleted: Bool
+    ) async -> Int? {
+        guard let create = maintenanceCreateRequest(from: update, assetId: assetId) else {
+            await MainActor.run { self.lastApiMessage = L10n.string("error") }
+            return nil
+        }
+        let uploadImage = (update.image_delete == 1 && image == nil) ? nil : image
+        guard let newId = await createMaintenanceReturningId(create, image: uploadImage) else { return nil }
+        if wasCompleted {
+            _ = await completeMaintenance(id: newId)
+        }
+        guard await deleteMaintenance(id: id) else { return nil }
+        return newId
+    }
+
+    private func maintenanceCreateRequest(from update: MaintenanceUpdateRequest, assetId: Int) -> MaintenanceCreateRequest? {
+        guard let name = update.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty,
+              let startDate = update.start_date, !startDate.isEmpty else { return nil }
+        return MaintenanceCreateRequest(
+            asset_id: assetId,
+            name: name,
+            asset_maintenance_type: update.asset_maintenance_type,
+            maintenance_type_id: update.maintenance_type_id,
+            supplier_id: update.supplier_id,
+            cost: update.cost,
+            notes: update.notes,
+            url: update.url,
+            responsible_party_id: update.responsible_party_id,
+            start_date: startDate,
+            completion_date: update.completion_date,
+            is_warranty: update.is_warranty ?? false
+        )
+    }
+
+    private func updateMaintenanceFields(id: Int, update: MaintenanceUpdateRequest) async -> Bool {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)") else { return false }
 
         do {
-            let encoded = try JSONEncoder().encode(update)
-            let bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
-            let responseData: Data
-            let http: HTTPURLResponse
+            let encodedBody = try JSONEncoder().encode(update)
+            let bodyObject = (try JSONSerialization.jsonObject(with: encodedBody) as? [String: Any]) ?? [:]
+            let body = try JSONSerialization.data(withJSONObject: bodyObject)
 
-            if let image, let jpeg = image.snipeJPEGUploadData() {
-                let result = try await sendHardwareMultipart(
-                    url: url,
-                    method: "PATCH",
-                    fields: hardwareFormFields(from: bodyObject),
-                    imageData: jpeg
-                )
-                responseData = result.0
-                http = result.1
-            } else {
-                var request = URLRequest(url: url)
-                request.httpMethod = "PATCH"
-                request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-                request.setValue("application/json", forHTTPHeaderField: "Accept")
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.httpBody = encoded
-                let pair = try await urlSession.data(for: request)
-                responseData = pair.0
-                guard let response = pair.1 as? HTTPURLResponse else { return false }
-                http = response
+            func makeRequest(method: String, bodyData: Data) -> URLRequest {
+                makeMaintenanceJSONRequest(url: url, method: method, bodyData: bodyData)
             }
+
+            var (responseData, response) = try await urlSession.data(for: makeRequest(method: "PUT", bodyData: body))
+            var http = response as? HTTPURLResponse
+
+            if http?.statusCode == 405 {
+                var spoofed = bodyObject
+                spoofed["_method"] = "PUT"
+                let spoofedBody = try JSONSerialization.data(withJSONObject: spoofed)
+                (responseData, response) = try await urlSession.data(for: makeRequest(method: "POST", bodyData: spoofedBody))
+                http = response as? HTTPURLResponse
+            }
+
+            guard let http else { return false }
 
             let json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
             let result = Self.evaluateWriteResponse(
                 json: json,
                 httpStatus: http.statusCode,
-                defaultSuccessMessage: "Update failed.",
+                defaultSuccessMessage: "Changes saved.",
                 defaultFailureMessage: "Update failed."
             )
             if !result.success {

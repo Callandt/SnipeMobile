@@ -22,18 +22,12 @@ struct BulkMaintenanceFormSheet: View {
     @State private var startDate: Date = Date()
     @State private var hasCompletionDate: Bool = false
     @State private var completionDate: Date = Date()
-    @State private var responsibleSearchText: String = ""
-    @State private var selectedResponsibleUser: User? = nil
+    @State private var selectedResponsibleId: Int = 0
     @State private var selectedImage: UIImage? = nil
 
     @State private var isSaving: Bool = false
     @State private var showErrorAlert: Bool = false
     @State private var errorMessage: String = ""
-
-    private let maintenanceTypes = [
-        "Maintenance", "Repair", "PAT Test/Electrical",
-        "Upgrade", "Hardware Support", "Software Support"
-    ]
 
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -44,6 +38,24 @@ struct BulkMaintenanceFormSheet: View {
 
     // empty list = older server without the maintenance-types endpoint
     private var usesTypeIds: Bool { !apiClient.maintenanceTypes.isEmpty }
+
+    private var legacyTypeOptions: [String] {
+        MaintenanceFormPickerSupport.legacyTypeOptions(selectedType: selectedType, recordType: nil)
+    }
+
+    private var typeIdPickerReady: Bool {
+        MaintenanceFormPickerSupport.hasValidPickerTag(
+            id: selectedTypeId,
+            in: apiClient.maintenanceTypes.map(\.id)
+        )
+    }
+
+    private var responsiblePickerReady: Bool {
+        MaintenanceFormPickerSupport.hasValidPickerTag(
+            id: selectedResponsibleId,
+            in: apiClient.users.map(\.id)
+        )
+    }
 
     private var typeIsValid: Bool {
         usesTypeIds ? selectedTypeId != 0 : !selectedType.trimmingCharacters(in: .whitespaces).isEmpty
@@ -73,14 +85,19 @@ struct BulkMaintenanceFormSheet: View {
                         TextField(L10n.string("name"), text: $title)
                     }
                     if usesTypeIds {
-                        Picker(L10n.string("maintenance_type"), selection: $selectedTypeId) {
-                            ForEach(apiClient.maintenanceTypes) { type in
-                                Text(type.decodedName).tag(type.id)
+                        if typeIdPickerReady {
+                            Picker(L10n.string("maintenance_type"), selection: $selectedTypeId) {
+                                ForEach(apiClient.maintenanceTypes) { type in
+                                    Text(type.decodedName).tag(type.id)
+                                }
                             }
+                        } else {
+                            Text(L10n.string("loading"))
+                                .foregroundStyle(.secondary)
                         }
-                    } else {
+                    } else if !legacyTypeOptions.isEmpty {
                         Picker(L10n.string("maintenance_type"), selection: $selectedType) {
-                            ForEach(maintenanceTypes, id: \.self) { type in
+                            ForEach(legacyTypeOptions, id: \.self) { type in
                                 Text(type).tag(type)
                             }
                         }
@@ -94,12 +111,16 @@ struct BulkMaintenanceFormSheet: View {
                     }
                 }
                 Section(header: Text(L10n.string("responsible_party"))) {
-                    CheckoutUserPickerContent(
-                        searchText: $responsibleSearchText,
-                        users: apiClient.filteredCheckoutUsers(searchText: responsibleSearchText),
-                        selectedUserId: selectedResponsibleUser?.id,
-                        onSelect: { selectedResponsibleUser = $0 }
-                    )
+                    if responsiblePickerReady {
+                        Picker(L10n.string("responsible_party"), selection: $selectedResponsibleId) {
+                            ForEach(apiClient.users, id: \.id) { user in
+                                Text(user.decodedName).tag(user.id)
+                            }
+                        }
+                    } else {
+                        Text(L10n.string("loading"))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Section(header: Text(L10n.string("financial"))) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -155,22 +176,25 @@ struct BulkMaintenanceFormSheet: View {
         }
         .onAppear {
             if selectedAssetIds.isEmpty { selectedAssetIds = preselectedAssetIds }
-            selectedResponsibleUser = apiClient.defaultCheckoutUser
+            syncPickerSelections()
             if apiClient.suppliers.isEmpty {
                 Task { await apiClient.fetchSuppliers() }
             }
             if apiClient.users.isEmpty {
-                Task { await apiClient.fetchUsers() }
+                Task {
+                    await apiClient.fetchUsers()
+                    syncPickerSelections()
+                }
             }
             if apiClient.maintenanceTypes.isEmpty {
                 Task {
                     await apiClient.fetchMaintenanceTypes()
-                    applyTypeSelection()
+                    syncPickerSelections()
                 }
-            } else {
-                applyTypeSelection()
             }
         }
+        .onChange(of: apiClient.users.count) { _, _ in syncPickerSelections() }
+        .onChange(of: apiClient.maintenanceTypes.count) { _, _ in syncPickerSelections() }
         .overlay {
             if isSaving {
                 ProgressView()
@@ -185,11 +209,25 @@ struct BulkMaintenanceFormSheet: View {
         }
     }
 
-    private func applyTypeSelection() {
-        guard usesTypeIds else { return }
-        if selectedTypeId == 0, let first = apiClient.maintenanceTypes.first {
-            selectedTypeId = first.id
+    private func syncPickerSelections() {
+        if usesTypeIds {
+            MaintenanceFormPickerSupport.applyTypeIdSelection(
+                selectedTypeId: &selectedTypeId,
+                types: apiClient.maintenanceTypes,
+                record: nil
+            )
+        } else {
+            MaintenanceFormPickerSupport.normalizeLegacyTypeSelection(
+                selectedType: &selectedType,
+                options: legacyTypeOptions
+            )
         }
+        MaintenanceFormPickerSupport.reconcileResponsibleSelection(
+            selectedId: &selectedResponsibleId,
+            users: apiClient.users,
+            preferredId: nil,
+            defaultUser: apiClient.defaultCheckoutUser
+        )
     }
 
     private func save() async {
@@ -203,7 +241,7 @@ struct BulkMaintenanceFormSheet: View {
         let costOpt: String? = NumberFormatHelpers.normalizeDecimalForAPI(cost)
         let urlOpt: String? = url.trimmingCharacters(in: .whitespaces).isEmpty ? nil : url.trimmingCharacters(in: .whitespaces)
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
-        let responsibleIdOpt: Int? = selectedResponsibleUser?.id
+        let responsibleIdOpt: Int? = selectedResponsibleId == 0 ? nil : selectedResponsibleId
 
         // send both so the legacy string column stays populated too
         let typeIdOpt: Int? = usesTypeIds ? (selectedTypeId == 0 ? nil : selectedTypeId) : nil

@@ -239,3 +239,71 @@ extension View {
         )
     }
 }
+
+// Keeps maintenance form Pickers in sync with async-loaded options.
+enum MaintenanceFormPickerSupport {
+    static let legacyMaintenanceTypes = [
+        "Maintenance", "Repair", "PAT Test/Electrical",
+        "Upgrade", "Hardware Support", "Software Support"
+    ]
+
+    static func legacyTypeOptions(selectedType: String, recordType: String?) -> [String] {
+        var options = legacyMaintenanceTypes
+        for extra in [selectedType, recordType].compactMap({ $0 }).filter({ !$0.isEmpty }) {
+            if !options.contains(extra) {
+                options.append(extra)
+            }
+        }
+        return options
+    }
+
+    static func normalizeLegacyTypeSelection(selectedType: inout String, options: [String]) {
+        if !options.contains(selectedType), let first = options.first {
+            selectedType = first
+        }
+    }
+
+    static func applyTypeIdSelection(
+        selectedTypeId: inout Int,
+        types: [MaintenanceType],
+        record: AssetMaintenance?
+    ) {
+        guard !types.isEmpty else { return }
+        if let record {
+            let target = (record.maintenanceType ?? record.assetMaintenanceType)?.lowercased()
+            if let target, !target.isEmpty,
+               let match = types.first(where: {
+                   $0.name.lowercased() == target || $0.decodedName.lowercased() == target
+               }) {
+                selectedTypeId = match.id
+                return
+            }
+        }
+        if !types.contains(where: { $0.id == selectedTypeId }), let first = types.first {
+            selectedTypeId = first.id
+        }
+    }
+
+    static func reconcileResponsibleSelection(
+        selectedId: inout Int,
+        users: [User],
+        preferredId: Int?,
+        defaultUser: User?
+    ) {
+        guard !users.isEmpty else { return }
+        if users.contains(where: { $0.id == selectedId }) { return }
+        if let preferredId, users.contains(where: { $0.id == preferredId }) {
+            selectedId = preferredId
+            return
+        }
+        if let defaultUser, users.contains(where: { $0.id == defaultUser.id }) {
+            selectedId = defaultUser.id
+            return
+        }
+        selectedId = users[0].id
+    }
+
+    static func hasValidPickerTag(id: Int, in ids: [Int]) -> Bool {
+        ids.contains(id)
+    }
+}

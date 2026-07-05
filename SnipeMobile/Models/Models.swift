@@ -1386,7 +1386,7 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, supplier, cost, notes, url, image, asset
+        case id, title, name, supplier, cost, notes, url, image, asset
         case assetId = "asset_id"
         case assetName = "asset_name"
         case assetTag = "asset_tag"
@@ -1407,7 +1407,9 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
-        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .name))
+            ?? ""
         // some servers send flat asset_* fields, others a nested asset object
         let nestedAsset = try? c.decodeIfPresent(MaintenanceAssetRef.self, forKey: .asset)
         assetId = (try? c.decodeIfPresent(Int.self, forKey: .assetId)) ?? nestedAsset?.id

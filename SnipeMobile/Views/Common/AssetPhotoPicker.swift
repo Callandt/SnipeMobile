@@ -56,7 +56,7 @@ struct AssetPhotoSection: View {
         .onChange(of: selectedImage) { _, newValue in
             if newValue != nil { removeExistingImage.wrappedValue = false }
         }
-        .sheet(isPresented: $showCamera) {
+        .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(image: $selectedImage)
                 .ignoresSafeArea()
         }
@@ -130,6 +130,12 @@ struct CameraPicker: UIViewControllerRepresentable {
 extension UIImage {
     func snipeJPEGUploadData(maxDimension: CGFloat = 1280, quality: CGFloat = 0.75) -> Data? {
         resizedForUpload(maxDimension: maxDimension).jpegData(compressionQuality: quality)
+    }
+
+    /// Snipe-IT JSON uploads (ImageUploadRequest) accept base64 data URIs via `image_source`.
+    func snipeBase64ImageSource(maxDimension: CGFloat = 1280, quality: CGFloat = 0.75) -> String? {
+        guard let data = snipeJPEGUploadData(maxDimension: maxDimension, quality: quality) else { return nil }
+        return "data:image/jpeg;base64,\(data.base64EncodedString())"
     }
 
     private func resizedForUpload(maxDimension: CGFloat) -> UIImage {

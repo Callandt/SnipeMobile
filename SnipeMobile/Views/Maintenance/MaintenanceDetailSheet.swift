@@ -3,10 +3,11 @@ import SwiftUI
 struct MaintenanceDetailSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     let assetId: Int
-    let record: AssetMaintenance
     var onMutated: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var currentRecord: AssetMaintenance
+    @State private var imageRefreshToken = UUID()
     @State private var showEditSheet = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -16,28 +17,59 @@ struct MaintenanceDetailSheet: View {
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
 
+    init(
+        apiClient: SnipeITAPIClient,
+        assetId: Int,
+        record: AssetMaintenance,
+        onMutated: @escaping () -> Void
+    ) {
+        self.apiClient = apiClient
+        self.assetId = assetId
+        self.onMutated = onMutated
+        _currentRecord = State(initialValue: record)
+    }
+
     private var isBusy: Bool { isDeleting || isCompleting }
 
     private var linkedAsset: Asset? {
-        guard let id = record.assetId, id > 0 else { return nil }
+        guard let id = currentRecord.assetId, id > 0 else { return nil }
         return apiClient.assets.first { $0.id == id }
     }
 
     private var assetInfo: MaintenanceLinkedAssetInfo? {
-        MaintenanceLinkedAssetInfo.resolve(record: record, asset: linkedAsset)
+        MaintenanceLinkedAssetInfo.resolve(record: currentRecord, asset: linkedAsset)
     }
 
     private var resolvedImageURL: URL? {
-        guard let raw = record.image?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+        guard let raw = currentRecord.image?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             return nil
         }
-        if let absolute = URL(string: raw), absolute.scheme != nil {
-            return absolute
+        let cacheBuster = currentRecord.updatedAt?.datetime
+            ?? currentRecord.updatedAt?.date
+            ?? imageRefreshToken.uuidString
+        return Self.snipeImageURL(baseURL: apiClient.baseURL, path: raw, cacheBuster: cacheBuster)
+    }
+
+    private static func snipeImageURL(baseURL: String, path: String, cacheBuster: String?) -> URL? {
+        guard !path.isEmpty else { return nil }
+        let base: URL?
+        if let absolute = URL(string: path), absolute.scheme != nil {
+            base = absolute
+        } else if path.hasPrefix("/") {
+            base = URL(string: "\(baseURL)\(path)")
+        } else {
+            base = nil
         }
-        if raw.hasPrefix("/") {
-            return URL(string: "\(apiClient.baseURL)\(raw)")
+        guard let base else { return nil }
+        guard let cacheBuster, !cacheBuster.isEmpty,
+              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return base
         }
-        return nil
+        var query = components.queryItems ?? []
+        query.removeAll { $0.name == "v" }
+        query.append(URLQueryItem(name: "v", value: cacheBuster))
+        components.queryItems = query
+        return components.url ?? base
     }
 
     var body: some View {
@@ -72,6 +104,7 @@ struct MaintenanceDetailSheet: View {
                                         .frame(maxWidth: .infinity, minHeight: 140)
                                 }
                             }
+                            .id(imageRefreshToken)
                         }
                         .padding()
                         .background(Color(.systemGray6))
@@ -79,46 +112,46 @@ struct MaintenanceDetailSheet: View {
                     }
 
                     VStack(spacing: 10) {
-                        if let type = record.displayType {
+                        if let type = currentRecord.displayType {
                             detailRow(label: L10n.string("maintenance_type"), value: type)
                         }
-                        if let supplier = record.supplier {
+                        if let supplier = currentRecord.supplier {
                             detailRow(label: L10n.string("supplier_optional"), value: HTMLDecoder.decode(supplier.name))
                         }
-                        if let start = record.startDate?.formatted, !start.isEmpty {
+                        if let start = currentRecord.startDate?.formatted, !start.isEmpty {
                             detailRow(label: L10n.string("start_date"), value: start)
                         }
-                        if let end = record.completionDate?.formatted, !end.isEmpty {
+                        if let end = currentRecord.completionDate?.formatted, !end.isEmpty {
                             detailRow(label: L10n.string("completion_date"), value: end)
                         } else {
                             detailRow(label: L10n.string("completion_date"), value: L10n.string("in_progress"))
                         }
-                        if let time = record.maintenanceTime, time > 0 {
+                        if let time = currentRecord.maintenanceTime, time > 0 {
                             detailRow(label: L10n.string("maintenance_duration"), value: L10n.string("maintenance_duration_days", time))
                         }
-                        if let cost = record.cost, !cost.isEmpty {
+                        if let cost = currentRecord.cost, !cost.isEmpty {
                             detailRow(label: L10n.string("cost"), value: cost)
                         }
-                        detailRow(label: L10n.string("is_warranty"), value: record.isWarranty ? L10n.string("yes") : L10n.string("no"))
-                        if let urlString = record.url, !urlString.isEmpty {
+                        detailRow(label: L10n.string("is_warranty"), value: currentRecord.isWarranty ? L10n.string("yes") : L10n.string("no"))
+                        if let urlString = currentRecord.url, !urlString.isEmpty {
                             detailLinkRow(label: L10n.string("url"), urlString: urlString)
                         }
-                        if let responsible = record.responsibleParty {
+                        if let responsible = currentRecord.responsibleParty {
                             detailRow(label: L10n.string("responsible_party"), value: HTMLDecoder.decode(responsible.name))
                         }
-                        if let createdBy = record.createdBy {
+                        if let createdBy = currentRecord.createdBy {
                             detailRow(label: L10n.string("created_by"), value: HTMLDecoder.decode(createdBy.name))
                         }
-                        if let completedBy = record.completedBy {
+                        if let completedBy = currentRecord.completedBy {
                             detailRow(label: L10n.string("completed_by"), value: HTMLDecoder.decode(completedBy.name))
                         }
-                        if let completedAt = record.completedAt?.formatted, !completedAt.isEmpty {
+                        if let completedAt = currentRecord.completedAt?.formatted, !completedAt.isEmpty {
                             detailRow(label: L10n.string("completed_date"), value: completedAt)
                         }
-                        if let created = record.createdAt?.formatted, !created.isEmpty {
+                        if let created = currentRecord.createdAt?.formatted, !created.isEmpty {
                             detailRow(label: L10n.string("created_date"), value: created)
                         }
-                        if let updated = record.updatedAt?.formatted, !updated.isEmpty {
+                        if let updated = currentRecord.updatedAt?.formatted, !updated.isEmpty {
                             detailRow(label: L10n.string("updated_date"), value: updated)
                         }
                     }
@@ -126,12 +159,12 @@ struct MaintenanceDetailSheet: View {
                     .background(Color(.systemGray6))
                     .cornerRadius(12)
 
-                    if !record.decodedNotes.isEmpty {
+                    if !currentRecord.decodedNotes.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(L10n.string("notes"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(record.decodedNotes)
+                            Text(currentRecord.decodedNotes)
                                 .font(.body)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -144,7 +177,7 @@ struct MaintenanceDetailSheet: View {
                 .padding(.horizontal)
                 .padding(.top, 16)
             }
-            .navigationTitle(record.decodedTitle)
+            .navigationTitle(currentRecord.decodedTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -165,7 +198,7 @@ struct MaintenanceDetailSheet: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                if !record.isCompleted {
+                if !currentRecord.isCompleted {
                     Button {
                         completeNote = ""
                         showCompleteConfirm = true
@@ -192,9 +225,8 @@ struct MaintenanceDetailSheet: View {
             }
         }
         .sheet(isPresented: $showEditSheet) {
-            MaintenanceFormSheet(apiClient: apiClient, assetId: assetId, record: record) {
-                onMutated()
-                dismiss()
+            MaintenanceFormSheet(apiClient: apiClient, assetId: assetId, record: currentRecord) { maintenanceId in
+                Task { await reloadRecord(id: maintenanceId) }
             }
         }
         .alert(L10n.string("delete_maintenance_confirm_title"), isPresented: $showDeleteConfirm) {
@@ -203,7 +235,7 @@ struct MaintenanceDetailSheet: View {
                 Task { await deleteRecord() }
             }
         } message: {
-            Text(L10n.string("delete_maintenance_confirm_message", record.decodedTitle))
+            Text(L10n.string("delete_maintenance_confirm_message", currentRecord.decodedTitle))
         }
         .sheet(isPresented: $showCompleteConfirm) {
             CompletionActionSheet(
@@ -224,7 +256,7 @@ struct MaintenanceDetailSheet: View {
 
     @ViewBuilder
     private var statusHeader: some View {
-        let completed = record.isCompleted
+        let completed = currentRecord.isCompleted
         HStack(spacing: 6) {
             Image(systemName: completed ? "checkmark.seal.fill" : "clock")
             Text(completed ? L10n.string("status_completed") : L10n.string("in_progress"))
@@ -310,9 +342,18 @@ struct MaintenanceDetailSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func reloadRecord(id: Int) async {
+        let targetId = id > 0 ? id : currentRecord.id
+        if let fetched = await apiClient.fetchMaintenance(id: targetId) {
+            currentRecord = fetched
+            imageRefreshToken = UUID()
+        }
+        onMutated()
+    }
+
     private func deleteRecord() async {
         isDeleting = true
-        let ok = await apiClient.deleteMaintenance(id: record.id)
+        let ok = await apiClient.deleteMaintenance(id: currentRecord.id)
         isDeleting = false
         if ok {
             onMutated()
@@ -325,12 +366,11 @@ struct MaintenanceDetailSheet: View {
 
     private func completeRecord() async {
         isCompleting = true
-        let ok = await apiClient.completeMaintenance(id: record.id, note: completeNote)
+        let ok = await apiClient.completeMaintenance(id: currentRecord.id, note: completeNote)
         isCompleting = false
         showCompleteConfirm = false
         if ok {
-            onMutated()
-            dismiss()
+            await reloadRecord(id: currentRecord.id)
         } else {
             errorMessage = apiClient.lastApiMessage ?? apiClient.errorMessage ?? L10n.string("error")
             showErrorAlert = true

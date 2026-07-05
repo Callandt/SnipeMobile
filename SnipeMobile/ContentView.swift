@@ -1215,7 +1215,9 @@ struct HardwareTab: View {
                 apiClient: apiClient,
                 assetId: record.assetId ?? 0,
                 record: record,
-                onMutated: {}
+                onMutated: {
+                    Task { await loadAllMaintenances(force: true) }
+                }
             )
         }
         .sheet(item: $selectedAuditAsset) { asset in

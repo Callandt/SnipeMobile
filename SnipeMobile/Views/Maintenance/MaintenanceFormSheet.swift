@@ -4,7 +4,7 @@ struct MaintenanceFormSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     let assetId: Int
     let record: AssetMaintenance?
-    var onSave: () -> Void
+    var onSave: (Int) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
 
@@ -19,18 +19,12 @@ struct MaintenanceFormSheet: View {
     @State private var startDate: Date = Date()
     @State private var hasCompletionDate: Bool = false
     @State private var completionDate: Date = Date()
-    @State private var responsibleSearchText: String = ""
-    @State private var selectedResponsibleUser: User? = nil
+    @State private var selectedResponsibleId: Int = 0
     @State private var selectedImage: UIImage? = nil
     @State private var removeExistingImage: Bool = false
     @State private var isSaving: Bool = false
     @State private var showErrorAlert: Bool = false
     @State private var errorMessage: String = ""
-
-    private let maintenanceTypes = [
-        "Maintenance", "Repair", "PAT Test/Electrical",
-        "Upgrade", "Hardware Support", "Software Support"
-    ]
 
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -43,6 +37,27 @@ struct MaintenanceFormSheet: View {
 
     // empty list = older server without the maintenance-types endpoint
     private var usesTypeIds: Bool { !apiClient.maintenanceTypes.isEmpty }
+
+    private var legacyTypeOptions: [String] {
+        MaintenanceFormPickerSupport.legacyTypeOptions(
+            selectedType: selectedType,
+            recordType: record?.displayType
+        )
+    }
+
+    private var typeIdPickerReady: Bool {
+        MaintenanceFormPickerSupport.hasValidPickerTag(
+            id: selectedTypeId,
+            in: apiClient.maintenanceTypes.map(\.id)
+        )
+    }
+
+    private var responsiblePickerReady: Bool {
+        MaintenanceFormPickerSupport.hasValidPickerTag(
+            id: selectedResponsibleId,
+            in: apiClient.users.map(\.id)
+        )
+    }
 
     private var typeIsValid: Bool {
         usesTypeIds ? selectedTypeId != 0 : !selectedType.trimmingCharacters(in: .whitespaces).isEmpty
@@ -76,14 +91,19 @@ struct MaintenanceFormSheet: View {
                         TextField(L10n.string("name"), text: $title)
                     }
                     if usesTypeIds {
-                        Picker(L10n.string("maintenance_type"), selection: $selectedTypeId) {
-                            ForEach(apiClient.maintenanceTypes) { type in
-                                Text(type.decodedName).tag(type.id)
+                        if typeIdPickerReady {
+                            Picker(L10n.string("maintenance_type"), selection: $selectedTypeId) {
+                                ForEach(apiClient.maintenanceTypes) { type in
+                                    Text(type.decodedName).tag(type.id)
+                                }
                             }
+                        } else {
+                            Text(L10n.string("loading"))
+                                .foregroundStyle(.secondary)
                         }
-                    } else {
+                    } else if !legacyTypeOptions.isEmpty {
                         Picker(L10n.string("maintenance_type"), selection: $selectedType) {
-                            ForEach(maintenanceTypes, id: \.self) { type in
+                            ForEach(legacyTypeOptions, id: \.self) { type in
                                 Text(type).tag(type)
                             }
                         }
@@ -97,12 +117,16 @@ struct MaintenanceFormSheet: View {
                     }
                 }
                 Section(header: Text(L10n.string("responsible_party"))) {
-                    CheckoutUserPickerContent(
-                        searchText: $responsibleSearchText,
-                        users: apiClient.filteredCheckoutUsers(searchText: responsibleSearchText),
-                        selectedUserId: selectedResponsibleUser?.id,
-                        onSelect: { selectedResponsibleUser = $0 }
-                    )
+                    if responsiblePickerReady {
+                        Picker(L10n.string("responsible_party"), selection: $selectedResponsibleId) {
+                            ForEach(apiClient.users, id: \.id) { user in
+                                Text(user.decodedName).tag(user.id)
+                            }
+                        }
+                    } else {
+                        Text(L10n.string("loading"))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Section(header: Text(L10n.string("financial"))) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -156,21 +180,25 @@ struct MaintenanceFormSheet: View {
         }
         .onAppear {
             prefill()
+            syncPickerSelections()
             if apiClient.suppliers.isEmpty {
                 Task { await apiClient.fetchSuppliers() }
             }
             if apiClient.users.isEmpty {
-                Task { await apiClient.fetchUsers() }
+                Task {
+                    await apiClient.fetchUsers()
+                    syncPickerSelections()
+                }
             }
             if apiClient.maintenanceTypes.isEmpty {
                 Task {
                     await apiClient.fetchMaintenanceTypes()
-                    applyTypeSelection()
+                    syncPickerSelections()
                 }
-            } else {
-                applyTypeSelection()
             }
         }
+        .onChange(of: apiClient.users.count) { _, _ in syncPickerSelections() }
+        .onChange(of: apiClient.maintenanceTypes.count) { _, _ in syncPickerSelections() }
         .alert(L10n.string("error"), isPresented: $showErrorAlert) {
             Button(L10n.string("ok"), role: .cancel) {}
         } message: {
@@ -178,20 +206,25 @@ struct MaintenanceFormSheet: View {
         }
     }
 
-    // match the edited record by name, else pick the first type
-    private func applyTypeSelection() {
-        guard usesTypeIds else { return }
-        if let r = record {
-            let targetName = (r.maintenanceType ?? r.assetMaintenanceType)?.lowercased()
-            if let target = targetName,
-               let match = apiClient.maintenanceTypes.first(where: { $0.name.lowercased() == target }) {
-                selectedTypeId = match.id
-                return
-            }
+    private func syncPickerSelections() {
+        if usesTypeIds {
+            MaintenanceFormPickerSupport.applyTypeIdSelection(
+                selectedTypeId: &selectedTypeId,
+                types: apiClient.maintenanceTypes,
+                record: record
+            )
+        } else {
+            MaintenanceFormPickerSupport.normalizeLegacyTypeSelection(
+                selectedType: &selectedType,
+                options: legacyTypeOptions
+            )
         }
-        if selectedTypeId == 0, let first = apiClient.maintenanceTypes.first {
-            selectedTypeId = first.id
-        }
+        MaintenanceFormPickerSupport.reconcileResponsibleSelection(
+            selectedId: &selectedResponsibleId,
+            users: apiClient.users,
+            preferredId: record?.responsibleParty?.id,
+            defaultUser: apiClient.defaultCheckoutUser
+        )
     }
 
     private func prefill() {
@@ -204,8 +237,7 @@ struct MaintenanceFormSheet: View {
             notes = r.decodedNotes
             isWarranty = r.isWarranty
             if let partyId = r.responsibleParty?.id {
-                selectedResponsibleUser = apiClient.users.first(where: { $0.id == partyId })
-                    ?? User(id: partyId, name: r.responsibleParty?.name ?? "", first_name: r.responsibleParty?.name ?? "")
+                selectedResponsibleId = partyId
             }
             if let startStr = r.startDate?.date, let date = dateFormatter.date(from: startStr) {
                 startDate = date
@@ -214,8 +246,8 @@ struct MaintenanceFormSheet: View {
                 hasCompletionDate = true
                 completionDate = date
             }
-        } else {
-            selectedResponsibleUser = apiClient.defaultCheckoutUser
+        } else if let defaultId = apiClient.defaultCheckoutUser?.id {
+            selectedResponsibleId = defaultId
         }
     }
 
@@ -229,7 +261,7 @@ struct MaintenanceFormSheet: View {
         let costOpt: String? = NumberFormatHelpers.normalizeDecimalForAPI(cost)
         let urlOpt: String? = url.trimmingCharacters(in: .whitespaces).isEmpty ? nil : url.trimmingCharacters(in: .whitespaces)
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
-        let responsibleIdOpt: Int? = selectedResponsibleUser?.id
+        let responsibleIdOpt: Int? = selectedResponsibleId == 0 ? nil : selectedResponsibleId
 
         // send both so the legacy string column stays populated too
         let typeIdOpt: Int? = usesTypeIds ? (selectedTypeId == 0 ? nil : selectedTypeId) : nil
@@ -237,23 +269,30 @@ struct MaintenanceFormSheet: View {
             ? apiClient.maintenanceTypes.first(where: { $0.id == selectedTypeId })?.name
             : selectedType
 
-        let ok: Bool
+        let update = MaintenanceUpdateRequest(
+            name: title,
+            asset_maintenance_type: typeStringOpt,
+            maintenance_type_id: typeIdOpt,
+            supplier_id: supplierIdOpt,
+            cost: costOpt,
+            notes: notesOpt,
+            url: urlOpt,
+            responsible_party_id: responsibleIdOpt,
+            start_date: startStr,
+            completion_date: endStr,
+            is_warranty: isWarranty,
+            image_delete: (selectedImage == nil && removeExistingImage) ? 1 : nil
+        )
+
+        let savedId: Int?
         if let existing = record {
-            let update = MaintenanceUpdateRequest(
-                name: title,
-                asset_maintenance_type: typeStringOpt,
-                maintenance_type_id: typeIdOpt,
-                supplier_id: supplierIdOpt,
-                cost: costOpt,
-                notes: notesOpt,
-                url: urlOpt,
-                responsible_party_id: responsibleIdOpt,
-                start_date: startStr,
-                completion_date: endStr,
-                is_warranty: isWarranty,
-                image_delete: (selectedImage == nil && removeExistingImage) ? 1 : nil
+            savedId = await apiClient.updateMaintenance(
+                id: existing.id,
+                assetId: assetId,
+                update: update,
+                image: selectedImage,
+                wasCompleted: existing.isCompleted
             )
-            ok = await apiClient.updateMaintenance(id: existing.id, update: update, image: selectedImage)
         } else {
             let create = MaintenanceCreateRequest(
                 asset_id: assetId,
@@ -269,11 +308,12 @@ struct MaintenanceFormSheet: View {
                 completion_date: endStr,
                 is_warranty: isWarranty
             )
-            ok = await apiClient.createMaintenance(create, image: selectedImage)
+            let created = await apiClient.createMaintenance(create, image: selectedImage)
+            savedId = created ? 0 : nil
         }
 
-        if ok {
-            onSave()
+        if savedId != nil {
+            onSave(savedId ?? 0)
             dismiss()
         } else {
             errorMessage = apiClient.lastApiMessage ?? apiClient.errorMessage ?? L10n.string("error")

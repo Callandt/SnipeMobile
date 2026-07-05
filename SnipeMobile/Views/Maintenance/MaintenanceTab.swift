@@ -64,12 +64,14 @@ struct MaintenanceTab: View {
         .sheet(isPresented: $showCreateSheet, onDismiss: {
             Task { await loadRecords() }
         }) {
-            MaintenanceFormSheet(apiClient: apiClient, assetId: assetId, record: nil, onSave: {})
+            MaintenanceFormSheet(apiClient: apiClient, assetId: assetId, record: nil, onSave: { _ in })
         }
         .sheet(item: $selectedRecord, onDismiss: {
             Task { await loadRecords() }
         }) { record in
-            MaintenanceDetailSheet(apiClient: apiClient, assetId: assetId, record: record, onMutated: {})
+            MaintenanceDetailSheet(apiClient: apiClient, assetId: assetId, record: record) {
+                Task { await loadRecords() }
+            }
         }
     }
 

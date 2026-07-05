@@ -882,7 +882,9 @@ struct MainSplitView: View {
                 apiClient: apiClient,
                 assetId: record.assetId ?? 0,
                 record: record,
-                onMutated: {}
+                onMutated: {
+                    Task { await loadAllMaintenances(force: true) }
+                }
             )
             .presentationDetents([.large])
         }
