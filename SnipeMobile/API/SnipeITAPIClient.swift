@@ -95,6 +95,8 @@ class SnipeITAPIClient: ObservableObject {
         await Task.detached(priority: .utility) {
             LocalCacheStore.save(snapshot, key: key)
         }.value
+        WidgetSnapshotBuilder.update(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)
+        WidgetBackgroundRefreshService.scheduleNextRefresh()
     }
 
     // Fill empty lists from disk so the UI renders instantly on launch.
@@ -119,6 +121,7 @@ class SnipeITAPIClient: ObservableObject {
         if suppliers.isEmpty { suppliers = snapshot.suppliers }
         if statusLabels.isEmpty { statusLabels = snapshot.statusLabels }
         if maintenances.isEmpty { maintenances = snapshot.maintenances }
+        WidgetSnapshotBuilder.update(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)
     }
 
     // MARK: - Pagination
@@ -310,6 +313,8 @@ class SnipeITAPIClient: ObservableObject {
                 self.manufacturers = []
                 self.suppliers = []
                 self.statusLabels = []
+                self.maintenances = []
+                WidgetSnapshotBuilder.clear()
             }
         }
     }
@@ -371,6 +376,7 @@ class SnipeITAPIClient: ObservableObject {
         await fetchConsumables()
         await fetchComponents()
         await fetchLocations()
+        _ = await fetchAllMaintenances()
 
         isLoading = false
         hasCompletedInitialLoad = true
@@ -386,6 +392,18 @@ class SnipeITAPIClient: ObservableObject {
     /// Full list sync in the background — does not block the UI.
     func syncAllInBackground() {
         Task { await fetchPrimaryThenBackground() }
+    }
+
+    /// Updates the shared widget snapshot from the API.
+    func syncWidgetDataFromServer() async {
+        guard isConfigured, !baseURL.isEmpty else { return }
+        cacheSaveTask?.cancel()
+        await fetchAssets()
+        await fetchAccessories()
+        await fetchConsumables()
+        await fetchComponents()
+        _ = await fetchAllMaintenances()
+        await persistCacheNow()
     }
 
     func applyUpdatedAsset(_ asset: Asset) {

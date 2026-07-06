@@ -26,6 +26,7 @@ struct BulkMaintenanceFormSheet: View {
     @State private var selectedUser: User? = nil
     @State private var responsibleWasCleared = false
     @State private var selectedImage: UIImage? = nil
+    @State private var showCamera = false
 
     @State private var isSaving: Bool = false
     @State private var showErrorAlert: Bool = false
@@ -144,7 +145,7 @@ struct BulkMaintenanceFormSheet: View {
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                 }
-                AssetPhotoSection(selectedImage: $selectedImage)
+                AssetPhotoSection(selectedImage: $selectedImage, showCamera: $showCamera)
                 Section(header: Text(L10n.string("notes"))) {
                     TextEditor(text: $notes)
                         .frame(minHeight: 80)
@@ -170,6 +171,7 @@ struct BulkMaintenanceFormSheet: View {
                 }
             }
         }
+        .assetCameraCover(isPresented: $showCamera, image: $selectedImage)
         .onAppear {
             if selectedAssetIds.isEmpty { selectedAssetIds = preselectedAssetIds }
             syncPickerSelections()

@@ -23,6 +23,7 @@ struct MaintenanceFormSheet: View {
     @State private var selectedUser: User? = nil
     @State private var responsibleWasCleared = false
     @State private var selectedImage: UIImage? = nil
+    @State private var showCamera = false
     @State private var removeExistingImage: Bool = false
     @State private var isSaving: Bool = false
     @State private var showErrorAlert: Bool = false
@@ -152,6 +153,7 @@ struct MaintenanceFormSheet: View {
                 }
                 AssetPhotoSection(
                     selectedImage: $selectedImage,
+                    showCamera: $showCamera,
                     existingImageURL: existingImageURL,
                     removeExistingImage: $removeExistingImage
                 )
@@ -174,6 +176,7 @@ struct MaintenanceFormSheet: View {
                 }
             }
         }
+        .assetCameraCover(isPresented: $showCamera, image: $selectedImage)
         .onAppear {
             prefill()
             syncPickerSelections()

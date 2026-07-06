@@ -3,11 +3,11 @@ import PhotosUI
 
 struct AssetPhotoSection: View {
     @Binding var selectedImage: UIImage?
+    @Binding var showCamera: Bool
     var existingImageURL: URL? = nil
     var removeExistingImage: Binding<Bool> = .constant(false)
 
     @State private var photoItem: PhotosPickerItem?
-    @State private var showCamera = false
 
     private var showsExistingImage: Bool {
         selectedImage == nil && existingImageURL != nil && !removeExistingImage.wrappedValue
@@ -56,10 +56,6 @@ struct AssetPhotoSection: View {
         .onChange(of: selectedImage) { _, newValue in
             if newValue != nil { removeExistingImage.wrappedValue = false }
         }
-        .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker(image: $selectedImage)
-                .ignoresSafeArea()
-        }
     }
 
     @ViewBuilder
@@ -87,6 +83,15 @@ struct AssetPhotoSection: View {
             .scaledToFit()
             .frame(maxHeight: 180)
             .frame(maxWidth: .infinity)
+    }
+}
+
+extension View {
+    func assetCameraCover(isPresented: Binding<Bool>, image: Binding<UIImage?>) -> some View {
+        fullScreenCover(isPresented: isPresented) {
+            CameraPicker(image: image)
+                .ignoresSafeArea()
+        }
     }
 }
 

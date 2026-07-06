@@ -25,6 +25,7 @@ struct AddAssetSheet: View {
     @State private var warrantyMonths = ""
     @State private var byod = false
     @State private var selectedImage: UIImage?
+    @State private var showCamera = false
     @State private var customFields: [String: String] = [:]
     @State private var displayedFieldDefinitions: [SnipeITAPIClient.FieldDefinition] = []
     @State private var isSaving = false
@@ -69,7 +70,7 @@ struct AddAssetSheet: View {
             Form {
                 generalSection
                 purchaseSection
-                AssetPhotoSection(selectedImage: $selectedImage)
+                AssetPhotoSection(selectedImage: $selectedImage, showCamera: $showCamera)
                 notesSection
                 customFieldsSection
             }
@@ -89,6 +90,7 @@ struct AddAssetSheet: View {
             } message: {
                 Text(resultMessage)
             }
+            .assetCameraCover(isPresented: $showCamera, image: $selectedImage)
         }
         .sheet(isPresented: $showingDellScanner) {
             ZoomableQRScannerView(completion: handleDellScanResult)

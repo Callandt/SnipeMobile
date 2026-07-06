@@ -123,6 +123,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        WidgetBackgroundRefreshService.registerBackgroundTasks()
+        WidgetBackgroundRefreshService.scheduleNextRefresh()
         return true
     }
 
@@ -170,6 +172,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     @StateObject private var apiClient = SnipeITAPIClient()
     @StateObject private var appSettings = AppSettings()
     @StateObject private var auditNotificationRouter = AuditNotificationRouter()
+    @StateObject private var widgetNavigationRouter = WidgetNavigationRouter()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @AppStorage("hasSeenModulesIntro") private var hasSeenModulesIntro: Bool = false
     @State private var showAPISettings: Bool = false
@@ -232,6 +235,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                     }
                     .environmentObject(appSettings)
                     .environmentObject(auditNotificationRouter)
+                    .environmentObject(widgetNavigationRouter)
                     .preferredColorScheme(
                         appSettings.appTheme == "light" ? .light :
                         appSettings.appTheme == "dark" ? .dark : nil
@@ -257,12 +261,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                 }
             }
             .onAppear {
+                WidgetBackgroundRefreshService.configure(apiClient: apiClient)
+
                 // Cold boot fallback: if notification tap happened before observers
                 // attached, recover the pending intent from UserDefaults.
                 if let raw = UserDefaults.standard.string(forKey: pendingAuditIntentDefaultsKey),
                    let intent = AuditNotificationIntent(rawValue: raw) {
                     auditNotificationRouter.set(intent: intent)
                     UserDefaults.standard.removeObject(forKey: pendingAuditIntentDefaultsKey)
+                }
+
+                if let destination = WidgetDeepLinkStore.consumePending() {
+                    widgetNavigationRouter.open(destination)
                 }
 
                 if hasCompletedOnboarding && appSettings.useBiometrics == true && !isLocked && !justAuthenticated {
@@ -289,6 +299,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                 })
                 .environmentObject(appSettings)
             }
+            .onOpenURL { url in
+                guard hasCompletedOnboarding,
+                      let destination = WidgetDeepLinkDestination.from(url: url)
+                else { return }
+                widgetNavigationRouter.open(destination)
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 if hasCompletedOnboarding && appSettings.useBiometrics == true && !isLocked && !justAuthenticated {
                     isLocked = true
@@ -310,6 +326,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                     authenticateBiometric()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                guard hasCompletedOnboarding else { return }
+                WidgetBackgroundRefreshService.scheduleNextRefresh()
+                Task { await WidgetBackgroundRefreshService.refreshOnAppBackground() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                 if appSettings.useBiometrics == true {
                     showPrivacyBlur = true
@@ -317,7 +338,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 showPrivacyBlur = false
-                guard hasCompletedOnboarding, !didRequestReviewThisLaunch else { return }
+                guard hasCompletedOnboarding else { return }
+                Task { await WidgetBackgroundRefreshService.refreshOnAppForegroundIfNeeded() }
+                guard !didRequestReviewThisLaunch else { return }
                 maybeRequestAppStoreReviewIfEligible()
             }
         }
@@ -388,6 +411,7 @@ struct MainSplitView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @EnvironmentObject private var appSettings: AppSettings
     @EnvironmentObject private var auditNotificationRouter: AuditNotificationRouter
+    @EnvironmentObject private var widgetNavigationRouter: WidgetNavigationRouter
     @State private var selectedSection: MainTab = .hardware
     @State private var selectedAsset: Asset?
     @State private var selectedAccessory: Accessory?
@@ -408,6 +432,8 @@ struct MainSplitView: View {
     @State private var searchText: String = ""
     @State private var awaitingAuditNavigationResolution = false
 	    @State private var auditNotificationNavResolved = false
+    @State private var awaitingWidgetNavigation = false
+    @State private var widgetNavigationResolved = false
     @State private var auditListFilter: AuditListFilter = .all
     @State private var hardwareSubtab: HardwareAuditSubtab = .all
     @State private var showTodayOnlyOverride = false
@@ -698,6 +724,37 @@ struct MainSplitView: View {
         }
     }
 
+    private func beginWidgetNavigation() {
+        guard !widgetNavigationResolved, let request = widgetNavigationRouter.pendingRequest else { return }
+        awaitingWidgetNavigation = true
+
+        WidgetNavigation.apply(
+            destination: request.destination,
+            enableAuditSubtab: enableAuditSubtab,
+            showMaintenance: showMaintenance,
+            selectedTab: &selectedSection,
+            hardwareSubtab: &hardwareSubtab,
+            auditListFilter: &auditListFilter,
+            showTodayOnlyOverride: &showTodayOnlyOverride
+        )
+
+        searchText = ""
+        skipClearSelectionOnSectionChange = true
+        selectedAsset = nil
+        selectedAccessory = nil
+        selectedLicense = nil
+        selectedConsumable = nil
+        selectedComponent = nil
+        selectedUser = nil
+        selectedLocation = nil
+        widgetNavigationResolved = true
+
+        DispatchQueue.main.async {
+            awaitingWidgetNavigation = false
+            widgetNavigationRouter.consume()
+        }
+    }
+
     private var maintenanceFilterMenu: some View {
         Group {
             if MaintenanceStatusFilter.hasChoices(in: apiClient.maintenances) {
@@ -798,6 +855,9 @@ struct MainSplitView: View {
         .onChange(of: selectedSection) { _, newSection in
             if skipClearSelectionOnSectionChange {
                 skipClearSelectionOnSectionChange = false
+                return
+            }
+            if awaitingWidgetNavigation {
                 return
             }
             if newSection != .hardware {
@@ -1028,6 +1088,10 @@ struct MainSplitView: View {
                 auditNotificationNavResolved = false
                 tryResolveAndOpenAuditTarget()
             }
+
+            if widgetNavigationRouter.pendingRequest != nil, !widgetNavigationResolved {
+                beginWidgetNavigation()
+            }
         }
         .onChange(of: auditNotificationRouter.pendingRequest?.id) { _, _ in
             guard auditNotificationRouter.pendingRequest != nil else { return }
@@ -1039,6 +1103,11 @@ struct MainSplitView: View {
             if awaitingAuditNavigationResolution {
                 tryResolveAndOpenAuditTarget()
             }
+        }
+        .onChange(of: widgetNavigationRouter.pendingRequest?.id) { _, _ in
+            guard widgetNavigationRouter.pendingRequest != nil else { return }
+            widgetNavigationResolved = false
+            beginWidgetNavigation()
         }
     }
 

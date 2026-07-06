@@ -174,6 +174,7 @@ struct ContentView: View {
     @State private var hasLoadedInitialAssets: Bool = false
     @EnvironmentObject var appSettings: AppSettings
     @EnvironmentObject private var auditNotificationRouter: AuditNotificationRouter
+    @EnvironmentObject private var widgetNavigationRouter: WidgetNavigationRouter
     @State private var auditListFilter: AuditListFilter = .all
     @State private var hardwareSubtab: HardwareAuditSubtab = .all
     @State private var showTodayOnlyOverride = false
@@ -194,12 +195,15 @@ struct ContentView: View {
     @State private var pendingDellSerial: String?
     @AppStorage("enableDellQrScan") private var enableDellQrScan: Bool = true
     @AppStorage("enableAuditSubtab") private var enableAuditSubtab: Bool = false
+    @AppStorage("showMaintenance") private var showMaintenance: Bool = true
     @AppStorage("showAccessoriesTab") private var showAccessoriesTab: Bool = true
     @AppStorage("showLicensesTab") private var showLicensesTab: Bool = true
     @AppStorage("showConsumablesTab") private var showConsumablesSub: Bool = true
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
     @State private var awaitingAuditNavigationResolution = false
     @State private var auditNotificationNavResolved = false
+    @State private var awaitingWidgetNavigation = false
+    @State private var widgetNavigationResolved = false
 
     private var orderedVisibleTabs: [MainTab] {
         TabOrderStore.defaultOrder.filter(isTabVisible)
@@ -251,7 +255,7 @@ struct ContentView: View {
             searchText = ""
             // Tab state from visible view
             isDetailViewActive = false
-            if !awaitingAuditNavigationResolution {
+            if !awaitingAuditNavigationResolution && !awaitingWidgetNavigation {
                 auditListFilter = .all
                 showTodayOnlyOverride = false
                 hardwareSubtab = .all
@@ -359,6 +363,10 @@ struct ContentView: View {
                 isDetailViewActive = false
                 tryResolveAndOpenAuditListFilter()
             }
+
+            if widgetNavigationRouter.pendingRequest != nil, !widgetNavigationResolved {
+                beginWidgetNavigation()
+            }
         }
         .onChange(of: auditNotificationRouter.pendingRequest?.id) { _, _ in
             guard auditNotificationRouter.pendingRequest != nil else { return }
@@ -373,6 +381,11 @@ struct ContentView: View {
         .onChange(of: apiClient.assets.count) { _, _ in
             guard awaitingAuditNavigationResolution, auditNotificationRouter.pendingRequest != nil else { return }
             tryResolveAndOpenAuditListFilter()
+        }
+        .onChange(of: widgetNavigationRouter.pendingRequest?.id) { _, _ in
+            guard widgetNavigationRouter.pendingRequest != nil else { return }
+            widgetNavigationResolved = false
+            beginWidgetNavigation()
         }
     }
 
@@ -474,6 +487,34 @@ struct ContentView: View {
         DispatchQueue.main.async {
             awaitingAuditNavigationResolution = false
             auditNotificationRouter.consume()
+        }
+    }
+
+    private func beginWidgetNavigation() {
+        guard !widgetNavigationResolved, widgetNavigationRouter.pendingRequest != nil else { return }
+        awaitingWidgetNavigation = true
+
+        WidgetNavigation.apply(
+            destination: widgetNavigationRouter.pendingRequest!.destination,
+            enableAuditSubtab: enableAuditSubtab,
+            showMaintenance: showMaintenance,
+            selectedTab: &selectedTab,
+            hardwareSubtab: &hardwareSubtab,
+            auditListFilter: &auditListFilter,
+            showTodayOnlyOverride: &showTodayOnlyOverride
+        )
+
+        hardwarePath = NavigationPath()
+        accessoriesPath = NavigationPath()
+        licensesPath = NavigationPath()
+        stockPath = NavigationPath()
+        directoryPath = NavigationPath()
+        isDetailViewActive = false
+        widgetNavigationResolved = true
+
+        DispatchQueue.main.async {
+            awaitingWidgetNavigation = false
+            widgetNavigationRouter.consume()
         }
     }
 

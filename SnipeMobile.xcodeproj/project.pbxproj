@@ -6,20 +6,85 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		WGT000042E0D263200CBDEF3 /* SnipeMobileWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = WGT0000012E0D263200CBDEF3 /* SnipeMobileWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		WGT0000A2E0D263200CBDEF3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E9453ADB2E0D263200CBDEF3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = WGT000052E0D263200CBDEF3;
+			remoteInfo = SnipeMobileWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		WGT000032E0D263200CBDEF3 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = "";
+			dstSubfolder = PlugIns;
+			files = (
+				WGT000042E0D263200CBDEF3 /* SnipeMobileWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		E9453AE32E0D263200CBDEF3 /* SnipeMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SnipeMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		WGT0000012E0D263200CBDEF3 /* SnipeMobileWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SnipeMobileWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		APP000012E0D263200CBDEF3 /* Exceptions for "SnipeMobile" folder in "SnipeMobile" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E9453AE22E0D263200CBDEF3 /* SnipeMobile */;
+		};
+		WGT0000E2E0D263200CBDEF3 /* Exceptions for "SnipeMobileWidget" folder in "SnipeMobileWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = WGT000052E0D263200CBDEF3 /* SnipeMobileWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E9453AE52E0D263200CBDEF3 /* SnipeMobile */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				APP000012E0D263200CBDEF3 /* Exceptions for "SnipeMobile" folder in "SnipeMobile" target */,
+			);
 			path = SnipeMobile;
+			sourceTree = "<group>";
+		};
+		SHR000012E0D263200CBDEF3 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		WGT000022E0D263200CBDEF3 /* SnipeMobileWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				WGT0000E2E0D263200CBDEF3 /* Exceptions for "SnipeMobileWidget" folder in "SnipeMobileWidgetExtension" target */,
+			);
+			path = SnipeMobileWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		E9453AE02E0D263200CBDEF3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		WGT000082E0D263200CBDEF3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
 			);
@@ -31,6 +96,8 @@
 			isa = PBXGroup;
 			children = (
 				E9453AE52E0D263200CBDEF3 /* SnipeMobile */,
+				SHR000012E0D263200CBDEF3 /* Shared */,
+				WGT000022E0D263200CBDEF3 /* SnipeMobileWidget */,
 				E9453AE42E0D263200CBDEF3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -39,6 +106,7 @@
 			isa = PBXGroup;
 			children = (
 				E9453AE32E0D263200CBDEF3 /* SnipeMobile.app */,
+				WGT0000012E0D263200CBDEF3 /* SnipeMobileWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,16 +121,40 @@
 				E9453ADF2E0D263200CBDEF3 /* Sources */,
 				E9453AE02E0D263200CBDEF3 /* Frameworks */,
 				E9453AE12E0D263200CBDEF3 /* Resources */,
+				WGT000032E0D263200CBDEF3 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
+			dependencies = (
+				WGT0000B2E0D263200CBDEF3 /* PBXTargetDependency */,
+			);
 			fileSystemSynchronizedGroups = (
 				E9453AE52E0D263200CBDEF3 /* SnipeMobile */,
+				SHR000012E0D263200CBDEF3 /* Shared */,
 			);
 			name = SnipeMobile;
 			productName = SnipeMobile;
 			productReference = E9453AE32E0D263200CBDEF3 /* SnipeMobile.app */;
 			productType = "com.apple.product-type.application";
+		};
+		WGT000052E0D263200CBDEF3 /* SnipeMobileWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = WGT000062E0D263200CBDEF3 /* Build configuration list for PBXNativeTarget "SnipeMobileWidgetExtension" */;
+			buildPhases = (
+				WGT000072E0D263200CBDEF3 /* Sources */,
+				WGT000082E0D263200CBDEF3 /* Frameworks */,
+				WGT000092E0D263200CBDEF3 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				SHR000012E0D263200CBDEF3 /* Shared */,
+				WGT000022E0D263200CBDEF3 /* SnipeMobileWidget */,
+			);
+			name = SnipeMobileWidgetExtension;
+			productName = SnipeMobileWidgetExtension;
+			productReference = WGT0000012E0D263200CBDEF3 /* SnipeMobileWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -75,6 +167,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					E9453AE22E0D263200CBDEF3 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					WGT000052E0D263200CBDEF3 = {
 						CreatedOnToolsVersion = 16.4;
 					};
 				};
@@ -96,12 +191,18 @@
 			projectRoot = "";
 			targets = (
 				E9453AE22E0D263200CBDEF3 /* SnipeMobile */,
+				WGT000052E0D263200CBDEF3 /* SnipeMobileWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		E9453AE12E0D263200CBDEF3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		WGT000092E0D263200CBDEF3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
 			);
@@ -114,7 +215,20 @@
 			files = (
 			);
 		};
+		WGT000072E0D263200CBDEF3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		WGT0000B2E0D263200CBDEF3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = WGT000052E0D263200CBDEF3 /* SnipeMobileWidgetExtension */;
+			targetProxy = WGT0000A2E0D263200CBDEF3 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		E9453AEC2E0D263300CBDEF3 /* Debug configuration for PBXProject "SnipeMobile" */ = {
@@ -248,11 +362,11 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = SnipeMobile/SnipeMobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 43;
+				CURRENT_PROJECT_VERSION = 44;
 				DEVELOPMENT_TEAM = AR8XX75KK6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "";
+				INFOPLIST_FILE = SnipeMobile/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SnipeMobile;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera to scan QR codes.";
@@ -288,11 +402,11 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = SnipeMobile/SnipeMobile.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 43;
+				CURRENT_PROJECT_VERSION = 44;
 				DEVELOPMENT_TEAM = AR8XX75KK6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "";
+				INFOPLIST_FILE = SnipeMobile/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SnipeMobile;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera to scan QR codes.";
@@ -320,6 +434,72 @@
 			};
 			name = Release;
 		};
+		WGT0000C2E0D263200CBDEF3 /* Debug configuration for PBXNativeTarget "SnipeMobileWidgetExtension" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = SnipeMobileWidget/SnipeMobileWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 44;
+				DEVELOPMENT_TEAM = AR8XX75KK6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SnipeMobileWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SnipeMobile;
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1.8;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pzriho.snipemobile.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		WGT0000D2E0D263200CBDEF3 /* Release configuration for PBXNativeTarget "SnipeMobileWidgetExtension" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = SnipeMobileWidget/SnipeMobileWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 44;
+				DEVELOPMENT_TEAM = AR8XX75KK6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SnipeMobileWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SnipeMobile;
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1.8;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pzriho.snipemobile.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -336,6 +516,14 @@
 			buildConfigurations = (
 				E9453AEF2E0D263300CBDEF3 /* Debug configuration for PBXNativeTarget "SnipeMobile" */,
 				E9453AF02E0D263300CBDEF3 /* Release configuration for PBXNativeTarget "SnipeMobile" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		WGT000062E0D263200CBDEF3 /* Build configuration list for PBXNativeTarget "SnipeMobileWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				WGT0000C2E0D263200CBDEF3 /* Debug configuration for PBXNativeTarget "SnipeMobileWidgetExtension" */,
+				WGT0000D2E0D263200CBDEF3 /* Release configuration for PBXNativeTarget "SnipeMobileWidgetExtension" */,
 			);
 			defaultConfigurationName = Release;
 		};

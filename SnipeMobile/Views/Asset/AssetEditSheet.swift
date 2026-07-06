@@ -48,6 +48,7 @@ struct AssetEditSheet: View {
     @State private var showResult = false
     @State private var resultMessage = ""
     @State private var selectedImage: UIImage?
+    @State private var showCamera = false
     @State private var removeExistingImage = false
 
     private var existingImageURL: URL? {
@@ -95,6 +96,7 @@ struct AssetEditSheet: View {
                 financialSection
                 AssetPhotoSection(
                     selectedImage: $selectedImage,
+                    showCamera: $showCamera,
                     existingImageURL: existingImageURL,
                     removeExistingImage: $removeExistingImage
                 )
@@ -130,6 +132,7 @@ struct AssetEditSheet: View {
             .alert(isPresented: $showResult) {
                 Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
             }
+            .assetCameraCover(isPresented: $showCamera, image: $selectedImage)
         }
     }
 
