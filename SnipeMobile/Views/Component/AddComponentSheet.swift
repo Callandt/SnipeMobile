@@ -187,7 +187,7 @@ struct AddComponentSheet: View {
             name: trimmedName,
             categoryId: selectedCategoryId,
             quantity: quantity,
-            minAmt: minAmt > 0 ? minAmt : nil,
+            minAmt: minAmt,
             serial: serial.isEmpty ? nil : serial.trimmingCharacters(in: .whitespaces),
             modelNumber: modelNumber.isEmpty ? nil : modelNumber.trimmingCharacters(in: .whitespaces),
             orderNumber: orderNumber.isEmpty ? nil : orderNumber.trimmingCharacters(in: .whitespaces),

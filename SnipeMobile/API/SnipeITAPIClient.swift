@@ -1234,7 +1234,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        if let min = minAmt, min > 0 { body["min_amt"] = min }
+        body["min_amt"] = minAmt ?? 0
         if let v = serial, !v.isEmpty { body["serial"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -1295,12 +1295,13 @@ class SnipeITAPIClient: ObservableObject {
         request.httpMethod = "PATCH"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         var body: [String: Any] = [
             "name": name,
             "category_id": categoryId,
             "qty": quantity
         ]
-        if let min = minAmt { body["min_amt"] = min }
+        body["min_amt"] = minAmt ?? 0
         if let v = serial, !v.isEmpty { body["serial"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -1326,9 +1327,7 @@ class SnipeITAPIClient: ObservableObject {
             )
             await MainActor.run { self.lastApiMessage = result.message }
             guard result.success else { return false }
-            if let updated: Component = decodedPatchPayload(from: data) {
-                await MainActor.run { replaceCachedItem(updated, in: &self.components, id: \.id) }
-            }
+            await refreshComponentInCache(componentId: componentId)
             Task { await self.fetchComponents() }
             return true
         } catch {

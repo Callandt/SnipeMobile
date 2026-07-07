@@ -197,7 +197,7 @@ struct ComponentDetailView: View {
         .onChange(of: component.id) { reload() }
         .sheet(isPresented: $showEditSheet) {
             ComponentEditSheet(apiClient: apiClient, component: currentComponent, isPresented: $showEditSheet, onSuccess: {
-                Task { await apiClient.fetchComponents() }
+                Task { await apiClient.refreshComponentInCache(componentId: component.id) }
             })
         }
         .sheet(isPresented: $showCheckoutSheet) {
