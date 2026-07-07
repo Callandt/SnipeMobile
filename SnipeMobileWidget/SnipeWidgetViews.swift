@@ -5,7 +5,7 @@ enum SnipeWidgetFormat {
     static func count(_ value: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.locale = Locale(identifier: "nl_NL")
+        formatter.locale = L10n.locale
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 }
@@ -320,7 +320,7 @@ struct SnipeUnconfiguredView: View {
             Image(systemName: "link.badge.plus")
                 .font(.title3)
                 .foregroundStyle(WidgetConstants.brandColor)
-            Text("Verbind SnipeMobile")
+            Text(L10n.string("widget_connect"))
                 .font(.caption.weight(.semibold))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -357,31 +357,31 @@ struct SnipeConfigurableWidgetView: View {
 
     private var auditStats: [SnipeStatItem] {
         [
-            SnipeStatItem(value: snapshot.auditsOverdue, label: "Te laat", color: WidgetConstants.overdueColor, destination: .audits),
-            SnipeStatItem(value: snapshot.auditsDueToday, label: "Vandaag", color: WidgetConstants.dueTodayColor, destination: .audits),
-            SnipeStatItem(value: snapshot.auditsDueSoon, label: "Binnenkort", color: WidgetConstants.dueSoonColor, destination: .audits)
+            SnipeStatItem(value: snapshot.auditsOverdue, label: L10n.string("audit_status_overdue"), color: WidgetConstants.overdueColor, destination: .audits),
+            SnipeStatItem(value: snapshot.auditsDueToday, label: L10n.string("widget_today_short"), color: WidgetConstants.dueTodayColor, destination: .audits),
+            SnipeStatItem(value: snapshot.auditsDueSoon, label: L10n.string("widget_soon_short"), color: WidgetConstants.dueSoonColor, destination: .audits)
         ]
     }
 
     private var overviewSecondaryStats: [SnipeStatItem] {
         [
-            SnipeStatItem(value: snapshot.openMaintenance, label: "Maint. open", color: WidgetConstants.maintenanceColor, destination: .maintenance),
-            SnipeStatItem(value: snapshot.totalAssets, label: "Assets totaal", color: WidgetConstants.assetsColor, destination: .assets),
-            SnipeStatItem(value: snapshot.lowStockItems, label: "Lage voorraad", color: WidgetConstants.stockColor, destination: .stock)
+            SnipeStatItem(value: snapshot.openMaintenance, label: L10n.string("widget_maint_open_short"), color: WidgetConstants.maintenanceColor, destination: .maintenance),
+            SnipeStatItem(value: snapshot.totalAssets, label: L10n.string("widget_assets_total"), color: WidgetConstants.assetsColor, destination: .assets),
+            SnipeStatItem(value: snapshot.lowStockItems, label: L10n.string("widget_low_stock"), color: WidgetConstants.stockColor, destination: .stock)
         ]
     }
 
     private var smallAuditStats: [SnipeStatItem] {
         [
-            SnipeStatItem(value: snapshot.auditsOverdue, label: "Te laat", color: WidgetConstants.overdueColor, destination: .audits),
-            SnipeStatItem(value: snapshot.auditsDueToday, label: "Vandaag", color: WidgetConstants.dueTodayColor, destination: .audits)
+            SnipeStatItem(value: snapshot.auditsOverdue, label: L10n.string("audit_status_overdue"), color: WidgetConstants.overdueColor, destination: .audits),
+            SnipeStatItem(value: snapshot.auditsDueToday, label: L10n.string("widget_today_short"), color: WidgetConstants.dueTodayColor, destination: .audits)
         ]
     }
 
     private var smallOtherStats: [SnipeStatItem] {
         [
-            SnipeStatItem(value: snapshot.openMaintenance, label: "Maint.", color: WidgetConstants.maintenanceColor, destination: .maintenance),
-            SnipeStatItem(value: snapshot.totalAssets, label: "Assets", color: WidgetConstants.assetsColor, destination: .assets)
+            SnipeStatItem(value: snapshot.openMaintenance, label: L10n.string("widget_maint_short"), color: WidgetConstants.maintenanceColor, destination: .maintenance),
+            SnipeStatItem(value: snapshot.totalAssets, label: L10n.string("assets"), color: WidgetConstants.assetsColor, destination: .assets)
         ]
     }
 
@@ -403,18 +403,18 @@ struct SnipeConfigurableWidgetView: View {
         switch family {
         case .systemSmall:
             VStack(spacing: 7) {
-                SnipeLabeledStatStrip(title: "Audits", icon: "checkmark.seal", items: smallAuditStats, valueSize: 17, compact: true)
-                SnipeLabeledStatStrip(title: "Overig", icon: "square.grid.2x2", items: smallOtherStats, valueSize: 17, compact: true)
+                SnipeLabeledStatStrip(title: L10n.string("widget_audits"), icon: "checkmark.seal", items: smallAuditStats, valueSize: 17, compact: true)
+                SnipeLabeledStatStrip(title: L10n.string("widget_other"), icon: "square.grid.2x2", items: smallOtherStats, valueSize: 17, compact: true)
             }
         case .systemMedium:
             VStack(spacing: 8) {
-                SnipeLabeledStatStrip(title: "Audits", icon: "checkmark.seal", items: auditStats, valueSize: 22)
-                SnipeLabeledStatStrip(title: "Overig", icon: "square.grid.2x2", items: overviewSecondaryStats, valueSize: 22)
+                SnipeLabeledStatStrip(title: L10n.string("widget_audits"), icon: "checkmark.seal", items: auditStats, valueSize: 22)
+                SnipeLabeledStatStrip(title: L10n.string("widget_other"), icon: "square.grid.2x2", items: overviewSecondaryStats, valueSize: 22)
             }
         default:
             VStack(spacing: 10) {
-                SnipeLabeledStatStrip(title: "Audits", icon: "checkmark.seal", items: auditStats, valueSize: 24)
-                SnipeLabeledStatStrip(title: "Overig", icon: "square.grid.2x2", items: overviewSecondaryStats, valueSize: 24)
+                SnipeLabeledStatStrip(title: L10n.string("widget_audits"), icon: "checkmark.seal", items: auditStats, valueSize: 24)
+                SnipeLabeledStatStrip(title: L10n.string("widget_other"), icon: "square.grid.2x2", items: overviewSecondaryStats, valueSize: 24)
                 largeListSection
             }
         }
@@ -424,27 +424,27 @@ struct SnipeConfigurableWidgetView: View {
     private var largeListSection: some View {
         if !snapshot.topOverdueAudits.isEmpty {
             SnipeWidgetSection(
-                title: "Te late audits",
+                title: L10n.string("widget_overdue_audits"),
                 items: snapshot.topOverdueAudits.map { ($0.tag, Optional($0.name)) },
                 limit: 2,
                 destination: .audits
             )
         } else if !snapshot.topOpenMaintenance.isEmpty {
             SnipeWidgetSection(
-                title: "Open maintenance",
+                title: L10n.string("widget_open_maintenance"),
                 items: snapshot.topOpenMaintenance.map { ($0.title, $0.assetTag) },
                 limit: 2,
                 destination: .maintenance
             )
         } else if !snapshot.topLowStockItems.isEmpty {
             SnipeWidgetSection(
-                title: "Lage voorraad",
-                items: snapshot.topLowStockItems.map { ($0.name, "\($0.remaining) over") },
+                title: L10n.string("widget_low_stock"),
+                items: snapshot.topLowStockItems.map { ($0.name, L10n.string("widget_remaining_count", $0.remaining)) },
                 limit: 2,
                 destination: .stock
             )
         } else {
-            SnipeEmptyState(message: "Geen urgente acties")
+            SnipeEmptyState(message: L10n.string("widget_no_urgent_actions"))
         }
     }
 
@@ -454,15 +454,15 @@ struct SnipeConfigurableWidgetView: View {
     private var auditsContent: some View {
         switch family {
         case .systemSmall:
-            SnipeSmallMetricPanel(title: "Audits", icon: "checkmark.seal", items: auditStats)
+            SnipeSmallMetricPanel(title: L10n.string("widget_audits"), icon: "checkmark.seal", items: auditStats)
         case .systemMedium:
-            SnipeLabeledStatStrip(title: "Audits", icon: "checkmark.seal", items: auditStats, valueSize: 24)
+            SnipeLabeledStatStrip(title: L10n.string("widget_audits"), icon: "checkmark.seal", items: auditStats, valueSize: 24)
         case .systemLarge:
             VStack(spacing: 8) {
-                SnipeLabeledStatStrip(title: "Audits", icon: "checkmark.seal", items: auditStats, valueSize: 28)
+                SnipeLabeledStatStrip(title: L10n.string("widget_audits"), icon: "checkmark.seal", items: auditStats, valueSize: 28)
                 if !snapshot.topOverdueAudits.isEmpty {
                     SnipeWidgetSection(
-                        title: "Te late audits",
+                        title: L10n.string("widget_overdue_audits"),
                         items: snapshot.topOverdueAudits.map { ($0.tag, Optional($0.name)) },
                         limit: 4,
                         destination: .audits
@@ -482,25 +482,25 @@ struct SnipeConfigurableWidgetView: View {
         case .systemSmall:
             SnipeFocusNumber(
                 value: snapshot.openMaintenance,
-                label: "Maintenance",
-                caption: "Open taken",
+                label: L10n.string("maintenance"),
+                caption: L10n.string("widget_open_tasks"),
                 color: WidgetConstants.maintenanceColor,
                 compact: true
             )
         case .systemMedium:
             SnipeFocusNumber(
                 value: snapshot.openMaintenance,
-                label: "Maintenance open",
+                label: L10n.string("widget_maintenance_open"),
                 caption: snapshot.topOpenMaintenance.first?.title ?? "—",
                 color: WidgetConstants.maintenanceColor
             )
         case .systemLarge:
             VStack(spacing: 8) {
                 SnipeStatStrip(items: [
-                    SnipeStatItem(value: snapshot.openMaintenance, label: "Open", color: WidgetConstants.maintenanceColor)
+                    SnipeStatItem(value: snapshot.openMaintenance, label: L10n.string("widget_open_short"), color: WidgetConstants.maintenanceColor)
                 ], valueSize: 28)
                 SnipeWidgetSection(
-                    title: "Open taken",
+                    title: L10n.string("widget_open_tasks"),
                     items: snapshot.topOpenMaintenance.map { ($0.title, $0.assetTag) },
                     limit: 4,
                     destination: .maintenance
@@ -516,23 +516,23 @@ struct SnipeConfigurableWidgetView: View {
     @ViewBuilder
     private var assetsContent: some View {
         let stats = [
-            SnipeStatItem(value: snapshot.totalAssets, label: "Totaal", color: WidgetConstants.assetsColor),
-            SnipeStatItem(value: snapshot.deployedAssets, label: "Uitgeg.", color: WidgetConstants.dueTodayColor),
-            SnipeStatItem(value: snapshot.availableAssets, label: "Vrij", color: Color(uiColor: .systemGreen))
+            SnipeStatItem(value: snapshot.totalAssets, label: L10n.string("widget_total_short"), color: WidgetConstants.assetsColor),
+            SnipeStatItem(value: snapshot.deployedAssets, label: L10n.string("widget_deployed_short"), color: WidgetConstants.dueTodayColor),
+            SnipeStatItem(value: snapshot.availableAssets, label: L10n.string("widget_available_short"), color: Color(uiColor: .systemGreen))
         ]
 
         switch family {
         case .systemSmall:
             SnipeFocusNumber(
                 value: snapshot.totalAssets,
-                label: "Assets",
-                caption: "\(SnipeWidgetFormat.count(snapshot.deployedAssets)) uitgeg.",
+                label: L10n.string("assets"),
+                caption: L10n.string("widget_deployed_caption", SnipeWidgetFormat.count(snapshot.deployedAssets)),
                 color: WidgetConstants.assetsColor,
                 compact: true
             )
         case .systemMedium, .systemLarge:
             SnipeLabeledStatStrip(
-                title: "Assets",
+                title: L10n.string("assets"),
                 icon: "laptopcomputer",
                 items: stats,
                 valueSize: family == .systemLarge ? 26 : 22
@@ -550,26 +550,26 @@ struct SnipeConfigurableWidgetView: View {
         case .systemSmall:
             SnipeFocusNumber(
                 value: snapshot.lowStockItems,
-                label: "Voorraad",
-                caption: "Lage voorraad",
+                label: L10n.string("tab_stock"),
+                caption: L10n.string("widget_low_stock"),
                 color: WidgetConstants.stockColor,
                 compact: true
             )
         case .systemMedium:
             SnipeFocusNumber(
                 value: snapshot.lowStockItems,
-                label: "Lage voorraad",
-                caption: "Items onder minimum",
+                label: L10n.string("widget_low_stock"),
+                caption: L10n.string("widget_below_minimum"),
                 color: WidgetConstants.stockColor
             )
         case .systemLarge:
             VStack(spacing: 8) {
                 SnipeStatStrip(items: [
-                    SnipeStatItem(value: snapshot.lowStockItems, label: "Lage voorraad", color: WidgetConstants.stockColor)
+                    SnipeStatItem(value: snapshot.lowStockItems, label: L10n.string("widget_low_stock"), color: WidgetConstants.stockColor)
                 ], valueSize: 28)
                 SnipeWidgetSection(
-                    title: "Items",
-                    items: snapshot.topLowStockItems.map { ($0.name, "\($0.remaining) over") },
+                    title: L10n.string("widget_items"),
+                    items: snapshot.topLowStockItems.map { ($0.name, L10n.string("widget_remaining_count", $0.remaining)) },
                     limit: 4,
                     destination: .stock
                 )
@@ -615,11 +615,16 @@ struct SnipeConfigurableWidgetView: View {
 
     private var accessoryInlineText: String {
         switch mode {
-        case .overview: "\(snapshot.auditsOverdue) audits te laat · \(snapshot.openMaintenance) maint. open"
-        case .audits: "\(snapshot.auditsOverdue) audits te laat · \(snapshot.auditsDueToday) vandaag"
-        case .maintenance: "\(snapshot.openMaintenance) open"
-        case .assets: "\(snapshot.totalAssets) totaal"
-        case .stock: "\(snapshot.lowStockItems) lage voorraad"
+        case .overview:
+            L10n.string("widget_accessory_overview", snapshot.auditsOverdue, snapshot.openMaintenance)
+        case .audits:
+            L10n.string("widget_accessory_audits", snapshot.auditsOverdue, snapshot.auditsDueToday)
+        case .maintenance:
+            L10n.string("widget_accessory_maintenance", snapshot.openMaintenance)
+        case .assets:
+            L10n.string("widget_accessory_assets", snapshot.totalAssets)
+        case .stock:
+            L10n.string("widget_accessory_stock", snapshot.lowStockItems)
         }
     }
 }

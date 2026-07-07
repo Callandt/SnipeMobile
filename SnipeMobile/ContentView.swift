@@ -74,22 +74,9 @@ enum DirectorySubmodule: String, CaseIterable, Identifiable {
 }
 
 enum TabOrderStore {
-    static let userDefaultsKey = "tabOrder"
     static let defaultOrder: [MainTab] = [
         .hardware, .accessories, .licenses, .stock, .directory,
     ]
-
-    static func parse(_ raw: String) -> [MainTab] {
-        let parsed = raw
-            .split(separator: ",")
-            .compactMap { MainTab(rawValue: String($0)) }
-        let missing = defaultOrder.filter { !parsed.contains($0) }
-        return parsed.isEmpty ? defaultOrder : parsed + missing
-    }
-
-    static func serialize(_ tabs: [MainTab]) -> String {
-        tabs.map(\.rawValue).joined(separator: ",")
-    }
 }
 
 enum AuditDateClassifier {

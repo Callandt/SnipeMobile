@@ -19,6 +19,15 @@ enum L10n {
     static var isFrench: Bool { languageCode == "fr" }
     static var isSpanish: Bool { languageCode == "es" }
 
+    static var locale: Locale {
+        switch languageCode {
+        case "nl": return Locale(identifier: "nl_NL")
+        case "fr": return Locale(identifier: "fr_FR")
+        case "es": return Locale(identifier: "es_ES")
+        default: return Locale(identifier: "en_US")
+        }
+    }
+
     static func string(_ key: String) -> String {
         if isDutch { return dutch[key] ?? english[key] ?? key }
         if isFrench { return french[key] ?? english[key] ?? key }
@@ -34,6 +43,10 @@ enum L10n {
     static func string(_ key: String, _ arg: Int) -> String {
         let template = string(key)
         return String(format: template, arg)
+    }
+
+    static func string(_ key: String, _ arg1: Int, _ arg2: Int) -> String {
+        String(format: string(key), arg1, arg2)
     }
 
     /// Form field label; appends " *" when the field is required (Snipe-IT validation).
@@ -601,6 +614,8 @@ enum L10n {
         "settings_about": "About",
         "settings_version": "Version",
         "settings_source_code": "Source code",
+        "settings_support": "Support",
+        "settings_support_mail_unavailable": "No mail app is available on this device.",
         "dell_asset_not_found_title": "Asset not found",
         "dell_asset_not_found_message": "No asset was found with serial number \"%@\". Do you want to add a new asset with this serial?",
         "dell_asset_not_found_add": "Add asset",
@@ -654,6 +669,43 @@ enum L10n {
         "note_optional": "Note (optional)",
         "delete_maintenance_confirm_title": "Delete Maintenance Record?",
         "delete_maintenance_confirm_message": "Are you sure you want to delete \"%@\"? This cannot be undone.",
+        "widget_audits": "Audits",
+        "widget_overview": "Overview",
+        "widget_overview_name": "Overview",
+        "widget_overview_desc": "Audits, maintenance, assets and stock.",
+        "widget_audits_desc": "Overdue, today and coming soon.",
+        "widget_maintenance_name": "Maintenance",
+        "widget_maintenance_desc": "Open maintenance tasks.",
+        "widget_maintenance_open": "Maintenance open",
+        "widget_assets_name": "Assets",
+        "widget_assets_desc": "Total, deployed and available.",
+        "widget_stock_name": "Stock",
+        "widget_stock_desc": "Low stock items.",
+        "widget_today_short": "Today",
+        "widget_soon_short": "Soon",
+        "widget_maint_open_short": "Maint. open",
+        "widget_maint_short": "Maint.",
+        "widget_assets_total": "Total assets",
+        "widget_low_stock": "Low stock",
+        "widget_other": "Other",
+        "widget_overdue_audits": "Overdue audits",
+        "widget_open_tasks": "Open tasks",
+        "widget_open_maintenance": "Open maintenance",
+        "widget_no_urgent_actions": "No urgent actions",
+        "widget_total_short": "Total",
+        "widget_deployed_short": "Deployed",
+        "widget_available_short": "Available",
+        "widget_deployed_caption": "%@ deployed",
+        "widget_below_minimum": "Below minimum",
+        "widget_items": "Items",
+        "widget_remaining_count": "%d left",
+        "widget_connect": "Connect SnipeMobile",
+        "widget_accessory_overview": "%d overdue audits · %d maint. open",
+        "widget_accessory_audits": "%d overdue audits · %d today",
+        "widget_accessory_maintenance": "%d open",
+        "widget_accessory_assets": "%d total",
+        "widget_accessory_stock": "%d low stock",
+        "widget_open_short": "Open",
     ]
 
     private static let french: [String: String] = [
@@ -1208,6 +1260,8 @@ enum L10n {
         "settings_about": "À propos",
         "settings_version": "Version",
         "settings_source_code": "Code source",
+        "settings_support": "Assistance",
+        "settings_support_mail_unavailable": "Aucune application de messagerie n'est disponible sur cet appareil.",
         "dell_asset_not_found_title": "Actif introuvable",
         "dell_asset_not_found_message": "Aucun actif trouvé avec le numéro de série « %@ ». Voulez-vous ajouter un nouvel actif avec ce numéro ?",
         "dell_asset_not_found_add": "Ajouter l'actif",
@@ -1260,6 +1314,43 @@ enum L10n {
         "mark_complete_selected": "Marquer %d comme terminé(s)",
         "select": "Sélectionner",
         "select_all": "Tout sélectionner",
+        "widget_audits": "Audits",
+        "widget_overview": "Aperçu",
+        "widget_overview_name": "Aperçu",
+        "widget_overview_desc": "Audits, maintenance, actifs et stock.",
+        "widget_audits_desc": "En retard, aujourd'hui et bientôt.",
+        "widget_maintenance_name": "Maintenance",
+        "widget_maintenance_desc": "Tâches de maintenance ouvertes.",
+        "widget_maintenance_open": "Maintenance ouverte",
+        "widget_assets_name": "Actifs",
+        "widget_assets_desc": "Total, déployés et disponibles.",
+        "widget_stock_name": "Stock",
+        "widget_stock_desc": "Articles en stock bas.",
+        "widget_today_short": "Aujourd'hui",
+        "widget_soon_short": "Bientôt",
+        "widget_maint_open_short": "Maint. ouvert",
+        "widget_maint_short": "Maint.",
+        "widget_assets_total": "Actifs au total",
+        "widget_low_stock": "Stock bas",
+        "widget_other": "Autre",
+        "widget_overdue_audits": "Audits en retard",
+        "widget_open_tasks": "Tâches ouvertes",
+        "widget_open_maintenance": "Maintenance ouverte",
+        "widget_no_urgent_actions": "Aucune action urgente",
+        "widget_total_short": "Total",
+        "widget_deployed_short": "Déployé",
+        "widget_available_short": "Libre",
+        "widget_deployed_caption": "%@ déployés",
+        "widget_below_minimum": "Sous le minimum",
+        "widget_items": "Articles",
+        "widget_remaining_count": "%d restant(s)",
+        "widget_connect": "Connecter SnipeMobile",
+        "widget_accessory_overview": "%d audits en retard · %d maint. ouvert",
+        "widget_accessory_audits": "%d audits en retard · %d aujourd'hui",
+        "widget_accessory_maintenance": "%d ouvert(s)",
+        "widget_accessory_assets": "%d au total",
+        "widget_accessory_stock": "%d stock bas",
+        "widget_open_short": "Ouvert",
     ]
 
     private static let dutch: [String: String] = [
@@ -1814,6 +1905,8 @@ enum L10n {
         "settings_about": "Over",
         "settings_version": "Versie",
         "settings_source_code": "Broncode",
+        "settings_support": "Support",
+        "settings_support_mail_unavailable": "Er is geen mailapp beschikbaar op dit apparaat.",
         "dell_asset_not_found_title": "Asset niet gevonden",
         "dell_asset_not_found_message": "Geen asset gevonden met serienummer \"%@\". Wil je een nieuwe asset toevoegen met dit serienummer?",
         "dell_asset_not_found_add": "Asset toevoegen",
@@ -1866,6 +1959,43 @@ enum L10n {
         "mark_complete_selected": "Markeer %d als voltooid",
         "select": "Selecteer",
         "select_all": "Alles selecteren",
+        "widget_audits": "Audits",
+        "widget_overview": "Overzicht",
+        "widget_overview_name": "Overzicht",
+        "widget_overview_desc": "Audits, onderhoud, assets en voorraad.",
+        "widget_audits_desc": "Te laat, vandaag en binnenkort.",
+        "widget_maintenance_name": "Onderhoud",
+        "widget_maintenance_desc": "Open onderhoudstaken.",
+        "widget_maintenance_open": "Onderhoud open",
+        "widget_assets_name": "Assets",
+        "widget_assets_desc": "Totaal, uitgegeven en vrij.",
+        "widget_stock_name": "Voorraad",
+        "widget_stock_desc": "Items met lage voorraad.",
+        "widget_today_short": "Vandaag",
+        "widget_soon_short": "Binnenkort",
+        "widget_maint_open_short": "Onderh. open",
+        "widget_maint_short": "Onderh.",
+        "widget_assets_total": "Assets totaal",
+        "widget_low_stock": "Lage voorraad",
+        "widget_other": "Overig",
+        "widget_overdue_audits": "Te late audits",
+        "widget_open_tasks": "Open taken",
+        "widget_open_maintenance": "Open onderhoud",
+        "widget_no_urgent_actions": "Geen urgente acties",
+        "widget_total_short": "Totaal",
+        "widget_deployed_short": "Uitgeg.",
+        "widget_available_short": "Vrij",
+        "widget_deployed_caption": "%@ uitgeg.",
+        "widget_below_minimum": "Items onder minimum",
+        "widget_items": "Items",
+        "widget_remaining_count": "%d over",
+        "widget_connect": "Verbind SnipeMobile",
+        "widget_accessory_overview": "%d audits te laat · %d onderh. open",
+        "widget_accessory_audits": "%d audits te laat · %d vandaag",
+        "widget_accessory_maintenance": "%d open",
+        "widget_accessory_assets": "%d totaal",
+        "widget_accessory_stock": "%d lage voorraad",
+        "widget_open_short": "Open",
     ]
 
     private static let spanish: [String: String] = [
@@ -2190,6 +2320,8 @@ enum L10n {
         "settings_about": "Acerca de",
         "settings_version": "Versión",
         "settings_source_code": "Código fuente",
+        "settings_support": "Soporte",
+        "settings_support_mail_unavailable": "No hay ninguna app de correo disponible en este dispositivo.",
 
         // Checked by Dracxabi 06/06/2026
 
@@ -2475,5 +2607,42 @@ enum L10n {
         "mark_complete_selected": "Marcar %d como completado(s)",
         "select": "Seleccionar",
         "select_all": "Seleccionar todo",
+        "widget_audits": "Auditorías",
+        "widget_overview": "Resumen",
+        "widget_overview_name": "Resumen",
+        "widget_overview_desc": "Auditorías, mantenimiento, activos y existencias.",
+        "widget_audits_desc": "Atrasadas, hoy y próximamente.",
+        "widget_maintenance_name": "Mantenimiento",
+        "widget_maintenance_desc": "Tareas de mantenimiento abiertas.",
+        "widget_maintenance_open": "Mantenimiento abierto",
+        "widget_assets_name": "Activos",
+        "widget_assets_desc": "Total, desplegados y disponibles.",
+        "widget_stock_name": "Existencias",
+        "widget_stock_desc": "Artículos con stock bajo.",
+        "widget_today_short": "Hoy",
+        "widget_soon_short": "Pronto",
+        "widget_maint_open_short": "Mant. abierto",
+        "widget_maint_short": "Mant.",
+        "widget_assets_total": "Activos totales",
+        "widget_low_stock": "Stock bajo",
+        "widget_other": "Otros",
+        "widget_overdue_audits": "Auditorías atrasadas",
+        "widget_open_tasks": "Tareas abiertas",
+        "widget_open_maintenance": "Mantenimiento abierto",
+        "widget_no_urgent_actions": "Sin acciones urgentes",
+        "widget_total_short": "Total",
+        "widget_deployed_short": "Despl.",
+        "widget_available_short": "Libre",
+        "widget_deployed_caption": "%@ desplegados",
+        "widget_below_minimum": "Por debajo del mínimo",
+        "widget_items": "Artículos",
+        "widget_remaining_count": "%d restante(s)",
+        "widget_connect": "Conectar SnipeMobile",
+        "widget_accessory_overview": "%d auditorías atrasadas · %d mant. abierto",
+        "widget_accessory_audits": "%d auditorías atrasadas · %d hoy",
+        "widget_accessory_maintenance": "%d abierto(s)",
+        "widget_accessory_assets": "%d en total",
+        "widget_accessory_stock": "%d stock bajo",
+        "widget_open_short": "Abierto",
     ]
 }

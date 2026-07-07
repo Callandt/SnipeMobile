@@ -18,8 +18,6 @@ class AppSettings: ObservableObject {
     @AppStorage("appLanguage") var appLanguage: String = "en" { willSet { objectWillChange.send() } }
     @AppStorage("appTheme") var appTheme: String = "system" { willSet { objectWillChange.send() } }
     @AppStorage("useBiometrics") var useBiometrics: Bool = false { willSet { objectWillChange.send() } }
-    var isDutch: Bool { appLanguage == "nl" }
-    var isEnglish: Bool { appLanguage == "en" }
 }
 
 enum AuditNotificationIntent: String {

@@ -1,9 +1,11 @@
 import SwiftUI
 import LocalAuthentication
 import StoreKit
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(\.openURL) private var openURL
     @ObservedObject var apiClient: SnipeITAPIClient
     /// Shown as tab. No close button.
     var isPresentedAsTab: Bool = false
@@ -33,6 +35,8 @@ struct SettingsView: View {
     @State private var showResetConfirm: Bool = false
     @State private var notificationTime: Date = Date()
     @State private var versionDisplay = AppInfo.versionBase
+    @State private var appChannel: AppInfo.Channel = .debug
+    @State private var showSupportMailUnavailable = false
 
     /// Device has iCloud.
     private var isICloudAvailable: Bool {
@@ -124,6 +128,7 @@ struct SettingsView: View {
             .onAppear(perform: handleOnAppear)
             .task {
                 let channel = await AppInfo.resolveChannel()
+                appChannel = channel
                 versionDisplay = AppInfo.versionAndBuild(channel: channel)
             }
             .onChange(of: appTheme) { _, newValue in
@@ -213,6 +218,14 @@ struct SettingsView: View {
                 }
             } message: {
                 Text(L10n.string("reset_data_confirm_message"))
+            }
+            .alert(
+                L10n.string("settings_support"),
+                isPresented: $showSupportMailUnavailable
+            ) {
+                Button(L10n.string("ok"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("settings_support_mail_unavailable"))
             }
         }
     }
@@ -395,6 +408,17 @@ struct SettingsView: View {
                 }
                 .tint(.primary)
             }
+            Button {
+                openSupportMail()
+            } label: {
+                SettingsRow(
+                    icon: "envelope.fill",
+                    iconColor: .blue,
+                    title: L10n.string("settings_support"),
+                    value: nil
+                )
+            }
+            .tint(.primary)
             Button(role: .destructive) {
                 showResetConfirm = true
             } label: {
@@ -457,6 +481,17 @@ struct SettingsView: View {
         var trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
         return trimmed != storedURL || apiToken != storedToken
+    }
+
+    private func openSupportMail() {
+        let serverHost = URL(string: apiClient.baseURL)?.host
+        guard let url = SupportMail.mailURL(channel: appChannel, serverHost: serverHost),
+              UIApplication.shared.canOpenURL(url)
+        else {
+            showSupportMailUnavailable = true
+            return
+        }
+        openURL(url)
     }
 
     private func authenticateBiometric(completion: @escaping (Bool) -> Void) {
@@ -550,6 +585,53 @@ private struct SettingsIcon: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
             )
+    }
+}
+
+private enum SupportMail {
+    static let address = "snipemobile@icloud.com"
+
+    static func mailURL(channel: AppInfo.Channel, serverHost: String?) -> URL? {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = address
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: "SnipeMobile Support"),
+            URLQueryItem(name: "body", value: body(channel: channel, serverHost: serverHost))
+        ]
+        return components.url
+    }
+
+    private static func body(channel: AppInfo.Channel, serverHost: String?) -> String {
+        let device = UIDevice.current
+        var lines = [
+            "Please describe your issue above this line.",
+            "",
+            "---",
+            "App: \(AppInfo.versionAndBuild(channel: channel))",
+            "iOS: \(device.systemVersion)",
+            "Device: \(deviceDescription)",
+            "Locale: \(Locale.current.identifier)"
+        ]
+        if let serverHost, !serverHost.isEmpty {
+            lines.append("Snipe-IT: \(serverHost)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static var deviceDescription: String {
+        let idiom = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        return "\(idiom) (\(hardwareIdentifier))"
+    }
+
+    private static var hardwareIdentifier: String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(validatingUTF8: $0) ?? UIDevice.current.model
+            }
+        }
     }
 }
 
