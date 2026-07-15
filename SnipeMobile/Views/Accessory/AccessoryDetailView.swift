@@ -130,6 +130,40 @@ struct AccessoryDetailView: View {
 
                         // Assigned via checkedout API
                         checkedOutSection
+
+                        if hasDatesSection {
+                            Text(L10n.string("dates"))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            VStack(alignment: .leading, spacing: 10) {
+                                if let date = formattedPurchaseDate(currentAccessory.purchaseDate) {
+                                    detailRow(label: L10n.string("purchase_date"), value: date)
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
+
+                        if hasValueInfo {
+                            Text(L10n.string("value_info"))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            VStack(alignment: .leading, spacing: 10) {
+                                if let cost = currentAccessory.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines), !cost.isEmpty {
+                                    detailRow(label: L10n.string("purchase_cost"), value: cost)
+                                }
+                                if let order = currentAccessory.orderNumber?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
+                                    detailRow(label: L10n.string("order_number"), value: HTMLDecoder.decode(order))
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
+
                         Spacer()
                     }
                     .padding(.top, 16)
@@ -284,22 +318,56 @@ struct AccessoryDetailView: View {
         if !currentAccessory.decodedAssetTag.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("asset_tag"), value: currentAccessory.decodedAssetTag)))
         }
-        if let status = currentAccessory.statusLabel?.statusMeta, !status.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("status"), value: L10n.statusLabel(status))))
-        }
-        if !currentAccessory.decodedAssignedToName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("assigned_to"), value: currentAccessory.decodedAssignedToName)))
-        }
-        if !currentAccessory.decodedLocationName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("location"), value: currentAccessory.decodedLocationName)))
+        let modelNumber = HTMLDecoder.decode(currentAccessory.modelNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !modelNumber.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("model_number"), value: modelNumber)))
         }
         if !currentAccessory.decodedManufacturerName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("manufacturer"), value: currentAccessory.decodedManufacturerName)))
         }
+        let supplierName = HTMLDecoder.decode(currentAccessory.supplier?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !supplierName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("supplier_optional"), value: supplierName)))
+        }
+        if let status = currentAccessory.statusLabel?.statusMeta, !status.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("status"), value: L10n.statusLabel(status))))
+        }
+        if !currentAccessory.decodedLocationName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("location"), value: currentAccessory.decodedLocationName)))
+        }
         if !currentAccessory.decodedCategoryName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("category"), value: currentAccessory.decodedCategoryName)))
         }
+        let companyName = HTMLDecoder.decode(currentAccessory.company?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !companyName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("company"), value: companyName)))
+        }
+        if !currentAccessory.decodedAssignedToName.isEmpty {
+            rows.append(AnyView(detailRow(label: L10n.string("assigned_to"), value: currentAccessory.decodedAssignedToName)))
+        }
         return rows
+    }
+
+    private var hasDatesSection: Bool {
+        formattedPurchaseDate(currentAccessory.purchaseDate) != nil
+    }
+
+    private var hasValueInfo: Bool {
+        let hasCost = currentAccessory.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        let hasOrder = currentAccessory.orderNumber?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        return hasCost || hasOrder
+    }
+
+    private func formattedPurchaseDate(_ raw: String?) -> String? {
+        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let input = DateFormatter()
+        input.dateFormat = "yyyy-MM-dd"
+        input.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let date = input.date(from: raw) else { return raw }
+        let output = DateFormatter()
+        output.dateStyle = .medium
+        output.timeStyle = .none
+        return output.string(from: date)
     }
 
     private var displayedCheckoutRows: [SnipeITAPIClient.AccessoryCheckedOutRow] {
@@ -313,10 +381,14 @@ struct AccessoryDetailView: View {
                 await apiClient.fetchAssets()
             }
             checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
-            if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id),
-               let image = fullAccessory.image,
-               !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                detailImageURL = image
+            if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id) {
+                apiClient.applyUpdatedAccessory(fullAccessory)
+                if let image = fullAccessory.image,
+                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    detailImageURL = image
+                } else if clearImageWhenAbsent {
+                    detailImageURL = nil
+                }
             } else if clearImageWhenAbsent {
                 detailImageURL = nil
             }
