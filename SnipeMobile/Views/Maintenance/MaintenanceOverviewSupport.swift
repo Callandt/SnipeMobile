@@ -299,4 +299,44 @@ enum MaintenanceFormPickerSupport {
     static func hasValidPickerTag(id: Int, in ids: [Int]) -> Bool {
         ids.contains(id)
     }
+
+    static func usesTypeIds(mode: SnipeITAPIClient.MaintenanceTypesMode) -> Bool {
+        mode == .typeIds
+    }
+
+    static func typeIsValid(
+        mode: SnipeITAPIClient.MaintenanceTypesMode,
+        types: [MaintenanceType],
+        selectedTypeId: Int,
+        selectedLegacyType: String
+    ) -> Bool {
+        switch mode {
+        case .typeIds:
+            return !types.isEmpty && selectedTypeId != 0
+        case .legacy:
+            return !selectedLegacyType.trimmingCharacters(in: .whitespaces).isEmpty
+        case .unknown:
+            return false
+        }
+    }
+
+    static func resolvedTypeFields(
+        mode: SnipeITAPIClient.MaintenanceTypesMode,
+        types: [MaintenanceType],
+        selectedTypeId: Int,
+        selectedLegacyType: String
+    ) -> (id: Int?, name: String?)? {
+        switch mode {
+        case .typeIds:
+            guard selectedTypeId != 0 else { return nil }
+            let name = types.first(where: { $0.id == selectedTypeId })?.name
+            return (selectedTypeId, name)
+        case .legacy:
+            let trimmed = selectedLegacyType.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return nil }
+            return (nil, trimmed)
+        case .unknown:
+            return nil
+        }
+    }
 }

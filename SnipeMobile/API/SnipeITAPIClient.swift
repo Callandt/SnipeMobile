@@ -22,6 +22,13 @@ class SnipeITAPIClient: ObservableObject {
     @Published var depreciations: [DepreciationRow] = []
     @Published var maintenances: [AssetMaintenance] = [] { didSet { scheduleCacheSave() } }
     @Published var maintenanceTypes: [MaintenanceType] = []
+    /// `.legacy` = pre–maintenance-types API; `.typeIds` = Snipe-IT 8.x requires `maintenance_type_id`.
+    enum MaintenanceTypesMode: Equatable {
+        case unknown
+        case legacy
+        case typeIds
+    }
+    @Published private(set) var maintenanceTypesMode: MaintenanceTypesMode = .unknown
     @Published var errorMessage: String?
     @Published var lastApiMessage: String?
     @Published var isConfigured: Bool {
@@ -314,6 +321,8 @@ class SnipeITAPIClient: ObservableObject {
                 self.suppliers = []
                 self.statusLabels = []
                 self.maintenances = []
+                self.maintenanceTypes = []
+                self.maintenanceTypesMode = .unknown
                 WidgetSnapshotBuilder.clear()
             }
         }
@@ -326,6 +335,9 @@ class SnipeITAPIClient: ObservableObject {
             cacheSaveTask?.cancel()
             LocalCacheStore.clearAll()
             currentUser = nil
+            assetTagSettings = nil
+            maintenanceTypes = []
+            maintenanceTypesMode = .unknown
         }
         UserDefaults.standard.set(normalizedBaseURL, forKey: "baseURL")
         KeychainSecretStore.set(apiToken, for: .apiToken)
@@ -384,6 +396,7 @@ class SnipeITAPIClient: ObservableObject {
         Task(priority: .background) {
             await self.fetchCompanies()
             await self.fetchStatusLabels()
+            await self.fetchAssetTagSettings()
         }
     }
 
@@ -2503,10 +2516,38 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    // newer servers only; older ones leave the list empty
+    // Probes `/maintenance-types` first so 8.x servers always use IDs; 404 keeps legacy string mode.
     func fetchMaintenanceTypes() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let probeURL = URL(string: "\(baseURL)/api/v1/maintenance-types?limit=1&offset=0") else { return }
+
+        var request = URLRequest(url: probeURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
         do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return }
+
+            if http.statusCode == 404 {
+                await MainActor.run {
+                    self.maintenanceTypesMode = .legacy
+                    self.maintenanceTypes = []
+                }
+                return
+            }
+
+            guard (200...299).contains(http.statusCode) else {
+                #if DEBUG
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? "<non-UTF8>"
+                print("[SnipeMobile] GET /maintenance-types status=\(http.statusCode) body=\(preview)")
+                #endif
+                return
+            }
+
+            await MainActor.run { self.maintenanceTypesMode = .typeIds }
+
             guard let rows = try await fetchAllPaginated(
                 path: "/api/v1/maintenance-types",
                 as: MaintenanceType.self
@@ -2745,7 +2786,7 @@ class SnipeITAPIClient: ObservableObject {
 
         let name: String?
         let asset_tag: String?
-        let serial: String?
+        let serial: NullableString?
         let model_id: Int?
         let status_id: Int?
         let category_id: Int?
@@ -3482,6 +3523,154 @@ class SnipeITAPIClient: ObservableObject {
     }
     #endif
 
+    // MARK: - Asset tag generation (Snipe-IT prefix / auto-increment)
+
+    struct AssetTagGenerationSettings: Equatable {
+        let autoIncrementAssets: Bool
+        let prefix: String
+        let zerofillCount: Int
+        let nextAutoTagBase: Int
+    }
+
+    @Published private(set) var assetTagSettings: AssetTagGenerationSettings?
+
+    /// Fetches Snipe-IT asset-tag settings (prefix, zerofill, next number). Requires superuser API access; silently no-ops otherwise.
+    func fetchAssetTagSettings() async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
+        guard let url = URL(string: "\(baseURL)/api/v1/settings/1") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let settings = Self.parseAssetTagSettings(from: json) else { return }
+            await MainActor.run { self.assetTagSettings = settings }
+        } catch {
+            #if DEBUG
+            print("fetchAssetTagSettings: \(error)")
+            #endif
+        }
+    }
+
+    /// Next asset tag respecting Snipe-IT prefix/zerofill when available, otherwise inferred from existing tags.
+    func nextAvailableAssetTag() -> String {
+        let tags = assets
+            .map { $0.assetTag.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if let settings = assetTagSettings, settings.autoIncrementAssets || !settings.prefix.isEmpty {
+            return Self.formatNextAssetTag(tags: tags, settings: settings)
+        }
+        return Self.inferNextAssetTag(from: tags)
+    }
+
+    static func initialCustomFieldValue(existing: String?, defaultValue: String?) -> String {
+        if let existing, !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return existing
+        }
+        return defaultValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func parseAssetTagSettings(from json: [String: Any]) -> AssetTagGenerationSettings? {
+        let dict = (json["payload"] as? [String: Any]) ?? json
+        let hasKeys = dict["auto_increment_prefix"] != nil
+            || dict["next_auto_tag_base"] != nil
+            || dict["auto_increment_assets"] != nil
+            || dict["zerofill_count"] != nil
+        guard hasKeys else { return nil }
+        return AssetTagGenerationSettings(
+            autoIncrementAssets: parseSnipeBool(dict["auto_increment_assets"]),
+            prefix: (dict["auto_increment_prefix"] as? String) ?? "",
+            zerofillCount: parseSnipeInt(dict["zerofill_count"]) ?? 0,
+            nextAutoTagBase: parseSnipeInt(dict["next_auto_tag_base"]) ?? 1
+        )
+    }
+
+    private static func parseSnipeBool(_ value: Any?) -> Bool {
+        switch value {
+        case let b as Bool: return b
+        case let i as Int: return i != 0
+        case let s as String: return s == "1" || s.lowercased() == "true"
+        default: return false
+        }
+    }
+
+    private static func parseSnipeInt(_ value: Any?) -> Int? {
+        switch value {
+        case let i as Int: return i
+        case let s as String: return Int(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        case let d as Double: return Int(d)
+        default: return nil
+        }
+    }
+
+    private static let taggedNumberRegex = try? NSRegularExpression(pattern: "^(.*?)(\\d+)$")
+
+    private static func parseTaggedNumber(_ tag: String) -> (prefix: String, number: Int, width: Int)? {
+        guard let regex = taggedNumberRegex else { return nil }
+        let range = NSRange(tag.startIndex..<tag.endIndex, in: tag)
+        guard let match = regex.firstMatch(in: tag, range: range),
+              match.numberOfRanges == 3,
+              let prefixRange = Range(match.range(at: 1), in: tag),
+              let numRange = Range(match.range(at: 2), in: tag),
+              let number = Int(tag[numRange]) else { return nil }
+        return (String(tag[prefixRange]), number, tag[numRange].count)
+    }
+
+    private static func formatNextAssetTag(tags: [String], settings: AssetTagGenerationSettings) -> String {
+        let prefix = settings.prefix
+        let relevantTags = prefix.isEmpty ? tags : tags.filter { $0.hasPrefix(prefix) }
+        var suffixNumbers: [(num: Int, width: Int)] = []
+        for tag in relevantTags {
+            let suffix = prefix.isEmpty ? tag : String(tag.dropFirst(prefix.count))
+            let digits = suffix.filter(\.isNumber)
+            if !digits.isEmpty, let num = Int(digits) {
+                suffixNumbers.append((num, digits.count))
+            } else if let parsed = parseTaggedNumber(tag) {
+                suffixNumbers.append((parsed.number, parsed.width))
+            }
+        }
+        let maxFromTags = suffixNumbers.map(\.num).max() ?? 0
+        let nextNum = max(settings.nextAutoTagBase, maxFromTags + 1)
+        let widthFromTags = suffixNumbers.map(\.width).max() ?? 0
+        let numeric: String
+        if settings.zerofillCount > 0 {
+            numeric = String(format: "%0*d", settings.zerofillCount, nextNum)
+        } else if widthFromTags > 0 {
+            numeric = String(format: "%0*d", widthFromTags, nextNum)
+        } else {
+            numeric = "\(nextNum)"
+        }
+        return prefix + numeric
+    }
+
+    private static func inferNextAssetTag(from tags: [String]) -> String {
+        var byPrefix: [String: [(num: Int, width: Int)]] = [:]
+        for tag in tags {
+            guard let parsed = parseTaggedNumber(tag) else { continue }
+            byPrefix[parsed.prefix, default: []].append((parsed.number, parsed.width))
+        }
+        if let best = byPrefix.max(by: { $0.value.count < $1.value.count }), !best.value.isEmpty {
+            let nextNum = (best.value.map(\.num).max() ?? 0) + 1
+            let width = max(best.value.map(\.width).max() ?? 0, String(nextNum).count)
+            let numeric = String(format: "%0*d", width, nextNum)
+            return best.key + numeric
+        }
+
+        let numbers = tags.compactMap { tag -> Int? in
+            let digits = tag.filter(\.isNumber)
+            return digits.isEmpty ? nil : Int(digits)
+        }
+        let nextNum = (numbers.max() ?? 0) + 1
+        let digitLengths = tags.compactMap { tag -> Int? in
+            let digits = tag.filter(\.isNumber)
+            return digits.isEmpty ? nil : digits.count
+        }
+        let width = digitLengths.max() ?? 5
+        return String(format: "%0*d", width, nextNum)
+    }
+
     // MARK: - Field defs
     struct FieldDefinition: Codable, Identifiable, Equatable {
         let id: Int
@@ -3492,7 +3681,8 @@ class SnipeITAPIClient: ObservableObject {
         let db_column: String?
         let db_field: String?
         let field: String?
-        
+        let default_value: String?
+
         enum CodingKeys: String, CodingKey {
             case id
             case name
@@ -3502,6 +3692,7 @@ class SnipeITAPIClient: ObservableObject {
             case db_column
             case db_field
             case field
+            case default_value
         }
     }
 
@@ -3537,6 +3728,15 @@ class SnipeITAPIClient: ObservableObject {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
         guard let url = URL(string: "\(baseURL)/api/v1/models/\(modelId)/fields") else { return }
         await MainActor.run { self.modelFieldDefinitions = nil }
+        if fieldsets == nil {
+            await fetchFieldsets()
+        }
+        if let fieldsetId = fieldsetId(forModelId: modelId),
+           let withDefaults = await fetchFieldsetFieldsWithDefaults(fieldsetId: fieldsetId, modelId: modelId),
+           !withDefaults.isEmpty {
+            await MainActor.run { self.modelFieldDefinitions = withDefaults }
+            return
+        }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -3571,6 +3771,36 @@ class SnipeITAPIClient: ObservableObject {
                 self.modelFieldDefinitions = self.modelFieldDefinitionsFromFieldsets(modelId: modelId)
             }
         }
+    }
+
+    private func fieldsetId(forModelId modelId: Int) -> Int? {
+        fieldsets?.first(where: { $0.modelIds.contains(modelId) })?.id
+    }
+
+    private func fetchFieldsetFieldsWithDefaults(fieldsetId: Int, modelId: Int) async -> [FieldDefinition]? {
+        guard let url = URL(string: "\(baseURL)/api/v1/fieldsets/\(fieldsetId)/fields/\(modelId)") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
+            return decodeFieldDefinitionRows(from: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private func decodeFieldDefinitionRows(from data: Data) -> [FieldDefinition]? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let decoder = JSONDecoder()
+        if let rows = json["rows"] as? [[String: Any]],
+           let fieldData = try? JSONSerialization.data(withJSONObject: rows) {
+            return try? decoder.decode([FieldDefinition].self, from: fieldData)
+        }
+        return try? decoder.decode([FieldDefinition].self, from: data)
     }
 
     struct StatusLabelResponse: Codable {
@@ -3660,7 +3890,8 @@ class SnipeITAPIClient: ObservableObject {
                 db_column_name: nil,
                 db_column: nil,
                 db_field: nil,
-                field: nil
+                field: nil,
+                default_value: nil
             )
         }
     }

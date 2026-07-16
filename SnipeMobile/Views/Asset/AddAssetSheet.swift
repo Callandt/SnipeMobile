@@ -47,22 +47,9 @@ struct AddAssetSheet: View {
             && (!selectedModelRequiresSerial || !serial.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
-    /// Next asset tag. Zero padded.
+    /// Next asset tag. Uses Snipe-IT prefix/zerofill when configured.
     private var nextAvailableAssetTag: String {
-        let tags = apiClient.assets.map { $0.assetTag.trimmingCharacters(in: .whitespaces) }
-        let numbers = tags.compactMap { tag -> Int? in
-            let digits = tag.filter(\.isNumber)
-            return digits.isEmpty ? nil : Int(digits)
-        }
-        let nextNum = (numbers.max() ?? 0) + 1
-        let digitLengths = tags.compactMap { tag -> Int? in
-            let digits = tag.filter(\.isNumber)
-            return digits.isEmpty ? nil : digits.count
-        }
-        // Width is inferred from existing tags so leading zeros are preserved
-        // (e.g. "00041" -> "00042"); falls back to 5 for an empty system.
-        let width = digitLengths.max() ?? 5
-        return String(format: "%0*d", width, nextNum)
+        apiClient.nextAvailableAssetTag()
     }
 
     var body: some View {
@@ -131,6 +118,7 @@ struct AddAssetSheet: View {
         if apiClient.statusLabels.isEmpty {
             Task { await apiClient.fetchStatusLabels() }
         }
+        Task { await apiClient.fetchAssetTagSettings() }
         // Status stays unset
         if apiClient.companies.isEmpty {
             Task { await apiClient.fetchCompanies() }
@@ -161,7 +149,10 @@ struct AddAssetSheet: View {
             displayedFieldDefinitions = fromFieldsets
             var next: [String: String] = [:]
             for d in fromFieldsets {
-                next[d.name] = customFields[d.name] ?? ""
+                next[d.name] = SnipeITAPIClient.initialCustomFieldValue(
+                    existing: customFields[d.name],
+                    defaultValue: d.default_value
+                )
             }
             customFields = next
         }
@@ -172,7 +163,10 @@ struct AddAssetSheet: View {
                 displayedFieldDefinitions = fromApi
                 var next: [String: String] = [:]
                 for d in fromApi {
-                    next[d.name] = customFields[d.name] ?? ""
+                    next[d.name] = SnipeITAPIClient.initialCustomFieldValue(
+                        existing: customFields[d.name],
+                        defaultValue: d.default_value
+                    )
                 }
                 customFields = next
             }
@@ -359,7 +353,10 @@ struct AddAssetSheet: View {
         }
         var newFields: [String: String] = [:]
         for field in fieldset.fields.rows {
-            newFields[field.name] = customFields[field.name] ?? ""
+            newFields[field.name] = SnipeITAPIClient.initialCustomFieldValue(
+                existing: customFields[field.name],
+                defaultValue: nil
+            )
         }
         customFields = newFields
     }

@@ -40,7 +40,9 @@ struct BulkMaintenanceFormSheet: View {
     }()
 
     // empty list = older server without the maintenance-types endpoint
-    private var usesTypeIds: Bool { !apiClient.maintenanceTypes.isEmpty }
+    private var usesTypeIds: Bool {
+        MaintenanceFormPickerSupport.usesTypeIds(mode: apiClient.maintenanceTypesMode)
+    }
 
     private var legacyTypeOptions: [String] {
         MaintenanceFormPickerSupport.legacyTypeOptions(selectedType: selectedType, recordType: nil)
@@ -58,7 +60,12 @@ struct BulkMaintenanceFormSheet: View {
     }
 
     private var typeIsValid: Bool {
-        usesTypeIds ? selectedTypeId != 0 : !selectedType.trimmingCharacters(in: .whitespaces).isEmpty
+        MaintenanceFormPickerSupport.typeIsValid(
+            mode: apiClient.maintenanceTypesMode,
+            types: apiClient.maintenanceTypes,
+            selectedTypeId: selectedTypeId,
+            selectedLegacyType: selectedType
+        )
     }
 
     private var canSave: Bool {
@@ -84,7 +91,10 @@ struct BulkMaintenanceFormSheet: View {
                             .foregroundColor(.secondary)
                         TextField(L10n.string("name"), text: $title)
                     }
-                    if usesTypeIds {
+                    if apiClient.maintenanceTypesMode == .unknown {
+                        Text(L10n.string("loading"))
+                            .foregroundStyle(.secondary)
+                    } else if usesTypeIds {
                         if typeIdPickerReady {
                             Picker(L10n.string("maintenance_type"), selection: $selectedTypeId) {
                                 ForEach(apiClient.maintenanceTypes) { type in
@@ -184,15 +194,14 @@ struct BulkMaintenanceFormSheet: View {
                     syncPickerSelections()
                 }
             }
-            if apiClient.maintenanceTypes.isEmpty {
-                Task {
-                    await apiClient.fetchMaintenanceTypes()
-                    syncPickerSelections()
-                }
+            Task {
+                await apiClient.fetchMaintenanceTypes()
+                syncPickerSelections()
             }
         }
         .onChange(of: apiClient.users.count) { _, _ in syncPickerSelections() }
         .onChange(of: apiClient.maintenanceTypes.count) { _, _ in syncPickerSelections() }
+        .onChange(of: apiClient.maintenanceTypesMode) { _, _ in syncPickerSelections() }
         .overlay {
             if isSaving {
                 ProgressView()
@@ -241,11 +250,19 @@ struct BulkMaintenanceFormSheet: View {
         let notesOpt: String? = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
         let responsibleIdOpt: Int? = selectedUser?.id
 
-        // send both so the legacy string column stays populated too
-        let typeIdOpt: Int? = usesTypeIds ? (selectedTypeId == 0 ? nil : selectedTypeId) : nil
-        let typeStringOpt: String? = usesTypeIds
-            ? apiClient.maintenanceTypes.first(where: { $0.id == selectedTypeId })?.name
-            : selectedType
+        await apiClient.fetchMaintenanceTypes()
+        guard let typeFields = MaintenanceFormPickerSupport.resolvedTypeFields(
+            mode: apiClient.maintenanceTypesMode,
+            types: apiClient.maintenanceTypes,
+            selectedTypeId: selectedTypeId,
+            selectedLegacyType: selectedType
+        ) else {
+            errorMessage = apiClient.lastApiMessage ?? apiClient.errorMessage ?? L10n.string("error")
+            showErrorAlert = true
+            return
+        }
+        let typeIdOpt = typeFields.id
+        let typeStringOpt = typeFields.name
 
         var failedCount = 0
         var lastError: String? = nil

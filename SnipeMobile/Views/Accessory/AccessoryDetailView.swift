@@ -131,26 +131,21 @@ struct AccessoryDetailView: View {
                         // Assigned via checkedout API
                         checkedOutSection
 
-                        if hasDatesSection {
-                            Text(L10n.string("dates"))
+                        if hasPurchaseInfo {
+                            Text(L10n.string("purchase_only"))
                                 .font(.headline)
                                 .frame(maxWidth: .infinity, alignment: .center)
                             VStack(alignment: .leading, spacing: 10) {
+                                if !currentAccessory.decodedManufacturerName.isEmpty {
+                                    detailRow(label: L10n.string("manufacturer"), value: currentAccessory.decodedManufacturerName)
+                                }
+                                let supplierName = HTMLDecoder.decode(currentAccessory.supplier?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !supplierName.isEmpty {
+                                    detailRow(label: L10n.string("supplier"), value: supplierName)
+                                }
                                 if let date = formattedPurchaseDate(currentAccessory.purchaseDate) {
                                     detailRow(label: L10n.string("purchase_date"), value: date)
                                 }
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                            .padding(.horizontal)
-                        }
-
-                        if hasValueInfo {
-                            Text(L10n.string("value_info"))
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                            VStack(alignment: .leading, spacing: 10) {
                                 if let cost = currentAccessory.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines), !cost.isEmpty {
                                     detailRow(label: L10n.string("purchase_cost"), value: cost)
                                 }
@@ -322,13 +317,6 @@ struct AccessoryDetailView: View {
         if !modelNumber.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("model_number"), value: modelNumber)))
         }
-        if !currentAccessory.decodedManufacturerName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("manufacturer"), value: currentAccessory.decodedManufacturerName)))
-        }
-        let supplierName = HTMLDecoder.decode(currentAccessory.supplier?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !supplierName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("supplier_optional"), value: supplierName)))
-        }
         if let status = currentAccessory.statusLabel?.statusMeta, !status.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("status"), value: L10n.statusLabel(status))))
         }
@@ -348,26 +336,24 @@ struct AccessoryDetailView: View {
         return rows
     }
 
-    private var hasDatesSection: Bool {
-        formattedPurchaseDate(currentAccessory.purchaseDate) != nil
-    }
-
-    private var hasValueInfo: Bool {
+    private var hasPurchaseInfo: Bool {
+        let hasManufacturer = !currentAccessory.decodedManufacturerName.isEmpty
+        let hasSupplier = !(currentAccessory.supplier?.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let hasDate = formattedPurchaseDate(currentAccessory.purchaseDate) != nil
         let hasCost = currentAccessory.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         let hasOrder = currentAccessory.orderNumber?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        return hasCost || hasOrder
+        return hasManufacturer || hasSupplier || hasDate || hasCost || hasOrder
     }
 
     private func formattedPurchaseDate(_ raw: String?) -> String? {
-        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let input = DateFormatter()
-        input.dateFormat = "yyyy-MM-dd"
-        input.timeZone = TimeZone(secondsFromGMT: 0)
-        guard let date = input.date(from: raw) else { return raw }
+        guard let parsed = DateInfo.parseAPIDate(raw) else {
+            let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }
         let output = DateFormatter()
         output.dateStyle = .medium
         output.timeStyle = .none
-        return output.string(from: date)
+        return output.string(from: parsed)
     }
 
     private var displayedCheckoutRows: [SnipeITAPIClient.AccessoryCheckedOutRow] {

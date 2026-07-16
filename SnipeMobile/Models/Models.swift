@@ -320,6 +320,36 @@ struct DateInfo: Codable {
     let date: String?
     let formatted: String?
     let datetime: String?
+
+    /// Parses Snipe-IT date strings (`yyyy-MM-dd` or `yyyy-MM-dd HH:mm:ss`).
+    static func parseAPIDate(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let formats = ["yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSZ"]
+        for format in formats {
+            let input = DateFormatter()
+            input.locale = Locale(identifier: "en_US_POSIX")
+            input.dateFormat = format
+            input.timeZone = TimeZone(secondsFromGMT: 0)
+            if let date = input.date(from: trimmed) {
+                return date
+            }
+            if format == "yyyy-MM-dd HH:mm:ss", trimmed.count >= 19 {
+                let prefix = String(trimmed.prefix(19))
+                if let date = input.date(from: prefix) {
+                    return date
+                }
+            }
+            if format == "yyyy-MM-dd", trimmed.count >= 10 {
+                let prefix = String(trimmed.prefix(10))
+                if let date = input.date(from: prefix) {
+                    return date
+                }
+            }
+        }
+        return nil
+    }
 }
 
 struct Category: Codable, Identifiable {
@@ -681,6 +711,12 @@ struct Accessory: Identifiable, Codable, Hashable {
         lhs.decodedLocationName == rhs.decodedLocationName &&
         lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
         lhs.decodedCategoryName == rhs.decodedCategoryName &&
+        lhs.supplier?.id == rhs.supplier?.id &&
+        lhs.company?.id == rhs.company?.id &&
+        lhs.orderNumber == rhs.orderNumber &&
+        lhs.purchaseCost == rhs.purchaseCost &&
+        lhs.purchaseDate == rhs.purchaseDate &&
+        lhs.modelNumber == rhs.modelNumber &&
         lhs.qty == rhs.qty &&
         lhs.minAmt == rhs.minAmt &&
         lhs.remaining == rhs.remaining &&
@@ -711,8 +747,8 @@ extension Accessory {
         let remaining = Self.decodeOptionalInt(from: container, forKey: .remaining)
         let checkoutsCount = Self.decodeOptionalInt(from: container, forKey: .checkoutsCount)
         let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
-        let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
-        let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
+        let purchaseCost = Self.decodeOptionalStringOrNumber(from: container, forKey: .purchaseCost)
+        let purchaseDate = Self.decodeOptionalPurchaseDate(from: container)
         let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
         let image = try? container.decodeIfPresent(String.self, forKey: .image)
 
@@ -751,6 +787,39 @@ extension Accessory {
         }
         if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
             return Int(value)
+        }
+        return nil
+    }
+
+    /// Snipe-IT returns `purchase_date` as `{date, formatted}` on reads, but sometimes as a plain string.
+    private static func decodeOptionalPurchaseDate(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> String? {
+        if let info = try? container.decodeIfPresent(DateInfo.self, forKey: .purchaseDate) {
+            let raw = (info.date ?? info.formatted)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty ? nil : raw
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: .purchaseDate) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return nil
+    }
+
+    private static func decodeOptionalStringOrNumber(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return String(value)
+        }
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return String(value)
         }
         return nil
     }

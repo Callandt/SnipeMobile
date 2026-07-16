@@ -133,7 +133,24 @@ struct AssetEditSheet: View {
                 Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
             }
             .assetCameraCover(isPresented: $showCamera, image: $selectedImage)
+            .task(id: selectedModelId) {
+                guard selectedModelId != 0 else { return }
+                await apiClient.fetchModelFieldDefinitions(modelId: selectedModelId)
+                await MainActor.run { mergeEditCustomFieldsWithDefinitions() }
+            }
         }
+    }
+
+    private func mergeEditCustomFieldsWithDefinitions() {
+        guard let defs = apiClient.modelFieldDefinitions, !defs.isEmpty else { return }
+        var merged = editCustomFields
+        for d in defs {
+            merged[d.name] = SnipeITAPIClient.initialCustomFieldValue(
+                existing: editCustomFields[d.name],
+                defaultValue: d.default_value
+            )
+        }
+        editCustomFields = merged
     }
 
     private func performSave() {
@@ -170,15 +187,27 @@ struct AssetEditSheet: View {
                 : (normalizedBookValue.map { .value($0) } ?? .null)
             // custom_fields wants the internal key (e.g. "_snipeit_xxx_1"), not the label
             let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
-                uniqueKeysWithValues: editCustomFields.map { key, value in
-                    let apiKey = asset.customFields?[key]?.field ?? key
-                    return (apiKey, .init(value: value))
+                uniqueKeysWithValues: editCustomFields.compactMap { key, value in
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    let apiKey = resolveCustomFieldAPIKey(forDisplayName: key)
+                    return (apiKey, .init(value: trimmed))
                 }
             )
+            let hadSerial = !(asset.serial?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            let serialRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? = {
+                if let trimmed = trim(editSerial) {
+                    return .value(trimmed)
+                }
+                if hadSerial {
+                    return .null
+                }
+                return nil
+            }()
             let update = SnipeITAPIClient.AssetUpdateRequest(
                 name: trim(editName),
                 asset_tag: trim(editAssetTag) ?? asset.assetTag,
-                serial: trim(editSerial) ?? "",
+                serial: serialRequest,
                 model_id: selectedModelId,
                 status_id: selectedStatusId,
                 category_id: selectedCategoryId,
@@ -374,9 +403,37 @@ struct AssetEditSheet: View {
     private var customFieldsSection: some View {
         Section(header: Text(L10n.string("custom_fields"))) {
             let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
-            if editCustomFields.isEmpty {
+            if customFieldDefs.isEmpty && editCustomFields.isEmpty {
                 Text(L10n.string("no_custom_fields"))
                     .foregroundColor(.secondary)
+            } else if !customFieldDefs.isEmpty {
+                ForEach(customFieldDefs, id: \.name) { fieldDef in
+                    let key = fieldDef.name
+                    if fieldDef.type == "listbox", let options = fieldDef.field_values_array, !options.isEmpty {
+                        let sortedOptions = options.sorted {
+                            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+                        }
+                        AdaptivePickerRow(
+                            title: key,
+                            items: sortedOptions.map { (value: $0, label: $0) },
+                            selection: Binding(
+                                get: { editCustomFields[key] ?? "" },
+                                set: { editCustomFields[key] = $0 }
+                            ),
+                            emptyOption: ("", "—")
+                        )
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(key)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(key, text: Binding(
+                                get: { editCustomFields[key] ?? "" },
+                                set: { editCustomFields[key] = $0 }
+                            ))
+                        }
+                    }
+                }
             } else {
                 ForEach(Array(editCustomFields.keys.sorted()), id: \.self) { key in
                     let fieldDef = customFieldDefs.first(where: { $0.name == key })
@@ -409,6 +466,27 @@ struct AssetEditSheet: View {
         }
     }
 
+    private func resolveCustomFieldAPIKey(forDisplayName displayName: String) -> String {
+        if let existing = asset.customFields?[displayName]?.field, !existing.isEmpty {
+            return existing
+        }
+        let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
+        guard let def = customFieldDefs.first(where: { $0.name == displayName }) else {
+            return displayName
+        }
+        if let key = def.field, !key.isEmpty { return key }
+        if let key = def.db_field, !key.isEmpty { return key }
+        if let key = def.db_column_name, !key.isEmpty { return key }
+        if let key = def.db_column, !key.isEmpty { return key }
+        let folded = def.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current).lowercased()
+        let slugScalars = folded.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "_" }
+        let slugRaw = String(slugScalars)
+        let slug = slugRaw
+            .replacingOccurrences(of: "_+", with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        return "_snipeit_\(slug)_\(def.id)"
+    }
+
     private func updateCustomFieldsForModel(_ modelId: Int) {
         guard let fieldsets = apiClient.fieldsets else { return }
         guard let fieldset = fieldsets.first(where: { fs in
@@ -416,7 +494,10 @@ struct AssetEditSheet: View {
         }) else { return }
         var newCustomFields: [String: String] = [:]
         for field in fieldset.fields.rows {
-            newCustomFields[field.name] = editCustomFields[field.name] ?? ""
+            newCustomFields[field.name] = SnipeITAPIClient.initialCustomFieldValue(
+                existing: editCustomFields[field.name],
+                defaultValue: nil
+            )
         }
         editCustomFields = newCustomFields
     }
