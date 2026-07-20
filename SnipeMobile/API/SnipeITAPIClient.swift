@@ -1056,8 +1056,14 @@ class SnipeITAPIClient: ObservableObject {
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
         if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
             body["purchase_cost"] = normalized
+        } else {
+            body["purchase_cost"] = NSNull()
         }
-        if let v = purchaseDate, !v.isEmpty { body["purchase_date"] = v }
+        if let v = purchaseDate, !v.isEmpty {
+            body["purchase_date"] = v
+        } else {
+            body["purchase_date"] = NSNull()
+        }
         if let v = companyId, v > 0 { body["company_id"] = v }
         if let v = locationId, v > 0 { body["location_id"] = v }
         if let v = manufacturerId, v > 0 { body["manufacturer_id"] = v }
@@ -1328,8 +1334,14 @@ class SnipeITAPIClient: ObservableObject {
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
         if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
             body["purchase_cost"] = normalized
+        } else {
+            body["purchase_cost"] = NSNull()
         }
-        if let v = purchaseDate, !v.isEmpty { body["purchase_date"] = v }
+        if let v = purchaseDate, !v.isEmpty {
+            body["purchase_date"] = v
+        } else {
+            body["purchase_date"] = NSNull()
+        }
         if let v = companyId, v > 0 { body["company_id"] = v }
         if let v = locationId, v > 0 { body["location_id"] = v }
         if let v = manufacturerId, v > 0 { body["manufacturer_id"] = v }
@@ -2821,10 +2833,10 @@ class SnipeITAPIClient: ObservableObject {
         let purchase_cost: NullableString?
         let book_value: NullableString?
         let custom_fields: [String: CustomFieldValue]?
-        let purchase_date: String?
+        let purchase_date: NullableString?
         let next_audit_date: NullableString?
-        let expected_checkin: String?
-        let eol_date: String?
+        let expected_checkin: NullableString?
+        let eol_date: NullableString?
         let warranty_months: NullableString?
         // Set to 1 to delete the current image.
         let image_delete: Int?
@@ -3214,9 +3226,13 @@ class SnipeITAPIClient: ObservableObject {
         }
         if let v = purchaseCost, !v.isEmpty, let normalized = NumberFormatHelpers.normalizeDecimalForAPI(v) {
             body["purchase_cost"] = normalized
+        } else {
+            body["purchase_cost"] = NSNull()
         }
         if let v = purchaseDate, !v.isEmpty {
             body["purchase_date"] = v
+        } else {
+            body["purchase_date"] = NSNull()
         }
         if let v = modelNumber, !v.isEmpty {
             body["model_number"] = v

@@ -164,13 +164,22 @@ struct AssetEditSheet: View {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            let purchaseDateString = hasPurchaseDate ? formatter.string(from: editPurchaseDate) : nil
+            let purchaseDateRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                hasPurchaseDate
+                ? .value(formatter.string(from: editPurchaseDate))
+                : .null
             let nextAuditDateRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
                 hasNextAuditDate
                 ? .value(formatter.string(from: editNextAuditDate))
                 : .null
-            let expectedCheckinString = hasExpectedCheckin ? formatter.string(from: editExpectedCheckin) : nil
-            let eolDateString = hasEolDate ? formatter.string(from: editEolDate) : nil
+            let expectedCheckinRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                hasExpectedCheckin
+                ? .value(formatter.string(from: editExpectedCheckin))
+                : .null
+            let eolDateRequest: SnipeITAPIClient.AssetUpdateRequest.NullableString? =
+                hasEolDate
+                ? .value(formatter.string(from: editEolDate))
+                : .null
             let trim: (String) -> String? = { s in
                 let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
                 return t.isEmpty ? nil : t
@@ -224,10 +233,10 @@ struct AssetEditSheet: View {
                 purchase_cost: purchaseCostRequest,
                 book_value: bookValueRequest,
                 custom_fields: customFieldsPayload,
-                purchase_date: purchaseDateString,
+                purchase_date: purchaseDateRequest,
                 next_audit_date: nextAuditDateRequest,
-                expected_checkin: expectedCheckinString,
-                eol_date: eolDateString,
+                expected_checkin: expectedCheckinRequest,
+                eol_date: eolDateRequest,
                 warranty_months: warrantyMonthsRequest,
                 image_delete: (selectedImage == nil && removeExistingImage) ? 1 : nil
             )

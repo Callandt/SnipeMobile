@@ -253,10 +253,12 @@ struct LicenseEditSheet: View {
         if !trimmedPurchaseOrder.isEmpty { body["purchase_order"] = trimmedPurchaseOrder }
         if let cost = NumberFormatHelpers.normalizeDecimalForAPI(purchaseCost), !cost.isEmpty {
             body["purchase_cost"] = cost
+        } else {
+            body["purchase_cost"] = NSNull()
         }
-        if hasPurchaseDate { body["purchase_date"] = f.string(from: purchaseDate) }
-        if hasExpirationDate { body["expiration_date"] = f.string(from: expirationDate) }
-        if hasTerminationDate { body["termination_date"] = f.string(from: terminationDate) }
+        body["purchase_date"] = hasPurchaseDate ? f.string(from: purchaseDate) : NSNull()
+        body["expiration_date"] = hasExpirationDate ? f.string(from: expirationDate) : NSNull()
+        body["termination_date"] = hasTerminationDate ? f.string(from: terminationDate) : NSNull()
         if selectedCategoryId > 0 { body["category_id"] = selectedCategoryId }
         if selectedManufacturerId > 0 { body["manufacturer_id"] = selectedManufacturerId }
         if selectedSupplierId > 0 { body["supplier_id"] = selectedSupplierId }
