@@ -6,6 +6,10 @@ struct ManagementFormView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     // nil == create
     let existing: ManagementItem?
+    /// Pre-filled values when creating (e.g. category_type for asset categories).
+    var initialDefaults: [String: String] = [:]
+    /// Called after a successful create; dismisses without a success alert.
+    var onCreated: ((Int?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -118,12 +122,7 @@ struct ManagementFormView: View {
         case .colorHex:
             HexColorRow(title: label, hex: stringBinding(field.bodyKey))
         case .picker(let source):
-            AdaptivePickerRow(
-                title: label,
-                items: pickerItems(for: field, source: source),
-                selection: stringBinding(field.bodyKey),
-                emptyOption: (value: "", label: L10n.string("mgmt_none"))
-            )
+            managementPickerRow(label: label, field: field, source: source)
             if source.isFieldFormat, (values[field.bodyKey] ?? "") == customRegexSentinel {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("regex:/^[0-9]{15}$/", text: $customRegex)
@@ -135,6 +134,38 @@ struct ManagementFormView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func managementPickerRow(label: String, field: ManagementFormField, source: ManagementOptionSource) -> some View {
+        let items = pickerItems(for: field, source: source)
+        let emptyOption = (value: "", label: L10n.string("mgmt_none"))
+        let selection = stringBinding(field.bodyKey)
+        let useSearchable = items.count + 1 > 12
+
+        if useSearchable {
+            CreatableSearchablePickerRow(
+                title: label,
+                items: items,
+                selection: selection,
+                emptyOption: emptyOption,
+                apiClient: apiClient,
+                creatableEntity: source.creatableEntity,
+                creatableLocation: source.creatableLocation,
+                createDefaults: source.createDefaultValues()
+            )
+        } else {
+            CreatableAdaptivePickerRow(
+                title: label,
+                items: items,
+                selection: selection,
+                emptyOption: emptyOption,
+                apiClient: apiClient,
+                creatableEntity: source.creatableEntity,
+                creatableLocation: source.creatableLocation,
+                createDefaults: source.createDefaultValues()
+            )
         }
     }
 
@@ -189,6 +220,11 @@ struct ManagementFormView: View {
             if format.lowercased().hasPrefix("regex:") {
                 customRegex = format
                 initial["format"] = customRegexSentinel
+            }
+        }
+        if existing == nil {
+            for (key, value) in initialDefaults where !value.isEmpty {
+                initial[key] = value
             }
         }
         values = initial
@@ -263,8 +299,13 @@ struct ManagementFormView: View {
 
         didSucceed = result.success
         if result.success {
-            resultMessage = result.message ?? L10n.string(isEdit ? "saved" : "mgmt_created")
             await refreshBackingList()
+            if !isEdit, let onCreated {
+                onCreated(result.id)
+                dismiss()
+                return
+            }
+            resultMessage = result.message ?? L10n.string(isEdit ? "saved" : "mgmt_created")
         } else {
             resultMessage = result.message ?? L10n.string("mgmt_save_failed")
         }

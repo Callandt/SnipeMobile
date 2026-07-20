@@ -75,11 +75,13 @@ struct AddLocationSheet: View {
                 let sortedLocations = apiClient.locations.sorted {
                     $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
                 }
-                AdaptivePickerRow(
+                CreatableAdaptivePickerRow(
                     title: L10n.string("parent_location"),
                     items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
                     selection: $selectedParentId,
-                    emptyOption: (0, L10n.string("choose_location"))
+                    emptyOption: (0, L10n.string("choose_location")),
+                    apiClient: apiClient,
+                    creatableLocation: true
                 )
             }
             TextField(L10n.string("currency"), text: $currency)
@@ -127,9 +129,17 @@ struct AddLocationSheet: View {
 
         let result = await apiClient.createLocation(body: body)
         lastCreatedId = result.id
-        resultMessage = result.success
-            ? L10n.string("location_created")
-            : (result.message ?? L10n.string("create_failed"))
+        if result.success {
+            await apiClient.fetchLocations()
+            if let onCreated {
+                onCreated(result.id)
+                isPresented = false
+                return
+            }
+            resultMessage = L10n.string("location_created")
+        } else {
+            resultMessage = result.message ?? L10n.string("create_failed")
+        }
         showResult = true
     }
 }
