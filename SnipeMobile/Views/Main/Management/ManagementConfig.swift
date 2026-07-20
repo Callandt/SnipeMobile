@@ -120,6 +120,42 @@ enum ManagementOptionSource {
         id == "markdown-textarea" ? "Markdown" : id.capitalized
     }
 
+    /// Management entity that can be created inline from this picker, if any.
+    var creatableEntity: ManagementEntity? {
+        switch self {
+        case .categories: return .categories
+        case .manufacturers: return .manufacturers
+        case .companies: return .companies
+        case .locations: return nil
+        case .fieldsets: return .fieldsets
+        case .statusType, .categoryType, .fieldElement, .fieldFormat, .users, .depreciations:
+            return nil
+        }
+    }
+
+    /// Opens `AddLocationSheet` instead of a management form.
+    var creatableLocation: Bool {
+        if case .locations = self { return true }
+        return false
+    }
+
+    /// Opens `AddUserSheet` instead of a management form.
+    var creatableUser: Bool {
+        if case .users = self { return true }
+        return false
+    }
+
+    /// Default field values when creating a related item from this picker.
+    func createDefaultValues() -> [String: String] {
+        switch self {
+        case .categories(let type):
+            if let type { return ["category_type": type] }
+            return [:]
+        default:
+            return [:]
+        }
+    }
+
     // load the list before the picker needs it
     @MainActor
     func ensureLoaded(client: SnipeITAPIClient) {

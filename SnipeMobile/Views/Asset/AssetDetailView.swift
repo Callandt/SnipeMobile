@@ -73,6 +73,20 @@ struct AssetDetailView: View {
         currentAsset.statusLabel.statusMeta?.lowercased() == "deployed"
     }
 
+    private var resolvedStatusLabel: String? {
+        let name = currentAsset.decodedStatusLabelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawType = currentAsset.statusLabel.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let localizedType = rawType.isEmpty ? "" : L10n.string("status_type_\(rawType)")
+        if !name.isEmpty {
+            if !localizedType.isEmpty {
+                return "\(name) (\(localizedType))"
+            }
+            return name
+        }
+        let meta = currentAsset.statusLabel.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return meta.isEmpty ? nil : L10n.statusLabel(meta)
+    }
+
     /// Only deployable statuses can be checked out (matches Snipe-IT).
     private var canCheckOut: Bool {
         if let label = apiClient.statusLabels.first(where: { $0.id == currentAsset.statusLabel.id }) {
@@ -561,10 +575,12 @@ struct AssetDetailView: View {
             selectedCompanyId = id
         } else if let first = companyIds.first { selectedCompanyId = first }
         let locationIds = Set(apiClient.locations.map(\.id))
-        if let id = currentAsset.location?.id, locationIds.contains(id) {
+        if let id = currentAsset.rtdLocation?.id, locationIds.contains(id) {
             selectedLocationId = id
-        } else if let first = apiClient.locations.first?.id {
-            selectedLocationId = first
+        } else if let id = currentAsset.location?.id, locationIds.contains(id) {
+            selectedLocationId = id
+        } else {
+            selectedLocationId = 0
         }
         hasPurchaseDate = currentAsset.purchaseDate?.date != nil
         hasNextAuditDate = currentAsset.nextAuditDate?.date != nil
@@ -639,8 +655,8 @@ struct AssetDetailView: View {
                             if !currentAsset.decodedSupplierName.isEmpty {
                                 copyableDetailRow(label: L10n.string("supplier_optional"), value: currentAsset.decodedSupplierName)
                             }
-                            if let statusMeta = currentAsset.statusLabel.statusMeta, !statusMeta.isEmpty {
-                                copyableDetailRow(label: L10n.string("status"), value: L10n.statusLabel(statusMeta))
+                            if let statusLabel = resolvedStatusLabel {
+                                copyableDetailRow(label: L10n.string("status"), value: statusLabel)
                             }
                             if !currentAsset.decodedCategoryName.isEmpty {
                                 copyableDetailRow(label: L10n.string("category"), value: currentAsset.decodedCategoryName)
@@ -958,10 +974,10 @@ struct AssetDetailView: View {
             }
             if !apiClient.locations.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Location")
+                    Text(L10n.string("default_location"))
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Picker("Location", selection: Binding(
+                    Picker(L10n.string("default_location"), selection: Binding(
                         get: { currentAsset.location?.id ?? 0 },
                         set: { _ in /* location change not yet geïmplementeerd */ }
                     )) {

@@ -75,11 +75,14 @@ struct AddAccessorySheet: View {
     private var generalSection: some View {
         Section(header: Text(L10n.string("general"))) {
             TextField(L10n.fieldLabel("name", required: true), text: $name)
-            AdaptivePickerRow(
+            CreatableAdaptivePickerRow(
                 title: L10n.fieldLabel("category", required: true),
-                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                items: apiClient.categories(for: "accessory").map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedCategoryId,
-                emptyOption: (0, L10n.string("choose_category"))
+                emptyOption: (0, L10n.string("choose_category")),
+                apiClient: apiClient,
+                creatableEntity: .categories,
+                createDefaults: ["category_type": "accessory"]
             )
             HStack {
                 Text(L10n.fieldLabel("quantity", required: true))
@@ -97,32 +100,53 @@ struct AddAccessorySheet: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
             }
+            CreatableSearchablePickerRow(
+                title: L10n.string("supplier"),
+                items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: Binding(
+                    get: { selectedSupplierId ?? 0 },
+                    set: { selectedSupplierId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_supplier")),
+                apiClient: apiClient,
+                creatableEntity: .suppliers
+            )
+            CreatableSearchablePickerRow(
+                title: L10n.string("manufacturer"),
+                items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: Binding(
+                    get: { selectedManufacturerId ?? 0 },
+                    set: { selectedManufacturerId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_manufacturer")),
+                apiClient: apiClient,
+                creatableEntity: .manufacturers
+            )
+            let sortedLocations = apiClient.locations.sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
+            CreatableAdaptivePickerRow(
+                title: L10n.string("location"),
+                items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
+                selection: Binding(
+                    get: { selectedLocationId ?? 0 },
+                    set: { selectedLocationId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_location")),
+                apiClient: apiClient,
+                creatableLocation: true
+            )
             TextField(L10n.string("model_number"), text: $modelNumber)
-            if !apiClient.locations.isEmpty {
-                let sortedLocations = apiClient.locations.sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
-                AdaptivePickerRow(
-                    title: L10n.string("location"),
-                    items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
-                    selection: Binding(
-                        get: { selectedLocationId ?? 0 },
-                        set: { selectedLocationId = $0 == 0 ? nil : $0 }
-                    ),
-                    emptyOption: (0, L10n.string("choose_location"))
-                )
-            }
-            if !apiClient.companies.isEmpty {
-                let sortedCompanies = apiClient.companies.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                // Searchable avoids Form Int-tag collisions with manufacturer/supplier pickers.
-                SearchablePickerRow(
-                    title: L10n.string("company"),
-                    items: sortedCompanies.map { (value: $0.id, label: $0.name) },
-                    selection: Binding(
-                        get: { selectedCompanyId ?? 0 },
-                        set: { selectedCompanyId = $0 == 0 ? nil : $0 }
-                    ),
-                    emptyOption: (0, L10n.string("choose_company"))
-                )
-            }
+            let sortedCompanies = apiClient.companies.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            CreatableSearchablePickerRow(
+                title: L10n.string("company"),
+                items: sortedCompanies.map { (value: $0.id, label: $0.name) },
+                selection: Binding(
+                    get: { selectedCompanyId ?? 0 },
+                    set: { selectedCompanyId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_company")),
+                apiClient: apiClient,
+                creatableEntity: .companies
+            )
         }
     }
 
@@ -135,24 +159,6 @@ struct AddAccessorySheet: View {
             if hasPurchaseDate {
                 DatePicker(L10n.string("purchase_date"), selection: $purchaseDate, displayedComponents: .date)
             }
-            SearchablePickerRow(
-                title: L10n.string("manufacturer"),
-                items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                selection: Binding(
-                    get: { selectedManufacturerId ?? 0 },
-                    set: { selectedManufacturerId = $0 == 0 ? nil : $0 }
-                ),
-                emptyOption: (0, L10n.string("choose_manufacturer"))
-            )
-            SearchablePickerRow(
-                title: L10n.string("supplier"),
-                items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                selection: Binding(
-                    get: { selectedSupplierId ?? 0 },
-                    set: { selectedSupplierId = $0 == 0 ? nil : $0 }
-                ),
-                emptyOption: (0, L10n.string("choose_supplier"))
-            )
         }
     }
 

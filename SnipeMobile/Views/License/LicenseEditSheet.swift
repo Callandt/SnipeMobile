@@ -78,30 +78,35 @@ struct LicenseEditSheet: View {
             TextField(L10n.string("product_key"), text: $serial)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
-            if !apiClient.categories.isEmpty {
-                AdaptivePickerRow(
-                    title: L10n.fieldLabel("category", required: true),
-                    items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                    selection: $selectedCategoryId,
-                    emptyOption: (0, L10n.string("choose_category"))
-                )
-            }
-            SearchablePickerRow(
+            CreatableAdaptivePickerRow(
+                title: L10n.fieldLabel("category", required: true),
+                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: $selectedCategoryId,
+                emptyOption: (0, L10n.string("choose_category")),
+                apiClient: apiClient,
+                creatableEntity: .categories,
+                createDefaults: ["category_type": "license"]
+            )
+            CreatableSearchablePickerRow(
                 title: L10n.string("manufacturer"),
                 items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedManufacturerId,
-                emptyOption: (0, L10n.string("choose_manufacturer"))
+                emptyOption: (0, L10n.string("choose_manufacturer")),
+                apiClient: apiClient,
+                creatableEntity: .manufacturers
             )
             if !apiClient.companies.isEmpty {
                 let sortedCompanies = apiClient.companies.sorted {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
                 // Searchable avoids Form Int-tag collisions with manufacturer/supplier pickers.
-                SearchablePickerRow(
+                CreatableSearchablePickerRow(
                     title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: $0.name) },
                     selection: $selectedCompanyId,
-                    emptyOption: (0, L10n.string("choose_company"))
+                    emptyOption: (0, L10n.string("choose_company")),
+                    apiClient: apiClient,
+                    creatableEntity: .companies
                 )
             }
         }
@@ -158,11 +163,13 @@ struct LicenseEditSheet: View {
             if hasTerminationDate {
                 DatePicker("", selection: $terminationDate, displayedComponents: .date)
             }
-            SearchablePickerRow(
+            CreatableSearchablePickerRow(
                 title: L10n.string("supplier"),
                 items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedSupplierId,
-                emptyOption: (0, L10n.string("choose_supplier"))
+                emptyOption: (0, L10n.string("choose_supplier")),
+                apiClient: apiClient,
+                creatableEntity: .suppliers
             )
         }
     }

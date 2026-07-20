@@ -1,6 +1,12 @@
 import SwiftUI
 
 struct AddAssetSheet: View {
+    private enum CheckoutTargetType: String, CaseIterable, Identifiable {
+        case user
+        case location
+        var id: String { rawValue }
+    }
+
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var isPresented: Bool
     /// Dell QR URL to pre-fill serial (+ purchase date and warranty via TechDirect when set).
@@ -26,6 +32,10 @@ struct AddAssetSheet: View {
     @State private var byod = false
     @State private var selectedImage: UIImage?
     @State private var showCamera = false
+    @State private var checkOutAfterCreate = false
+    @State private var checkoutTargetType: CheckoutTargetType = .user
+    @State private var selectedCheckoutUserId: Int?
+    @State private var selectedCheckoutLocationId: Int?
     @State private var customFields: [String: String] = [:]
     @State private var displayedFieldDefinitions: [SnipeITAPIClient.FieldDefinition] = []
     @State private var isSaving = false
@@ -45,6 +55,7 @@ struct AddAssetSheet: View {
             && selectedModelId != 0
             && selectedStatusId != 0
             && (!selectedModelRequiresSerial || !serial.trimmingCharacters(in: .whitespaces).isEmpty)
+            && (!checkOutAfterCreate || checkoutSelectionIsValid)
     }
 
     /// Next asset tag. Uses Snipe-IT prefix/zerofill when configured.
@@ -52,10 +63,29 @@ struct AddAssetSheet: View {
         apiClient.nextAvailableAssetTag()
     }
 
+    private var selectedStatusIsDeployable: Bool {
+        guard let status = apiClient.statusLabels.first(where: { $0.id == selectedStatusId }) else { return false }
+        let type = status.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if !type.isEmpty { return type == "deployable" }
+        let meta = status.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return meta == "deployable"
+    }
+
+    private var checkoutSelectionIsValid: Bool {
+        guard selectedStatusIsDeployable else { return true }
+        switch checkoutTargetType {
+        case .user: return selectedCheckoutUserId != nil
+        case .location: return selectedCheckoutLocationId != nil
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 generalSection
+                if selectedStatusIsDeployable {
+                    checkoutSection
+                }
                 purchaseSection
                 AssetPhotoSection(selectedImage: $selectedImage, showCamera: $showCamera)
                 notesSection
@@ -71,6 +101,13 @@ struct AddAssetSheet: View {
             }
             .task(id: selectedModelId) {
                 await loadAndDisplayCustomFieldsForModel()
+            }
+            .onChange(of: selectedStatusId) { _, _ in
+                if !selectedStatusIsDeployable {
+                    checkOutAfterCreate = false
+                    selectedCheckoutUserId = nil
+                    selectedCheckoutLocationId = nil
+                }
             }
             .alert(L10n.string("error"), isPresented: $showResult) {
                 Button(L10n.string("ok"), role: .cancel) { }
@@ -122,6 +159,15 @@ struct AddAssetSheet: View {
         // Status stays unset
         if apiClient.companies.isEmpty {
             Task { await apiClient.fetchCompanies() }
+        }
+        if apiClient.locations.isEmpty {
+            Task { await apiClient.fetchLocations() }
+        }
+        if apiClient.suppliers.isEmpty {
+            Task { await apiClient.fetchSuppliers() }
+        }
+        if apiClient.users.isEmpty {
+            Task { await apiClient.fetchUsers() }
         }
 
         // Reuse handleDellUrl so pre-fill matches the in-sheet scan flow.
@@ -205,52 +251,99 @@ struct AddAssetSheet: View {
             let sortedModels = apiClient.models.sorted {
                 HTMLDecoder.decode($0.name).localizedCaseInsensitiveCompare(HTMLDecoder.decode($1.name)) == .orderedAscending
             }
-            AdaptivePickerRow(
+            CreatableAdaptivePickerRow(
                 title: L10n.fieldLabel("model", required: true),
                 items: sortedModels.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedModelId,
-                emptyOption: (0, L10n.string("choose_model"))
+                emptyOption: (0, L10n.string("choose_model")),
+                apiClient: apiClient,
+                creatableEntity: .models
             )
 
             // Status list
             let sortedStatuses = apiClient.statusLabels.sorted {
                 displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
             }
-            AdaptivePickerRow(
+            CreatableAdaptivePickerRow(
                 title: L10n.fieldLabel("status", required: true),
                 items: sortedStatuses.map { (value: $0.id, label: displayName(for: $0)) },
                 selection: $selectedStatusId,
-                emptyOption: (0, L10n.string("choose_status"))
+                emptyOption: (0, L10n.string("choose_status")),
+                apiClient: apiClient,
+                creatableEntity: .statusLabels
             )
-            if !apiClient.locations.isEmpty {
-                let sortedLocations = apiClient.locations.sorted {
-                    $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
-                }
-                AdaptivePickerRow(
-                    title: L10n.string("location"),
-                    items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
-                    selection: Binding(
-                        get: { selectedLocationId ?? 0 },
-                        set: { selectedLocationId = $0 == 0 ? nil : $0 }
-                    ),
-                    emptyOption: (0, L10n.string("choose_location"))
-                )
+
+            let sortedLocations = apiClient.locations.sorted {
+                $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
             }
-            if !apiClient.companies.isEmpty {
-                let sortedCompanies = apiClient.companies.sorted {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-                AdaptivePickerRow(
-                    title: L10n.string("company"),
-                    items: sortedCompanies.map { (value: $0.id, label: $0.name) },
-                    selection: Binding(
-                        get: { selectedCompanyId ?? 0 },
-                        set: { selectedCompanyId = $0 == 0 ? nil : $0 }
-                    ),
-                    emptyOption: (0, L10n.string("choose_company"))
-                )
+            CreatableAdaptivePickerRow(
+                title: L10n.string("default_location"),
+                items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
+                selection: Binding(
+                    get: { selectedLocationId ?? 0 },
+                    set: { selectedLocationId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_default_location")),
+                apiClient: apiClient,
+                creatableLocation: true
+            )
+            let sortedCompanies = apiClient.companies.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
+            CreatableAdaptivePickerRow(
+                title: L10n.string("company"),
+                items: sortedCompanies.map { (value: $0.id, label: $0.name) },
+                selection: Binding(
+                    get: { selectedCompanyId ?? 0 },
+                    set: { selectedCompanyId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_company")),
+                apiClient: apiClient,
+                creatableEntity: .companies
+            )
             Toggle(L10n.string("byod"), isOn: $byod)
+        }
+    }
+
+    private var checkoutSection: some View {
+        Section {
+            Toggle(L10n.string("check_out"), isOn: $checkOutAfterCreate)
+
+            if checkOutAfterCreate {
+                Picker("", selection: $checkoutTargetType) {
+                    Text(L10n.string("user")).tag(CheckoutTargetType.user)
+                    Text(L10n.string("location")).tag(CheckoutTargetType.location)
+                }
+                .pickerStyle(.segmented)
+
+                if checkoutTargetType == .user {
+                    let sortedUsers = apiClient.users.sorted {
+                        $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
+                    }
+                    AdaptivePickerRow(
+                        title: L10n.string("select_user_short"),
+                        items: sortedUsers.map { (value: $0.id, label: $0.decodedName) },
+                        selection: Binding(
+                            get: { selectedCheckoutUserId ?? 0 },
+                            set: { selectedCheckoutUserId = $0 == 0 ? nil : $0 }
+                        ),
+                        emptyOption: (0, L10n.string("select_user"))
+                    )
+                } else {
+                    let sortedLocations = apiClient.locations.sorted {
+                        $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
+                    }
+                    AdaptivePickerRow(
+                        title: L10n.string("select_location_short"),
+                        items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
+                        selection: Binding(
+                            get: { selectedCheckoutLocationId ?? 0 },
+                            set: { selectedCheckoutLocationId = $0 == 0 ? nil : $0 }
+                        ),
+                        emptyOption: (0, L10n.string("choose_location"))
+                    )
+                }
+            }
         }
     }
 
@@ -269,29 +362,20 @@ struct AddAssetSheet: View {
             }
             TextField(L10n.string("warranty_months"), text: $warrantyMonths)
                 .keyboardType(.numberPad)
-            if !suppliersFromAssets.isEmpty {
-                let sortedSuppliers = suppliersFromAssets.sorted {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-                AdaptivePickerRow(
-                    title: L10n.string("supplier"),
-                    items: sortedSuppliers.map { (value: $0.id, label: $0.name) },
-                    selection: Binding(
-                        get: { selectedSupplierId ?? 0 },
-                        set: { selectedSupplierId = $0 == 0 ? nil : $0 }
-                    ),
-                    emptyOption: (0, L10n.string("choose_supplier"))
-                )
+            let sortedSuppliers = apiClient.suppliers.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
-        }
-    }
-
-    private var suppliersFromAssets: [(id: Int, name: String)] {
-        let ids = Set(apiClient.assets.compactMap { $0.supplier?.id })
-        return ids.compactMap { id in
-            apiClient.assets.first(where: { $0.supplier?.id == id }).flatMap { a in
-                a.supplier.map { (id: $0.id, name: $0.name) }
-            }
+            CreatableAdaptivePickerRow(
+                title: L10n.string("supplier"),
+                items: sortedSuppliers.map { (value: $0.id, label: $0.name) },
+                selection: Binding(
+                    get: { selectedSupplierId ?? 0 },
+                    set: { selectedSupplierId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_supplier")),
+                apiClient: apiClient,
+                creatableEntity: .suppliers
+            )
         }
     }
 
@@ -410,7 +494,49 @@ struct AddAssetSheet: View {
             #if DEBUG
             print("AddAssetSheet.saveAsset: model_id=\(selectedModelId), status_id=\(selectedStatusId)")
             #endif
-            let success = await apiClient.createAsset(req, image: selectedImage)
+            let createResult = await apiClient.createAsset(req, image: selectedImage)
+            let assetCreated = createResult.success
+            var success = assetCreated
+            let tagSent = assetTag.trimmingCharacters(in: .whitespaces)
+
+            if assetCreated, checkOutAfterCreate, selectedStatusIsDeployable {
+                let createdAssetId = createResult.assetId
+                    ?? apiClient.assets.first(where: {
+                        $0.decodedAssetTag.caseInsensitiveCompare(tagSent) == .orderedSame
+                    })?.id
+                if let createdAssetId {
+                    var checkoutBody: [String: Any] = [
+                        "name": nameToSend,
+                        "note": notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ]
+                    switch checkoutTargetType {
+                    case .user:
+                        if let userId = selectedCheckoutUserId {
+                            checkoutBody["assigned_user"] = userId
+                            checkoutBody["checkout_to_type"] = "user"
+                            success = await apiClient.checkoutAssetCustom(assetId: createdAssetId, body: checkoutBody)
+                        } else {
+                            success = false
+                        }
+                    case .location:
+                        if let locationId = selectedCheckoutLocationId {
+                            checkoutBody["assigned_location"] = locationId
+                            checkoutBody["checkout_to_type"] = "location"
+                            success = await apiClient.checkoutAssetCustom(assetId: createdAssetId, body: checkoutBody)
+                        } else {
+                            success = false
+                        }
+                    }
+                    #if DEBUG
+                    print("AddAssetSheet.checkout: assetId=\(createdAssetId) success=\(success) message=\(apiClient.lastApiMessage ?? "")")
+                    #endif
+                } else {
+                    success = false
+                    await MainActor.run {
+                        apiClient.lastApiMessage = L10n.string("checkout_failed")
+                    }
+                }
+            }
             if success {
                 // Already inserted in memory by createAsset; sync the rest in the
                 // background so the sheet can close right away.

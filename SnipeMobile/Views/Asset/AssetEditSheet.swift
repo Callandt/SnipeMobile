@@ -133,6 +133,11 @@ struct AssetEditSheet: View {
                 Alert(title: Text(L10n.string("result")), message: Text(resultMessage), dismissButton: .default(Text(L10n.string("ok"))))
             }
             .assetCameraCover(isPresented: $showCamera, image: $selectedImage)
+            .task {
+                if apiClient.locations.isEmpty {
+                    await apiClient.fetchLocations()
+                }
+            }
             .task(id: selectedModelId) {
                 guard selectedModelId != 0 else { return }
                 await apiClient.fetchModelFieldDefinitions(modelId: selectedModelId)
@@ -215,7 +220,7 @@ struct AssetEditSheet: View {
                 supplier_id: selectedSupplierId,
                 notes: trim(editNotes) ?? "",
                 order_number: trim(editOrderNumber) ?? "",
-                location_id: asset.location?.id,
+                rtd_location_id: selectedLocationId > 0 ? .value(selectedLocationId) : .null,
                 purchase_cost: purchaseCostRequest,
                 book_value: bookValueRequest,
                 custom_fields: customFieldsPayload,
@@ -290,30 +295,34 @@ struct AssetEditSheet: View {
             if !apiClient.assets.isEmpty {
                 let supplierPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.supplier?.id })).compactMap { id in
                     apiClient.assets.first(where: { $0.supplier?.id == id })?.supplier.map {
-                        IdNamePair(id: $0.id, name: $0.name)
+                        IdNamePair(id: $0.id, name: HTMLDecoder.decode($0.name))
                     }
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !supplierPairs.isEmpty {
-                    AdaptivePickerRow(
+                    CreatableAdaptivePickerRow(
                         title: L10n.string("supplier"),
                         items: supplierPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedSupplierId,
-                        emptyOption: (0, "—")
+                        emptyOption: (0, "—"),
+                        apiClient: apiClient,
+                        creatableEntity: .suppliers
                     )
                 }
             }
             if !apiClient.assets.isEmpty {
                 let companyPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.company?.id })).compactMap { id in
                     apiClient.assets.first(where: { $0.company?.id == id })?.company.map {
-                        IdNamePair(id: $0.id, name: $0.name)
+                        IdNamePair(id: $0.id, name: HTMLDecoder.decode($0.name))
                     }
                 }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !companyPairs.isEmpty {
-                    AdaptivePickerRow(
+                    CreatableAdaptivePickerRow(
                         title: L10n.string("company"),
                         items: companyPairs.map { (value: $0.id, label: $0.name) },
                         selection: $selectedCompanyId,
-                        emptyOption: (0, "—")
+                        emptyOption: (0, "—"),
+                        apiClient: apiClient,
+                        creatableEntity: .companies
                     )
                 }
             }
@@ -323,14 +332,16 @@ struct AssetEditSheet: View {
                     displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
                 }
                 let validStatusIds = Set(apiClient.statusLabels.map(\.id))
-                AdaptivePickerRow(
+                CreatableAdaptivePickerRow(
                     title: "Status",
                     items: sortedStatuses.map { (value: $0.id, label: displayName(for: $0)) },
                     selection: Binding(
                         get: { validStatusIds.contains(selectedStatusId) ? selectedStatusId : (sortedStatuses.first?.id ?? 0) },
                         set: { selectedStatusId = $0 }
                     ),
-                    emptyOption: nil
+                    emptyOption: nil,
+                    apiClient: apiClient,
+                    creatableEntity: .statusLabels
                 )
                 .onAppear {
                     if !validStatusIds.contains(selectedStatusId), let first = sortedStatuses.first?.id {
@@ -338,6 +349,17 @@ struct AssetEditSheet: View {
                     }
                 }
             }
+            let sortedLocations = apiClient.locations.sorted {
+                $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
+            }
+            CreatableAdaptivePickerRow(
+                title: L10n.string("default_location"),
+                items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
+                selection: $selectedLocationId,
+                emptyOption: (0, L10n.string("choose_default_location")),
+                apiClient: apiClient,
+                creatableLocation: true
+            )
         }
     }
 

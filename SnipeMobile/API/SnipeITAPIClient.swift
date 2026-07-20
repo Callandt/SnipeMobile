@@ -2792,6 +2792,21 @@ class SnipeITAPIClient: ObservableObject {
             }
         }
 
+        enum NullableInt: Encodable {
+            case value(Int)
+            case null
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.singleValueContainer()
+                switch self {
+                case .value(let value):
+                    try container.encode(value)
+                case .null:
+                    try container.encodeNil()
+                }
+            }
+        }
+
         let name: String?
         let asset_tag: String?
         let serial: NullableString?
@@ -2802,7 +2817,7 @@ class SnipeITAPIClient: ObservableObject {
         let supplier_id: Int?
         let notes: String?
         let order_number: String?
-        let location_id: Int?
+        let rtd_location_id: NullableInt?
         let purchase_cost: NullableString?
         let book_value: NullableString?
         let custom_fields: [String: CustomFieldValue]?
@@ -2919,8 +2934,8 @@ class SnipeITAPIClient: ObservableObject {
         let byod: Bool?
     }
 
-    func createAsset(_ body: AssetCreateRequest, image: UIImage? = nil) async -> Bool {
-        guard let url = URL(string: "\(baseURL)/api/v1/hardware") else { return false }
+    func createAsset(_ body: AssetCreateRequest, image: UIImage? = nil) async -> (success: Bool, assetId: Int?) {
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware") else { return (false, nil) }
         do {
             let encoded = try JSONEncoder().encode(body)
             var bodyObject = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
@@ -2961,7 +2976,7 @@ class SnipeITAPIClient: ObservableObject {
                 responseData = pair.0
                 guard let http = pair.1 as? HTTPURLResponse else {
                     await MainActor.run { self.lastApiMessage = "Geen geldige HTTP-response." }
-                    return false
+                    return (false, nil)
                 }
                 httpResponse = http
             }
@@ -2997,7 +3012,7 @@ class SnipeITAPIClient: ObservableObject {
                     ? L10n.string("create_response_login_page")
                     : L10n.string("create_response_not_json")
                 await MainActor.run { self.lastApiMessage = loginPageMsg }
-                return false
+                return (false, nil)
             }
 
             let (parsedMsg, isDuplicateSerialOrTag) = Self.parseValidationError(json: json, statusCode: httpResponse.statusCode)
@@ -3020,11 +3035,28 @@ class SnipeITAPIClient: ObservableObject {
                     var newAssetId: Int?
                     if let json = json,
                        let payload = json["payload"], !(payload is NSNull),
-                       let payloadDict = payload as? [String: Any],
-                       let payloadData = try? JSONSerialization.data(withJSONObject: payloadDict),
-                       let newAsset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
-                        newAssetId = newAsset.id
-                        await MainActor.run { self.assets.insert(newAsset, at: 0) }
+                       let payloadDict = payload as? [String: Any] {
+                        newAssetId = payloadDict["id"] as? Int
+
+                        let payloadData = try? JSONSerialization.data(withJSONObject: payloadDict)
+                        if let payloadData,
+                           let newAsset = try? JSONDecoder().decode(Asset.self, from: payloadData) {
+                            newAssetId = newAsset.id
+                            await MainActor.run { self.assets.insert(newAsset, at: 0) }
+                        } else if let newAssetId,
+                                  let details = await fetchHardwareDetails(assetId: newAssetId) {
+                            await MainActor.run { self.assets.insert(details, at: 0) }
+                        } else {
+                            await self.fetchAssets()
+                            if newAssetId == nil {
+                                let tagSent = body.asset_tag.trimmingCharacters(in: .whitespaces)
+                                newAssetId = await MainActor.run {
+                                    self.assets.first(where: {
+                                        $0.decodedAssetTag.caseInsensitiveCompare(tagSent) == .orderedSame
+                                    })?.id
+                                }
+                            }
+                        }
                     } else {
                         await self.fetchAssets()
                     }
@@ -3035,14 +3067,14 @@ class SnipeITAPIClient: ObservableObject {
                     if let messages = json?["messages"] as? String, !messages.isEmpty {
                         await MainActor.run { self.lastApiMessage = messages }
                     }
-                    return true
+                    return (true, newAssetId)
                 }
             }
 
-            return false
+            return (false, nil)
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
-            return false
+            return (false, nil)
         }
     }
 
@@ -3506,7 +3538,7 @@ class SnipeITAPIClient: ObservableObject {
                 let update = AssetUpdateRequest(
                     name: nil, asset_tag: nil, serial: nil, model_id: nil,
                     status_id: nil, category_id: nil, manufacturer_id: nil,
-                    supplier_id: nil, notes: nil, order_number: nil, location_id: nil,
+                    supplier_id: nil, notes: nil, order_number: nil, rtd_location_id: nil,
                     purchase_cost: nil, book_value: nil, custom_fields: nil,
                     purchase_date: nil, next_audit_date: .value(cleanNextAudit),
                     expected_checkin: nil, eol_date: nil, warranty_months: nil,
