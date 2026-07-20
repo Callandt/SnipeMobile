@@ -113,8 +113,7 @@ struct LicenseDetailView: View {
                 availableSeats: seats,
                 isPresented: $showCheckoutSheet,
                 onSuccess: {
-                    presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
-                    Task { await loadDetail() }
+                    await loadDetail()
                 }
             )
         }
@@ -344,7 +343,6 @@ struct LicenseDetailView: View {
             return
         }
 
-        presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
         try? await Task.sleep(nanoseconds: 350_000_000)
         seats = await apiClient.fetchLicenseSeats(licenseId: license.id)
         if let detailed = await apiClient.fetchLicenseDetails(licenseId: license.id) {

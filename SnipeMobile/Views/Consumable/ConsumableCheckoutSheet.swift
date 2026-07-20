@@ -4,7 +4,7 @@ struct ConsumableCheckoutSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     let consumable: Consumable
     @Binding var isPresented: Bool
-    var onSuccess: (() -> Void)? = nil
+    var onSuccess: (() async -> Void)? = nil
 
     @State private var notes: String = ""
     @State private var isSaving: Bool = false
@@ -45,6 +45,7 @@ struct ConsumableCheckoutSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { isPresented = false }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -55,6 +56,7 @@ struct ConsumableCheckoutSheet: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .defaultCheckoutUserSelection(apiClient: apiClient, selectedUser: $selectedUser)
             .alert(L10n.string("result"), isPresented: $showResult) {
                 Button(L10n.string("ok"), role: .cancel) { }
@@ -73,12 +75,15 @@ struct ConsumableCheckoutSheet: View {
         isSaving = true
         Task {
             let success = await apiClient.checkoutConsumable(consumableId: consumable.id, userId: user.id, note: notes)
-            await MainActor.run {
-                isSaving = false
-                if success {
-                    onSuccess?()
+            if success {
+                await onSuccess?()
+                await MainActor.run {
                     isPresented = false
-                } else {
+                    isSaving = false
+                }
+            } else {
+                await MainActor.run {
+                    isSaving = false
                     resultMessage = apiClient.lastApiMessage ?? L10n.string("checkout_failed")
                     showResult = true
                 }

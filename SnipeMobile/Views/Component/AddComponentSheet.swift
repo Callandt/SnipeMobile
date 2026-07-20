@@ -76,10 +76,10 @@ struct AddComponentSheet: View {
 
     private func setupOnAppear() {
         if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
-        if apiClient.manufacturers.isEmpty { Task { await apiClient.fetchManufacturers() } }
-        if apiClient.suppliers.isEmpty { Task { await apiClient.fetchSuppliers() } }
-        if apiClient.companies.isEmpty { Task { await apiClient.fetchCompanies() } }
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }
+        Task { await apiClient.fetchCompanies() }
+        Task { await apiClient.fetchManufacturers() }
+        Task { await apiClient.fetchSuppliers() }
     }
 
     private var generalSection: some View {
@@ -93,14 +93,12 @@ struct AddComponentSheet: View {
             )
             TextField(L10n.string("serial"), text: $serial)
             TextField(L10n.string("model_number"), text: $modelNumber)
-            if !apiClient.manufacturers.isEmpty {
-                AdaptivePickerRow(
-                    title: L10n.string("manufacturer"),
-                    items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                    selection: $selectedManufacturerId,
-                    emptyOption: (0, L10n.string("choose_manufacturer"))
-                )
-            }
+            SearchablePickerRow(
+                title: L10n.string("manufacturer"),
+                items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: $selectedManufacturerId,
+                emptyOption: (0, L10n.string("choose_manufacturer"))
+            )
             if !apiClient.locations.isEmpty {
                 let sortedLocations = apiClient.locations.sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
                 AdaptivePickerRow(
@@ -114,7 +112,8 @@ struct AddComponentSheet: View {
                 let sortedCompanies = apiClient.companies.sorted {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
-                AdaptivePickerRow(
+                // Searchable avoids Form Int-tag collisions with manufacturer/supplier pickers.
+                SearchablePickerRow(
                     title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: $0.name) },
                     selection: $selectedCompanyId,
@@ -154,14 +153,12 @@ struct AddComponentSheet: View {
             if hasPurchaseDate {
                 DatePicker("", selection: $purchaseDate, displayedComponents: .date)
             }
-            if !apiClient.suppliers.isEmpty {
-                AdaptivePickerRow(
-                    title: L10n.string("supplier"),
-                    items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                    selection: $selectedSupplierId,
-                    emptyOption: (0, L10n.string("choose_supplier"))
-                )
-            }
+            SearchablePickerRow(
+                title: L10n.string("supplier"),
+                items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: $selectedSupplierId,
+                emptyOption: (0, L10n.string("choose_supplier"))
+            )
         }
     }
 
@@ -187,7 +184,7 @@ struct AddComponentSheet: View {
             name: trimmedName,
             categoryId: selectedCategoryId,
             quantity: quantity,
-            minAmt: minAmt,
+            minAmt: minAmt > 0 ? minAmt : nil,
             serial: serial.isEmpty ? nil : serial.trimmingCharacters(in: .whitespaces),
             modelNumber: modelNumber.isEmpty ? nil : modelNumber.trimmingCharacters(in: .whitespaces),
             orderNumber: orderNumber.isEmpty ? nil : orderNumber.trimmingCharacters(in: .whitespaces),

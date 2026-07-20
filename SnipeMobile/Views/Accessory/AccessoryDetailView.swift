@@ -237,10 +237,7 @@ struct AccessoryDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             AccessoryCheckoutSheet(apiClient: apiClient, accessory: currentAccessory, isPresented: $showCheckoutSheet, onSuccess: {
-                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
-                Task {
-                    checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
-                }
+                checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
             })
         }
         .confirmationDialog(
@@ -284,9 +281,7 @@ struct AccessoryDetailView: View {
         checkinTarget = nil
         isCheckingIn = true
         let success = await executeAccessoryCheckin(checkedoutId: checkedoutId)
-        if success {
-            presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
-        } else {
+        if !success {
             checkinErrorMessage = L10n.string("checkin_failed")
             showCheckinError = true
         }

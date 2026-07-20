@@ -926,6 +926,10 @@ struct Consumable: Identifiable, Codable, Hashable {
         lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
         lhs.decodedCategoryName == rhs.decodedCategoryName &&
         lhs.decodedCompanyName == rhs.decodedCompanyName &&
+        lhs.supplier?.id == rhs.supplier?.id &&
+        lhs.orderNumber == rhs.orderNumber &&
+        lhs.purchaseCost == rhs.purchaseCost &&
+        lhs.purchaseDate == rhs.purchaseDate &&
         lhs.qty == rhs.qty &&
         lhs.minAmt == rhs.minAmt &&
         lhs.remaining == rhs.remaining &&
@@ -954,8 +958,8 @@ extension Consumable {
         let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
         let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
         let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
-        let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
-        let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
+        let purchaseCost = Self.decodeOptionalStringOrNumber(from: container, forKey: .purchaseCost)
+        let purchaseDate = Self.decodeOptionalPurchaseDate(from: container)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
 
         self.init(
@@ -977,6 +981,38 @@ extension Consumable {
             purchaseDate: purchaseDate ?? nil,
             notes: notes ?? nil
         )
+    }
+
+    private static func decodeOptionalPurchaseDate(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> String? {
+        if let info = try? container.decodeIfPresent(DateInfo.self, forKey: .purchaseDate) {
+            let raw = (info.date ?? info.formatted)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty ? nil : raw
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: .purchaseDate) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return nil
+    }
+
+    private static func decodeOptionalStringOrNumber(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return String(value)
+        }
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return String(value)
+        }
+        return nil
     }
 }
 
@@ -1080,6 +1116,10 @@ struct Component: Identifiable, Codable, Hashable {
         lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
         lhs.decodedCategoryName == rhs.decodedCategoryName &&
         lhs.decodedCompanyName == rhs.decodedCompanyName &&
+        lhs.supplier?.id == rhs.supplier?.id &&
+        lhs.orderNumber == rhs.orderNumber &&
+        lhs.purchaseCost == rhs.purchaseCost &&
+        lhs.purchaseDate == rhs.purchaseDate &&
         lhs.qty == rhs.qty &&
         lhs.minAmt == rhs.minAmt &&
         lhs.remaining == rhs.remaining &&
@@ -1108,8 +1148,8 @@ extension Component {
         let minAmt = try? container.decodeIfPresent(Int.self, forKey: .minAmt)
         let remaining = try? container.decodeIfPresent(Int.self, forKey: .remaining)
         let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
-        let purchaseCost = try? container.decodeIfPresent(String.self, forKey: .purchaseCost)
-        let purchaseDate = try? container.decodeIfPresent(String.self, forKey: .purchaseDate)
+        let purchaseCost = Self.decodeOptionalStringOrNumber(from: container, forKey: .purchaseCost)
+        let purchaseDate = Self.decodeOptionalPurchaseDate(from: container)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
 
         self.init(
@@ -1131,6 +1171,38 @@ extension Component {
             purchaseDate: purchaseDate ?? nil,
             notes: notes ?? nil
         )
+    }
+
+    private static func decodeOptionalPurchaseDate(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> String? {
+        if let info = try? container.decodeIfPresent(DateInfo.self, forKey: .purchaseDate) {
+            let raw = (info.date ?? info.formatted)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty ? nil : raw
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: .purchaseDate) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return nil
+    }
+
+    private static func decodeOptionalStringOrNumber(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return String(value)
+        }
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return String(value)
+        }
+        return nil
     }
 }
 

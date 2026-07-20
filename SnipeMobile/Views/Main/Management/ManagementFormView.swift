@@ -220,7 +220,15 @@ struct ManagementFormView: View {
                 }
             case .number:
                 if let number = Int(raw) {
-                    body[field.bodyKey] = number
+                    if field.bodyKey == "min_amt" {
+                        if number > 0 {
+                            body[field.bodyKey] = number
+                        } else if isEdit {
+                            body[field.bodyKey] = NSNull()
+                        }
+                    } else {
+                        body[field.bodyKey] = number
+                    }
                 } else if isEdit && raw.isEmpty {
                     body[field.bodyKey] = NSNull()
                 }

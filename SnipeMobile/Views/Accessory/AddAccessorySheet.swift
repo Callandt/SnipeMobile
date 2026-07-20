@@ -181,7 +181,7 @@ struct AddAccessorySheet: View {
                 name: name.trimmingCharacters(in: .whitespaces),
                 categoryId: selectedCategoryId,
                 quantity: quantity,
-                minAmt: minAmt,
+                minAmt: minAmt > 0 ? minAmt : nil,
                 orderNumber: orderNumber.isEmpty ? nil : orderNumber.trimmingCharacters(in: .whitespaces),
                 purchaseCost: purchaseCost.isEmpty ? nil : purchaseCost.trimmingCharacters(in: .whitespaces),
                 purchaseDate: purchaseDateStr,

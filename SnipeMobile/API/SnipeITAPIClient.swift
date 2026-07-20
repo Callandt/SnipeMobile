@@ -537,7 +537,15 @@ class SnipeITAPIClient: ObservableObject {
                 guard let assets = result else { return }
                 await MainActor.run {
                     if myGen == self.fetchAssetsGeneration {
-                        self.assets = assets
+                        // Keep fresher per-asset detail while background list sync can lag.
+                        var merged = assets
+                        for id in self.assetsPendingDetailRefresh {
+                            if let existing = self.assets.first(where: { $0.id == id }),
+                               let idx = merged.firstIndex(where: { $0.id == id }) {
+                                merged[idx] = existing
+                            }
+                        }
+                        self.assets = merged
                     }
                 }
                 if myGen == fetchAssetsGeneration {
@@ -970,7 +978,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        body["min_amt"] = minAmt ?? 0
+        if let minAmt, minAmt > 0 { body["min_amt"] = minAmt }
         if let v = itemNo, !v.isEmpty { body["item_no"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -1042,7 +1050,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        body["min_amt"] = minAmt ?? 0
+        if let minAmt, minAmt > 0 { body["min_amt"] = minAmt }
         if let v = itemNo, !v.isEmpty { body["item_no"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -1247,7 +1255,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        body["min_amt"] = minAmt ?? 0
+        if let minAmt, minAmt > 0 { body["min_amt"] = minAmt }
         if let v = serial, !v.isEmpty { body["serial"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -1314,7 +1322,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        body["min_amt"] = minAmt ?? 0
+        if let minAmt, minAmt > 0 { body["min_amt"] = minAmt }
         if let v = serial, !v.isEmpty { body["serial"] = v }
         if let v = modelNumber, !v.isEmpty { body["model_number"] = v }
         if let v = orderNumber, !v.isEmpty { body["order_number"] = v }
@@ -3089,7 +3097,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        body["min_amt"] = minAmt ?? 0
+        if let minAmt, minAmt > 0 { body["min_amt"] = minAmt }
         if let v = orderNumber, !v.isEmpty {
             body["order_number"] = v
         }
@@ -3168,7 +3176,7 @@ class SnipeITAPIClient: ObservableObject {
             "category_id": categoryId,
             "qty": quantity
         ]
-        body["min_amt"] = minAmt ?? 0
+        if let minAmt, minAmt > 0 { body["min_amt"] = minAmt }
         if let v = orderNumber, !v.isEmpty {
             body["order_number"] = v
         }

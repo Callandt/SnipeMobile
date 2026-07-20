@@ -82,20 +82,15 @@ struct ConsumableEditSheet: View {
         orderNumber = HTMLDecoder.decode(consumable.orderNumber ?? "")
         purchaseCost = consumable.purchaseCost ?? ""
         notes = HTMLDecoder.decode(consumable.notes ?? "")
-        if let pd = consumable.purchaseDate, !pd.isEmpty {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            if let d = formatter.date(from: pd) {
-                purchaseDate = d
-                hasPurchaseDate = true
-            }
+        if let d = DateInfo.parseAPIDate(consumable.purchaseDate) {
+            purchaseDate = d
+            hasPurchaseDate = true
         }
         if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }
-        if apiClient.companies.isEmpty { Task { await apiClient.fetchCompanies() } }
-        if apiClient.manufacturers.isEmpty { Task { await apiClient.fetchManufacturers() } }
-        if apiClient.suppliers.isEmpty { Task { await apiClient.fetchSuppliers() } }
+        Task { await apiClient.fetchCompanies() }
+        Task { await apiClient.fetchManufacturers() }
+        Task { await apiClient.fetchSuppliers() }
         let consumableCategories = apiClient.categories(for: "consumable")
         let validCategoryIds = Set(consumableCategories.map(\.id))
         if selectedCategoryId != 0, !validCategoryIds.contains(selectedCategoryId) {
@@ -131,7 +126,8 @@ struct ConsumableEditSheet: View {
             }
             if !apiClient.companies.isEmpty {
                 let sortedCompanies = apiClient.companies.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                AdaptivePickerRow(
+                // Searchable avoids Form Int-tag collisions with manufacturer/supplier pickers.
+                SearchablePickerRow(
                     title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: $0.name) },
                     selection: Binding(
@@ -174,28 +170,24 @@ struct ConsumableEditSheet: View {
             if hasPurchaseDate {
                 DatePicker("", selection: $purchaseDate, displayedComponents: .date)
             }
-            if !apiClient.manufacturers.isEmpty {
-                AdaptivePickerRow(
-                    title: L10n.string("manufacturer"),
-                    items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                    selection: Binding(
-                        get: { selectedManufacturerId ?? 0 },
-                        set: { selectedManufacturerId = $0 == 0 ? nil : $0 }
-                    ),
-                    emptyOption: (0, L10n.string("choose_manufacturer"))
-                )
-            }
-            if !apiClient.suppliers.isEmpty {
-                AdaptivePickerRow(
-                    title: L10n.string("supplier"),
-                    items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                    selection: Binding(
-                        get: { selectedSupplierId ?? 0 },
-                        set: { selectedSupplierId = $0 == 0 ? nil : $0 }
-                    ),
-                    emptyOption: (0, L10n.string("choose_supplier"))
-                )
-            }
+            SearchablePickerRow(
+                title: L10n.string("manufacturer"),
+                items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: Binding(
+                    get: { selectedManufacturerId ?? 0 },
+                    set: { selectedManufacturerId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_manufacturer"))
+            )
+            SearchablePickerRow(
+                title: L10n.string("supplier"),
+                items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: Binding(
+                    get: { selectedSupplierId ?? 0 },
+                    set: { selectedSupplierId = $0 == 0 ? nil : $0 }
+                ),
+                emptyOption: (0, L10n.string("choose_supplier"))
+            )
         }
     }
 

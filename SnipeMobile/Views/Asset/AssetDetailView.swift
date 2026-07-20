@@ -53,6 +53,7 @@ struct AssetDetailView: View {
     @State private var showUserPicker = false
     @State private var selectedCheckoutUserId: Int? = nil
     @State private var showCheckoutSheet = false
+    @State private var isCheckingIn = false
     @State private var detailImageURL: String? = nil
     @State private var imageDisplayToken = UUID()
     @State private var ephemeralNotice: EphemeralNotice?
@@ -273,29 +274,32 @@ struct AssetDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
-                if isDeployed {
+                .frame(maxWidth: .infinity)
+                .opacity(isCheckingIn ? 0.5 : 1)
+                .allowsHitTesting(!isCheckingIn)
+                if isDeployed || isCheckingIn {
                     Button(action: {
-                        Task {
-                            let success = await apiClient.checkinAsset(assetId: currentAsset.id)
-                            if success {
-                                presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
-                                await reloadAssignedRelations()
-                            } else {
-                                presentEphemeralNotice(
-                                    $ephemeralNotice,
-                                    apiClient.errorMessage ?? L10n.string("checkin_failed"),
-                                    isError: true
-                                )
-                            }
-                        }
+                        guard !isCheckingIn else { return }
+                        Task { await performCheckin() }
                     }) {
                         Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
+                            .opacity(isCheckingIn ? 0 : 1)
+                            .overlay {
+                                if isCheckingIn {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .tint(.white)
+                                        .scaleEffect(0.9)
+                                }
+                            }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
                     .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .allowsHitTesting(!isCheckingIn)
                 } else if canCheckOut {
                     Button(action: { showCheckoutSheet = true }) {
                         Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
@@ -305,6 +309,7 @@ struct AssetDetailView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.accentColor)
                     .controlSize(.large)
+                    .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, 20)
@@ -408,8 +413,7 @@ struct AssetDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: {
-                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
-                Task { await reloadAssignedRelations() }
+                await reloadAssignedRelations()
             })
         }
         .onChange(of: currentAsset.id) { _, _ in
@@ -482,6 +486,24 @@ struct AssetDetailView: View {
             detailImageURL = nil
         }
         imageDisplayToken = UUID()
+    }
+
+    @MainActor
+    private func performCheckin() async {
+        guard !isCheckingIn else { return }
+        isCheckingIn = true
+        defer { isCheckingIn = false }
+
+        let success = await apiClient.checkinAsset(assetId: currentAsset.id)
+        if success {
+            await reloadAssignedRelations()
+        } else {
+            presentEphemeralNotice(
+                $ephemeralNotice,
+                apiClient.errorMessage ?? L10n.string("checkin_failed"),
+                isError: true
+            )
+        }
     }
 
     private func reloadAssignedRelations() async {

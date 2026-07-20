@@ -5,7 +5,7 @@ struct LicenseCheckoutSheet: View {
     let license: License
     let availableSeats: [SnipeITAPIClient.LicenseSeatRow]
     @Binding var isPresented: Bool
-    var onSuccess: (() -> Void)? = nil
+    var onSuccess: (() async -> Void)? = nil
 
     @State private var selectedTab: Int = 0
     @State private var userSearchText: String = ""
@@ -91,6 +91,7 @@ struct LicenseCheckoutSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { isPresented = false }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -101,6 +102,7 @@ struct LicenseCheckoutSheet: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .alert(L10n.string("error"), isPresented: $showError) {
                 Button(L10n.string("ok"), role: .cancel) {}
             } message: {
@@ -158,7 +160,7 @@ struct LicenseCheckoutSheet: View {
             showError = true
             return
         }
-        onSuccess?()
+        await onSuccess?()
         isPresented = false
     }
 }

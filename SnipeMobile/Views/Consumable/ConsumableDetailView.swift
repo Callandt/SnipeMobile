@@ -134,6 +134,35 @@ struct ConsumableDetailView: View {
                         }
 
                         checkedOutSection
+
+                        if hasPurchaseInfo {
+                            Text(L10n.string("purchase_only"))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            VStack(alignment: .leading, spacing: 10) {
+                                if !currentConsumable.decodedManufacturerName.isEmpty {
+                                    detailRow(label: L10n.string("manufacturer"), value: currentConsumable.decodedManufacturerName)
+                                }
+                                let supplierName = HTMLDecoder.decode(currentConsumable.supplier?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !supplierName.isEmpty {
+                                    detailRow(label: L10n.string("supplier"), value: supplierName)
+                                }
+                                if let date = formattedPurchaseDate(currentConsumable.purchaseDate) {
+                                    detailRow(label: L10n.string("purchase_date"), value: date)
+                                }
+                                if let cost = currentConsumable.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines), !cost.isEmpty {
+                                    detailRow(label: L10n.string("purchase_cost"), value: cost)
+                                }
+                                if let order = currentConsumable.orderNumber?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
+                                    detailRow(label: L10n.string("order_number"), value: HTMLDecoder.decode(order))
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
+
                         Spacer()
                     }
                     .padding(.top, 16)
@@ -191,15 +220,12 @@ struct ConsumableDetailView: View {
         .onChange(of: consumable.id) { reload() }
         .sheet(isPresented: $showEditSheet) {
             ConsumableEditSheet(apiClient: apiClient, consumable: currentConsumable, isPresented: $showEditSheet, onSuccess: {
-                Task { await apiClient.fetchConsumables() }
+                Task { await apiClient.refreshConsumableInCache(consumableId: consumable.id) }
             })
         }
         .sheet(isPresented: $showCheckoutSheet) {
             ConsumableCheckoutSheet(apiClient: apiClient, consumable: currentConsumable, isPresented: $showCheckoutSheet, onSuccess: {
-                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
-                Task {
-                    checkedOutRows = await apiClient.fetchConsumableCheckedOutList(consumableId: consumable.id)
-                }
+                checkedOutRows = await apiClient.fetchConsumableCheckedOutList(consumableId: consumable.id)
             })
         }
         .ephemeralNotice($ephemeralNotice)
@@ -209,12 +235,14 @@ struct ConsumableDetailView: View {
         Task {
             isLoading = true
             checkedOutRows = await apiClient.fetchConsumableCheckedOutList(consumableId: consumable.id)
-            if let full = await apiClient.fetchConsumableDetails(consumableId: consumable.id),
-               let image = full.image,
-               !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                detailImageURL = image
-            } else {
-                detailImageURL = nil
+            if let full = await apiClient.fetchConsumableDetails(consumableId: consumable.id) {
+                apiClient.applyUpdatedConsumable(full)
+                if let image = full.image,
+                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    detailImageURL = image
+                } else {
+                    detailImageURL = nil
+                }
             }
             isLoading = false
         }
@@ -246,19 +274,33 @@ struct ConsumableDetailView: View {
         if !currentConsumable.decodedCategoryName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("category"), value: currentConsumable.decodedCategoryName)))
         }
-        if !currentConsumable.decodedManufacturerName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("manufacturer"), value: currentConsumable.decodedManufacturerName)))
-        }
         if !currentConsumable.decodedLocationName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("location"), value: currentConsumable.decodedLocationName)))
         }
         if !currentConsumable.decodedCompanyName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("company"), value: currentConsumable.decodedCompanyName)))
         }
-        if let order = currentConsumable.orderNumber, !order.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("order_number"), value: order)))
-        }
         return rows
+    }
+
+    private var hasPurchaseInfo: Bool {
+        let hasManufacturer = !currentConsumable.decodedManufacturerName.isEmpty
+        let hasSupplier = !(currentConsumable.supplier?.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let hasDate = formattedPurchaseDate(currentConsumable.purchaseDate) != nil
+        let hasCost = currentConsumable.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        let hasOrder = currentConsumable.orderNumber?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        return hasManufacturer || hasSupplier || hasDate || hasCost || hasOrder
+    }
+
+    private func formattedPurchaseDate(_ raw: String?) -> String? {
+        guard let parsed = DateInfo.parseAPIDate(raw) else {
+            let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        let output = DateFormatter()
+        output.dateStyle = .medium
+        output.timeStyle = .none
+        return output.string(from: parsed)
     }
 
     var checkedOutSection: some View {

@@ -4,7 +4,7 @@ struct AccessoryCheckoutSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     let accessory: Accessory
     @Binding var isPresented: Bool
-    var onSuccess: (() -> Void)? = nil
+    var onSuccess: (() async -> Void)? = nil
 
     @State private var notes: String = ""
     @State private var isSaving: Bool = false
@@ -90,6 +90,7 @@ struct AccessoryCheckoutSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { isPresented = false }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -100,6 +101,7 @@ struct AccessoryCheckoutSheet: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .onAppear {
                 if apiClient.assets.isEmpty { Task { await apiClient.fetchAssets() } }
             }
@@ -172,12 +174,15 @@ struct AccessoryCheckoutSheet: View {
                 body["assigned_asset"] = asset.id
                 success = await apiClient.checkoutAccessoryCustom(accessoryId: accessory.id, body: body)
             }
-            await MainActor.run {
-                isSaving = false
-                if success {
-                    onSuccess?()
+            if success {
+                await onSuccess?()
+                await MainActor.run {
                     isPresented = false
-                } else {
+                    isSaving = false
+                }
+            } else {
+                await MainActor.run {
+                    isSaving = false
                     resultMessage = apiClient.lastApiMessage ?? L10n.string("checkout_failed")
                     showResult = true
                 }

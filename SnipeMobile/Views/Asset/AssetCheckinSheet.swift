@@ -94,7 +94,6 @@ struct AssetCheckinSheet: View {
             await MainActor.run {
                 isSaving = false
                 if success {
-                    presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                         isPresented = false
                     }

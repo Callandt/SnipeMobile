@@ -87,9 +87,9 @@ struct AddLicenseSheet: View {
 
     private func setupOnAppear() {
         if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
-        if apiClient.manufacturers.isEmpty { Task { await apiClient.fetchManufacturers() } }
-        if apiClient.suppliers.isEmpty { Task { await apiClient.fetchSuppliers() } }
-        if apiClient.companies.isEmpty { Task { await apiClient.fetchCompanies() } }
+        Task { await apiClient.fetchCompanies() }
+        Task { await apiClient.fetchManufacturers() }
+        Task { await apiClient.fetchSuppliers() }
     }
 
     // MARK: - Sections
@@ -106,19 +106,18 @@ struct AddLicenseSheet: View {
                 selection: $selectedCategoryId,
                 emptyOption: (0, L10n.string("choose_category"))
             )
-            if !apiClient.manufacturers.isEmpty {
-                AdaptivePickerRow(
-                    title: L10n.string("manufacturer"),
-                    items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                    selection: $selectedManufacturerId,
-                    emptyOption: (0, L10n.string("choose_manufacturer"))
-                )
-            }
+            SearchablePickerRow(
+                title: L10n.string("manufacturer"),
+                items: apiClient.manufacturers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: $selectedManufacturerId,
+                emptyOption: (0, L10n.string("choose_manufacturer"))
+            )
             if !apiClient.companies.isEmpty {
                 let sortedCompanies = apiClient.companies.sorted {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
-                AdaptivePickerRow(
+                // Searchable avoids Form Int-tag collisions with manufacturer/supplier pickers.
+                SearchablePickerRow(
                     title: L10n.string("company"),
                     items: sortedCompanies.map { (value: $0.id, label: $0.name) },
                     selection: $selectedCompanyId,
@@ -179,14 +178,12 @@ struct AddLicenseSheet: View {
             if hasTerminationDate {
                 DatePicker("", selection: $terminationDate, displayedComponents: .date)
             }
-            if !apiClient.suppliers.isEmpty {
-                AdaptivePickerRow(
-                    title: L10n.string("supplier"),
-                    items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
-                    selection: $selectedSupplierId,
-                    emptyOption: (0, L10n.string("choose_supplier"))
-                )
-            }
+            SearchablePickerRow(
+                title: L10n.string("supplier"),
+                items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                selection: $selectedSupplierId,
+                emptyOption: (0, L10n.string("choose_supplier"))
+            )
         }
     }
 

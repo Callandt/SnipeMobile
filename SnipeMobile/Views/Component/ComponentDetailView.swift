@@ -138,6 +138,35 @@ struct ComponentDetailView: View {
                         }
 
                         checkedOutSection
+
+                        if hasPurchaseInfo {
+                            Text(L10n.string("purchase_only"))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            VStack(alignment: .leading, spacing: 10) {
+                                if !currentComponent.decodedManufacturerName.isEmpty {
+                                    detailRow(label: L10n.string("manufacturer"), value: currentComponent.decodedManufacturerName)
+                                }
+                                let supplierName = HTMLDecoder.decode(currentComponent.supplier?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !supplierName.isEmpty {
+                                    detailRow(label: L10n.string("supplier"), value: supplierName)
+                                }
+                                if let date = formattedPurchaseDate(currentComponent.purchaseDate) {
+                                    detailRow(label: L10n.string("purchase_date"), value: date)
+                                }
+                                if let cost = currentComponent.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines), !cost.isEmpty {
+                                    detailRow(label: L10n.string("purchase_cost"), value: cost)
+                                }
+                                if let order = currentComponent.orderNumber?.trimmingCharacters(in: .whitespacesAndNewlines), !order.isEmpty {
+                                    detailRow(label: L10n.string("order_number"), value: HTMLDecoder.decode(order))
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
+
                         Spacer()
                     }
                     .padding(.top, 16)
@@ -202,10 +231,7 @@ struct ComponentDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             ComponentCheckoutSheet(apiClient: apiClient, component: currentComponent, isPresented: $showCheckoutSheet, onSuccess: {
-                presentEphemeralNotice($ephemeralNotice, L10n.string("checkout_success"))
-                Task {
-                    checkedOutRows = await apiClient.fetchComponentAssetsList(componentId: component.id)
-                }
+                checkedOutRows = await apiClient.fetchComponentAssetsList(componentId: component.id)
             })
         }
         .confirmationDialog(
@@ -268,7 +294,6 @@ struct ComponentDetailView: View {
             showCheckinError = true
             return
         }
-        presentEphemeralNotice($ephemeralNotice, L10n.string("checkin_success"))
         try? await Task.sleep(nanoseconds: 350_000_000)
         checkedOutRows = await apiClient.fetchComponentAssetsList(componentId: component.id)
     }
@@ -277,12 +302,14 @@ struct ComponentDetailView: View {
         Task {
             isLoading = true
             checkedOutRows = await apiClient.fetchComponentAssetsList(componentId: component.id)
-            if let full = await apiClient.fetchComponentDetails(componentId: component.id),
-               let image = full.image,
-               !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                detailImageURL = image
-            } else {
-                detailImageURL = nil
+            if let full = await apiClient.fetchComponentDetails(componentId: component.id) {
+                apiClient.applyUpdatedComponent(full)
+                if let image = full.image,
+                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    detailImageURL = image
+                } else {
+                    detailImageURL = nil
+                }
             }
             isLoading = false
         }
@@ -314,19 +341,33 @@ struct ComponentDetailView: View {
         if !currentComponent.decodedCategoryName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("category"), value: currentComponent.decodedCategoryName)))
         }
-        if !currentComponent.decodedManufacturerName.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("manufacturer"), value: currentComponent.decodedManufacturerName)))
-        }
         if !currentComponent.decodedLocationName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("location"), value: currentComponent.decodedLocationName)))
         }
         if !currentComponent.decodedCompanyName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("company"), value: currentComponent.decodedCompanyName)))
         }
-        if let order = currentComponent.orderNumber, !order.isEmpty {
-            rows.append(AnyView(detailRow(label: L10n.string("order_number"), value: order)))
-        }
         return rows
+    }
+
+    private var hasPurchaseInfo: Bool {
+        let hasManufacturer = !currentComponent.decodedManufacturerName.isEmpty
+        let hasSupplier = !(currentComponent.supplier?.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let hasDate = formattedPurchaseDate(currentComponent.purchaseDate) != nil
+        let hasCost = currentComponent.purchaseCost?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        let hasOrder = currentComponent.orderNumber?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        return hasManufacturer || hasSupplier || hasDate || hasCost || hasOrder
+    }
+
+    private func formattedPurchaseDate(_ raw: String?) -> String? {
+        guard let parsed = DateInfo.parseAPIDate(raw) else {
+            let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        let output = DateFormatter()
+        output.dateStyle = .medium
+        output.timeStyle = .none
+        return output.string(from: parsed)
     }
 
     var checkedOutSection: some View {
