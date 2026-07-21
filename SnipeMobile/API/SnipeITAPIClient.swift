@@ -2728,19 +2728,36 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    func downloadFile(from url: String) async -> URL? {
-        guard let fileUrl = URL(string: url), !apiToken.isEmpty else { return nil }
+    func downloadFile(from url: String, preferredFilename: String? = nil) async -> URL? {
+        guard !apiToken.isEmpty else { return nil }
+        let resolved: URL?
+        if let absolute = URL(string: url), absolute.scheme != nil {
+            resolved = absolute
+        } else if url.hasPrefix("/") {
+            resolved = URL(string: "\(baseURL)\(url)")
+        } else {
+            resolved = URL(string: url)
+        }
+        guard let fileUrl = resolved else { return nil }
+
         var request = URLRequest(url: fileUrl)
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
         do {
             let (data, response) = try await urlSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 print("Download failed: status code \((response as? HTTPURLResponse)?.statusCode ?? -1)")
                 return nil
             }
-            let tempDir = FileManager.default.temporaryDirectory
-            let fileName = fileUrl.lastPathComponent
-            let localUrl = tempDir.appendingPathComponent(UUID().uuidString + "_" + fileName)
+            let rawName = preferredFilename?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fileName: String
+            if let rawName, !rawName.isEmpty {
+                fileName = rawName.replacingOccurrences(of: "/", with: "-")
+            } else {
+                fileName = fileUrl.lastPathComponent
+            }
+            let localUrl = FileManager.default.temporaryDirectory
+                .appendingPathComponent("\(UUID().uuidString)_\(fileName)")
             try data.write(to: localUrl)
             return localUrl
         } catch {
@@ -4004,6 +4021,213 @@ class SnipeITAPIClient: ObservableObject {
             }
             return false
         }
+    }
+
+    // MARK: - Asset files (`/hardware/{id}/files`)
+
+    func fetchAssetFiles(assetId: Int) async -> [AssetFile] {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/files?limit=500&offset=0&sort=created_at&order=desc") else {
+            return []
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return []
+            }
+            if let decoded = try? JSONDecoder().decode(AssetFileResponse.self, from: data) {
+                return decoded.rows
+            }
+            return []
+        } catch {
+            #if DEBUG
+            print("fetchAssetFiles error: \(error)")
+            #endif
+            return []
+        }
+    }
+
+    /// POST /hardware/{id}/files (`file[]` multipart).
+    func uploadAssetFiles(
+        assetId: Int,
+        files: [(filename: String, mimeType: String, data: Data)],
+        notes: String? = nil
+    ) async -> Bool {
+        guard !files.isEmpty else { return true }
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/files") else { return false }
+
+        var fields: [String: String] = [:]
+        if let notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            fields["notes"] = notes
+        }
+
+        do {
+            let boundary = "Boundary-\(UUID().uuidString)"
+            let body = buildMultipartFileBody(boundary: boundary, fields: fields, files: files)
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.httpBody = body
+
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: http.statusCode,
+                defaultSuccessMessage: L10n.string("file_upload_success"),
+                defaultFailureMessage: L10n.string("file_upload_failed")
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            return result.success
+        } catch {
+            await MainActor.run {
+                self.lastApiMessage = "\(L10n.string("file_upload_failed")): \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
+
+    /// Upload UIImages as JPEGs.
+    func uploadAssetFiles(assetId: Int, images: [UIImage], notes: String? = nil) async -> Bool {
+        guard !images.isEmpty else { return true }
+        var files: [(filename: String, mimeType: String, data: Data)] = []
+        for (index, image) in images.enumerated() {
+            guard let data = image.snipeJPEGUploadData() else { continue }
+            files.append((filename: "photo-\(index + 1).jpg", mimeType: "image/jpeg", data: data))
+        }
+        guard !files.isEmpty else {
+            await MainActor.run { lastApiMessage = L10n.string("photo_upload_failed") }
+            return false
+        }
+        return await uploadAssetFiles(assetId: assetId, files: files, notes: notes)
+    }
+
+    func downloadAssetFile(assetId: Int, fileId: Int, preferredFilename: String) async -> URL? {
+        await downloadObjectFile(
+            objectType: "hardware",
+            objectId: assetId,
+            fileId: fileId,
+            preferredFilename: preferredFilename
+        )
+    }
+
+    /// GET …/files/{fileId} (Bearer).
+    func downloadObjectFile(
+        objectType: String,
+        objectId: Int,
+        fileId: Int,
+        preferredFilename: String
+    ) async -> URL? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        let type = Self.apiFilesObjectType(objectType)
+        guard let url = URL(string: "\(baseURL)/api/v1/\(type)/\(objectId)/files/\(fileId)") else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                #if DEBUG
+                print("downloadObjectFile failed: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                #endif
+                return nil
+            }
+            // Reject accidental JSON error payloads returned as 200.
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               (json["status"] as? String)?.lowercased() == "error" {
+                return nil
+            }
+            let safeName = preferredFilename
+                .replacingOccurrences(of: "/", with: "-")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let filename = safeName.isEmpty ? "file-\(fileId)" : safeName
+            let localURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("\(UUID().uuidString)-\(filename)")
+            try data.write(to: localURL, options: .atomic)
+            return localURL
+        } catch {
+            #if DEBUG
+            print("downloadObjectFile error: \(error)")
+            #endif
+            return nil
+        }
+    }
+
+    /// Map item type → API object_type.
+    static func apiFilesObjectType(_ itemType: String) -> String {
+        switch itemType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "asset", "assets", "hardware": return "hardware"
+        case "accessory", "accessories": return "accessories"
+        case "component", "components": return "components"
+        case "consumable", "consumables": return "consumables"
+        case "license", "licenses": return "licenses"
+        case "user", "users": return "users"
+        case "location", "locations": return "locations"
+        case "model", "models", "asset_models": return "models"
+        case "maintenance", "maintenances": return "maintenances"
+        default: return itemType
+        }
+    }
+
+    func deleteAssetFile(assetId: Int, fileId: Int) async -> Bool {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/files/\(fileId)/delete") else {
+            return false
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let result = Self.evaluateWriteResponse(
+                json: json,
+                httpStatus: http.statusCode,
+                defaultSuccessMessage: L10n.string("file_delete_success"),
+                defaultFailureMessage: L10n.string("file_delete_failed")
+            )
+            await MainActor.run { self.lastApiMessage = result.message }
+            return result.success
+        } catch {
+            await MainActor.run {
+                self.lastApiMessage = "\(L10n.string("file_delete_failed")): \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
+
+    private func buildMultipartFileBody(
+        boundary: String,
+        fields: [String: String],
+        files: [(filename: String, mimeType: String, data: Data)]
+    ) -> Data {
+        var body = Data()
+        func append(_ string: String) {
+            if let data = string.data(using: .utf8) { body.append(data) }
+        }
+        for (key, value) in fields.sorted(by: { $0.key < $1.key }) {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n")
+            append("\(value)\r\n")
+        }
+        for file in files {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"file[]\"; filename=\"\(file.filename)\"\r\n")
+            append("Content-Type: \(file.mimeType)\r\n\r\n")
+            body.append(file.data)
+            append("\r\n")
+        }
+        append("--\(boundary)--\r\n")
+        return body
     }
 
     func checkoutAccessoryCustom(accessoryId: Int, body: [String: Any]) async -> Bool {

@@ -53,7 +53,8 @@ struct AssetDetailView: View {
     @State private var showUserPicker = false
     @State private var selectedCheckoutUserId: Int? = nil
     @State private var showCheckoutSheet = false
-    @State private var isCheckingIn = false
+    @State private var showCheckinSheet = false
+    @State private var filesReloadToken = UUID()
     @State private var detailImageURL: String? = nil
     @State private var imageDisplayToken = UUID()
     @State private var ephemeralNotice: EphemeralNotice?
@@ -70,12 +71,15 @@ struct AssetDetailView: View {
     }
 
     private var isDeployed: Bool {
-        currentAsset.statusLabel.statusMeta?.lowercased() == "deployed"
+        let meta = currentAsset.statusLabel.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if meta == "deployed" { return true }
+        // Fallback when status_meta is missing after check-in/out refresh.
+        return currentAsset.assignedTo != nil && !currentAsset.userCanCheckout
     }
 
     private var resolvedStatusLabel: String? {
         let name = currentAsset.decodedStatusLabelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let rawType = currentAsset.statusLabel.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let rawType = currentAsset.statusLabel.resolvedType
         let localizedType = rawType.isEmpty ? "" : L10n.string("status_type_\(rawType)")
         if !name.isEmpty {
             if !localizedType.isEmpty {
@@ -87,13 +91,22 @@ struct AssetDetailView: View {
         return meta.isEmpty ? nil : L10n.statusLabel(meta)
     }
 
-    /// Only deployable statuses can be checked out (matches Snipe-IT).
+    /// Check Out only when deployable.
     private var canCheckOut: Bool {
+        guard !isDeployed else { return false }
+        if currentAsset.userCanCheckout { return true }
+        if currentAsset.availableActions?.checkout == true { return true }
+
         if let label = apiClient.statusLabels.first(where: { $0.id == currentAsset.statusLabel.id }) {
-            return (label.type?.lowercased() ?? "deployable") == "deployable"
+            return label.isDeployableType
         }
-        // fallback before labels load: meta is "deployable" for an assignable, unassigned asset
-        return currentAsset.statusLabel.statusMeta?.lowercased() == "deployable"
+
+        if currentAsset.statusLabel.isDeployableType {
+            return true
+        }
+
+        let meta = currentAsset.statusLabel.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return meta == "deployable" || meta == "ready_to_deploy"
     }
 
     private var resolvedImageURL: URL? {
@@ -259,24 +272,23 @@ struct AssetDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Details", selection: $selectedTab) {
-                Text(L10n.string("details")).tag(0)
-                Text(L10n.string("history")).tag(1)
-                if showMaintenance {
-                    Text(L10n.string("maintenance")).tag(2)
-                }
-            }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
+            AssetDetailTabBar(selection: $selectedTab, showMaintenance: showMaintenance)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 2)
 
             if selectedTab == 0 {
                 detailsView
-            } else if selectedTab == 1 {
-                HistoryView(itemType: "asset", itemId: currentAsset.id, apiClient: apiClient)
-            } else if showMaintenance {
+            } else if selectedTab == 1, showMaintenance {
                 MaintenanceTab(assetId: currentAsset.id, apiClient: apiClient)
+            } else if selectedTab == 2 {
+                AssetFilesTab(
+                    apiClient: apiClient,
+                    assetId: currentAsset.id,
+                    reloadToken: filesReloadToken
+                )
+            } else {
+                HistoryView(itemType: "asset", itemId: currentAsset.id, apiClient: apiClient)
             }
             Spacer(minLength: 0)
             HStack(spacing: 12) {
@@ -289,31 +301,16 @@ struct AssetDetailView: View {
                 .tint(.orange)
                 .controlSize(.large)
                 .frame(maxWidth: .infinity)
-                .opacity(isCheckingIn ? 0.5 : 1)
-                .allowsHitTesting(!isCheckingIn)
-                if isDeployed || isCheckingIn {
-                    Button(action: {
-                        guard !isCheckingIn else { return }
-                        Task { await performCheckin() }
-                    }) {
+                if isDeployed {
+                    Button(action: { showCheckinSheet = true }) {
                         Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .opacity(isCheckingIn ? 0 : 1)
-                            .overlay {
-                                if isCheckingIn {
-                                    ProgressView()
-                                        .progressViewStyle(.circular)
-                                        .tint(.white)
-                                        .scaleEffect(0.9)
-                                }
-                            }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
                     .controlSize(.large)
                     .frame(maxWidth: .infinity)
-                    .allowsHitTesting(!isCheckingIn)
                 } else if canCheckOut {
                     Button(action: { showCheckoutSheet = true }) {
                         Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
@@ -427,7 +424,12 @@ struct AssetDetailView: View {
         }
         .sheet(isPresented: $showCheckoutSheet) {
             AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: {
-                await reloadAssignedRelations()
+                await refreshAfterCheckInOut()
+            })
+        }
+        .sheet(isPresented: $showCheckinSheet) {
+            AssetCheckinSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckinSheet, onSuccess: {
+                await refreshAfterCheckInOut()
             })
         }
         .onChange(of: currentAsset.id) { _, _ in
@@ -437,7 +439,7 @@ struct AssetDetailView: View {
             Task { await reloadAssignedRelations() }
         }
         .onChange(of: showMaintenance) { _, newValue in
-            if !newValue, selectedTab == 2 { selectedTab = 0 }
+            if !newValue, selectedTab == 1 { selectedTab = 0 }
         }
         .ephemeralNotice($ephemeralNotice)
         .overlay {
@@ -502,22 +504,13 @@ struct AssetDetailView: View {
         imageDisplayToken = UUID()
     }
 
-    @MainActor
-    private func performCheckin() async {
-        guard !isCheckingIn else { return }
-        isCheckingIn = true
-        defer { isCheckingIn = false }
 
-        let success = await apiClient.checkinAsset(assetId: currentAsset.id)
-        if success {
-            await reloadAssignedRelations()
-        } else {
-            presentEphemeralNotice(
-                $ephemeralNotice,
-                apiClient.errorMessage ?? L10n.string("checkin_failed"),
-                isError: true
-            )
+    private func refreshAfterCheckInOut() async {
+        if let full = await apiClient.fetchHardwareDetails(assetId: currentAsset.id) {
+            apiClient.applyUpdatedAsset(full)
         }
+        await reloadAssignedRelations()
+        filesReloadToken = UUID()
     }
 
     private func reloadAssignedRelations() async {
@@ -1133,6 +1126,99 @@ struct AssetDetailView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Icon + short title tabs.
+private struct AssetDetailTabBar: View {
+    @Binding var selection: Int
+    var showMaintenance: Bool
+
+    private struct TabItem: Identifiable {
+        let id: Int
+        let fullTitleKey: String
+        let shortTitleKey: String
+        let systemImage: String
+    }
+
+    private var tabs: [TabItem] {
+        var items = [
+            TabItem(id: 0, fullTitleKey: "details", shortTitleKey: "asset_tab_details", systemImage: "info.circle"),
+        ]
+        if showMaintenance {
+            items.append(
+                TabItem(id: 1, fullTitleKey: "maintenance", shortTitleKey: "asset_tab_maint", systemImage: "wrench")
+            )
+        }
+        items.append(contentsOf: [
+            TabItem(id: 2, fullTitleKey: "files", shortTitleKey: "asset_tab_files", systemImage: "doc"),
+            TabItem(id: 3, fullTitleKey: "history", shortTitleKey: "asset_tab_history", systemImage: "clock"),
+        ])
+        return items
+    }
+
+    var body: some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                tabRow
+                    .padding(3)
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+            } else {
+                tabRow
+                    .padding(3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+            }
+        }
+    }
+
+    private var tabRow: some View {
+        HStack(spacing: 3) {
+            ForEach(tabs) { tab in
+                let isSelected = selection == tab.id
+                Button {
+                    selection = tab.id
+                } label: {
+                    VStack(alignment: .center, spacing: 2) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 22, height: 18)
+                        Text(L10n.string(tab.shortTitleKey))
+                            .font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                    .background {
+                        if isSelected {
+                            selectedThumb
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(L10n.string(tab.fullTitleKey))
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var selectedThumb: some View {
+        if #available(iOS 26.0, *) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.12))
+        } else {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(.systemBackground))
         }
     }
 } 

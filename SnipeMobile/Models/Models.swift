@@ -140,6 +140,7 @@ struct Asset: Identifiable, Codable, Hashable {
         lhs.statusLabel.id == rhs.statusLabel.id &&
         lhs.statusLabel.statusMeta == rhs.statusLabel.statusMeta &&
         lhs.decodedStatusLabelName == rhs.decodedStatusLabelName &&
+        lhs.userCanCheckout == rhs.userCanCheckout &&
         lhs.assignedTo?.id == rhs.assignedTo?.id &&
         lhs.decodedAssignedToName == rhs.decodedAssignedToName &&
         lhs.decodedLocationName == rhs.decodedLocationName &&
@@ -222,7 +223,42 @@ struct StatusLabel: Codable {
     let statusMeta: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, type, statusMeta = "status_meta"
+        case id, name, type
+        case statusType = "status_type"
+        case statusMeta = "status_meta"
+    }
+
+    init(id: Int, name: String, type: String? = nil, statusMeta: String? = nil) {
+        self.id = id
+        self.name = name
+        self.type = type
+        self.statusMeta = statusMeta
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        // `/statuslabels` uses `type`; nested asset `status_label` uses `status_type`.
+        type = (try? container.decodeIfPresent(String.self, forKey: .type))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .statusType))
+        statusMeta = try? container.decodeIfPresent(String.self, forKey: .statusMeta)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(type, forKey: .type)
+        try container.encodeIfPresent(statusMeta, forKey: .statusMeta)
+    }
+
+    var resolvedType: String {
+        (type ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var isDeployableType: Bool {
+        resolvedType.isEmpty || resolvedType == "deployable"
     }
 }
 
@@ -1471,6 +1507,93 @@ struct LogMetaChange: Codable {
 struct ActivityFile: Codable {
     let url: String?
     let filename: String?
+    let mediatype: String?
+    let inlineable: Bool?
+    let existsOnDisk: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case url, filename, mediatype, inlineable
+        case existsOnDisk = "exists_on_disk"
+    }
+
+    init(
+        url: String? = nil,
+        filename: String? = nil,
+        mediatype: String? = nil,
+        inlineable: Bool? = nil,
+        existsOnDisk: Bool? = nil
+    ) {
+        self.url = url
+        self.filename = filename
+        self.mediatype = mediatype
+        self.inlineable = inlineable
+        self.existsOnDisk = existsOnDisk
+    }
+
+    var decodedFilename: String {
+        HTMLDecoder.decode(filename ?? "")
+    }
+
+    var isImage: Bool {
+        if let mediatype, mediatype.lowercased().hasPrefix("image/") { return true }
+        let lower = decodedFilename.lowercased()
+        return lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") || lower.hasSuffix(".png")
+            || lower.hasSuffix(".gif") || lower.hasSuffix(".webp") || lower.hasSuffix(".heic")
+    }
+
+    var isPDF: Bool {
+        if let mediatype, mediatype.lowercased().contains("pdf") { return true }
+        return decodedFilename.lowercased().hasSuffix(".pdf")
+    }
+}
+
+struct AssetFile: Identifiable, Codable {
+    let id: Int
+    let filename: String?
+    let name: String?
+    let filetype: String?
+    let mediatype: String?
+    let url: String?
+    let note: String?
+    let createdBy: CreatedBy?
+    let createdAt: DateInfo?
+    let availableActions: AssetFileAvailableActions?
+
+    enum CodingKeys: String, CodingKey {
+        case id, filename, name, filetype, mediatype, url, note
+        case createdBy = "created_by"
+        case createdAt = "created_at"
+        case availableActions = "available_actions"
+    }
+
+    var decodedFilename: String {
+        let raw = filename ?? name ?? ""
+        return HTMLDecoder.decode(raw)
+    }
+
+    var decodedNote: String {
+        HTMLDecoder.decode(note ?? "")
+    }
+
+    var canDelete: Bool {
+        availableActions?.delete ?? true
+    }
+
+    var isImage: Bool {
+        if let mediatype, mediatype.lowercased().hasPrefix("image/") { return true }
+        let lower = decodedFilename.lowercased()
+        return lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") || lower.hasSuffix(".png")
+            || lower.hasSuffix(".gif") || lower.hasSuffix(".webp") || lower.hasSuffix(".heic")
+    }
+}
+
+struct AssetFileAvailableActions: Codable {
+    let delete: Bool?
+}
+
+struct AssetFileResponse: Codable {
+    let total: Int?
+    let rows: [AssetFile]
 }
 
 struct AssetMaintenance: Identifiable, Codable, Hashable {

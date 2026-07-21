@@ -20,6 +20,10 @@ struct AssetCheckoutSheet: View {
     @State private var selectedAsset: Asset? = nil
     @State private var selectedLocation: Location? = nil
     @State private var selectedTab: Int = 0
+    @State private var selectedImages: [UIImage] = []
+    @State private var showCamera = false
+    @State private var cameraImage: UIImage?
+    @State private var dismissAfterResult = false
 
     var body: some View {
         NavigationStack {
@@ -78,6 +82,8 @@ struct AssetCheckoutSheet: View {
                 }
 
                 assetDetailsSection
+
+                AssetPhotosSection(selectedImages: $selectedImages, showCamera: $showCamera)
             }
             .formStyle(.grouped)
             .scrollContentBackground(.visible)
@@ -103,8 +109,19 @@ struct AssetCheckoutSheet: View {
                 if apiClient.assets.isEmpty { Task { await apiClient.fetchAssets() } }
             }
             .defaultCheckoutUserSelection(apiClient: apiClient, selectedUser: $selectedUser)
+            .assetCameraCover(isPresented: $showCamera, image: $cameraImage)
+            .onChange(of: cameraImage) { _, newValue in
+                if let newValue {
+                    selectedImages.append(newValue)
+                    cameraImage = nil
+                }
+            }
             .alert(L10n.string("result"), isPresented: $showResult) {
-                Button(L10n.string("ok"), role: .cancel) { }
+                Button(L10n.string("ok"), role: .cancel) {
+                    if dismissAfterResult {
+                        isPresented = false
+                    }
+                }
             } message: {
                 Text(resultMessage)
             }
@@ -194,14 +211,31 @@ struct AssetCheckoutSheet: View {
                 success = await apiClient.checkoutAssetCustom(assetId: asset.id, body: body)
             }
             if success {
+                var photoUploadFailed = false
+                if !selectedImages.isEmpty {
+                    let noteForFiles = notes.isEmpty ? L10n.string("checkout_photo_note") : notes
+                    let uploaded = await apiClient.uploadAssetFiles(
+                        assetId: asset.id,
+                        images: selectedImages,
+                        notes: noteForFiles
+                    )
+                    photoUploadFailed = !uploaded
+                }
                 await onSuccess?()
                 await MainActor.run {
-                    isPresented = false
                     isSaving = false
+                    if photoUploadFailed {
+                        dismissAfterResult = true
+                        resultMessage = apiClient.lastApiMessage ?? L10n.string("photo_upload_failed")
+                        showResult = true
+                    } else {
+                        isPresented = false
+                    }
                 }
             } else {
                 await MainActor.run {
                     isSaving = false
+                    dismissAfterResult = false
                     resultMessage = apiClient.lastApiMessage ?? L10n.string("checkout_failed")
                     showResult = true
                 }

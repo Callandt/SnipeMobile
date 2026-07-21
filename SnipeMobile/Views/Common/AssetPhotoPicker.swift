@@ -86,6 +86,90 @@ struct AssetPhotoSection: View {
     }
 }
 
+/// Multi-photo picker.
+struct AssetPhotosSection: View {
+    @Binding var selectedImages: [UIImage]
+    @Binding var showCamera: Bool
+    var headerTitle: String = L10n.string("photos")
+    var footerText: String? = L10n.string("photos_optional_footer")
+
+    @State private var photoItems: [PhotosPickerItem] = []
+
+    var body: some View {
+        Section {
+            if !selectedImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 88, height: 88)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                Button {
+                                    selectedImages.remove(at: index)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.55))
+                                        .font(.title3)
+                                }
+                                .buttonStyle(.plain)
+                                .offset(x: 6, y: -6)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
+            PhotosPicker(selection: $photoItems, maxSelectionCount: 10, matching: .images) {
+                Label(L10n.string("choose_from_library"), systemImage: "photo.on.rectangle")
+            }
+
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button {
+                    showCamera = true
+                } label: {
+                    Label(L10n.string("take_photo"), systemImage: "camera")
+                }
+            }
+
+            if !selectedImages.isEmpty {
+                Button(role: .destructive) {
+                    selectedImages.removeAll()
+                    photoItems.removeAll()
+                } label: {
+                    Label(L10n.string("remove_photos"), systemImage: "trash")
+                }
+            }
+        } header: {
+            Text(headerTitle)
+        } footer: {
+            if let footerText {
+                Text(footerText)
+            }
+        }
+        .onChange(of: photoItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            Task {
+                var loaded: [UIImage] = []
+                for item in newItems {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let uiImage = UIImage(data: data) {
+                        loaded.append(uiImage)
+                    }
+                }
+                await MainActor.run {
+                    selectedImages.append(contentsOf: loaded)
+                    photoItems.removeAll()
+                }
+            }
+        }
+    }
+}
+
 extension View {
     func assetCameraCover(isPresented: Binding<Bool>, image: Binding<UIImage?>) -> some View {
         fullScreenCover(isPresented: isPresented) {
@@ -137,7 +221,7 @@ extension UIImage {
         resizedForUpload(maxDimension: maxDimension).jpegData(compressionQuality: quality)
     }
 
-    /// Snipe-IT JSON uploads (ImageUploadRequest) accept base64 data URIs via `image_source`.
+    /// Base64 data URI for `image_source`.
     func snipeBase64ImageSource(maxDimension: CGFloat = 1280, quality: CGFloat = 0.75) -> String? {
         guard let data = snipeJPEGUploadData(maxDimension: maxDimension, quality: quality) else { return nil }
         return "data:image/jpeg;base64,\(data.base64EncodedString())"

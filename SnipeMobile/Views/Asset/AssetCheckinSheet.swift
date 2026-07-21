@@ -4,6 +4,7 @@ struct AssetCheckinSheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     let asset: Asset
     @Binding var isPresented: Bool
+    var onSuccess: (() async -> Void)? = nil
 
     @State private var notes: String = ""
     @State private var isSaving: Bool = false
@@ -11,9 +12,30 @@ struct AssetCheckinSheet: View {
     @State private var selectedStatusId: Int? = nil
     @State private var name: String = ""
     @State private var selectedLocationId: Int? = nil
+    @State private var selectedImages: [UIImage] = []
+    @State private var showCamera = false
+    @State private var cameraImage: UIImage?
 
     var sortedLocations: [Location] {
         apiClient.locations.sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
+    }
+
+    private var statusPickerItems: [(value: Int, label: String)] {
+        // Prefer deployable statuses after check-in.
+        let deployable = apiClient.statusLabels.filter(\.isDeployableType)
+        let source = deployable.isEmpty ? apiClient.statusLabels : deployable
+        return AssetStatusFilterSupport.sortedStatusLabels(source)
+            .map { (value: $0.id, label: AssetStatusFilterSupport.displayName(for: $0)) }
+    }
+
+    private func ensureDefaultStatus() {
+        let deployable = apiClient.statusLabels.filter(\.isDeployableType)
+        let pool = deployable.isEmpty ? apiClient.statusLabels : deployable
+        let validIds = Set(pool.map(\.id))
+        if let id = selectedStatusId, validIds.contains(id) { return }
+        selectedStatusId =
+            pool.first(where: { AssetStatusFilterSupport.isReadyToDeployLabel($0) })?.id
+            ?? pool.first?.id
     }
 
     var body: some View {
@@ -22,7 +44,7 @@ struct AssetCheckinSheet: View {
                 Section {
                     AdaptivePickerRow(
                         title: L10n.string("status"),
-                        items: apiClient.statusLabels.sorted(by: { ($0.statusMeta ?? "") < ($1.statusMeta ?? "") }).map { (value: $0.id, label: $0.statusMeta ?? "") },
+                        items: statusPickerItems,
                         selection: Binding(
                             get: { selectedStatusId ?? -1 },
                             set: { selectedStatusId = $0 == -1 ? nil : $0 }
@@ -46,6 +68,8 @@ struct AssetCheckinSheet: View {
                 } footer: {
                     Text(L10n.string("name_help_checkin"))
                 }
+
+                AssetPhotosSection(selectedImages: $selectedImages, showCamera: $showCamera)
             }
             .listStyle(.insetGrouped)
             .navigationTitle(L10n.string("check_in_asset"))
@@ -53,6 +77,7 @@ struct AssetCheckinSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { isPresented = false }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -62,20 +87,22 @@ struct AssetCheckinSheet: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .onAppear {
                 name = asset.name
-                let validIds = Set(apiClient.statusLabels.map(\.id))
-                if let id = selectedStatusId, !validIds.contains(id) {
-                    selectedStatusId = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" })?.id
-                } else if selectedStatusId == nil {
-                    if let ready = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" }) {
-                        selectedStatusId = ready.id
-                    }
+                if apiClient.statusLabels.isEmpty {
+                    Task { await apiClient.fetchStatusLabels() }
                 }
+                ensureDefaultStatus()
             }
             .onChange(of: apiClient.statusLabels.count) { _, _ in
-                if let id = selectedStatusId, !apiClient.statusLabels.contains(where: { $0.id == id }) {
-                    selectedStatusId = apiClient.statusLabels.first(where: { $0.statusMeta?.lowercased() == "deployable" })?.id
+                ensureDefaultStatus()
+            }
+            .assetCameraCover(isPresented: $showCamera, image: $cameraImage)
+            .onChange(of: cameraImage) { _, newValue in
+                if let newValue {
+                    selectedImages.append(newValue)
+                    cameraImage = nil
                 }
             }
             .ephemeralNotice($ephemeralNotice)
@@ -91,10 +118,35 @@ struct AssetCheckinSheet: View {
             if !notes.isEmpty { body["note"] = notes }
             if let locationId = selectedLocationId { body["location_id"] = locationId }
             let success = await apiClient.checkinAssetCustom(assetId: asset.id, body: body)
+
+            var photoUploadFailed = false
+            if success, !selectedImages.isEmpty {
+                let noteForFiles = notes.isEmpty ? L10n.string("checkin_photo_note") : notes
+                let uploaded = await apiClient.uploadAssetFiles(
+                    assetId: asset.id,
+                    images: selectedImages,
+                    notes: noteForFiles
+                )
+                photoUploadFailed = !uploaded
+            }
+
+            if success {
+                await onSuccess?()
+            }
+
             await MainActor.run {
                 isSaving = false
                 if success {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if photoUploadFailed {
+                        presentEphemeralNotice(
+                            $ephemeralNotice,
+                            apiClient.lastApiMessage ?? L10n.string("photo_upload_failed"),
+                            isError: true
+                        )
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            isPresented = false
+                        }
+                    } else {
                         isPresented = false
                     }
                 } else {
