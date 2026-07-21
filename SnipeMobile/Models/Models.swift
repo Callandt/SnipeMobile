@@ -386,6 +386,56 @@ struct DateInfo: Codable {
         }
         return nil
     }
+
+    /// Locale-aware display (e.g. NL: `21 jul 2026 om 14:48`). Falls back to `formatted`.
+    func localizedDisplay(includeTime: Bool = true) -> String? {
+        let source = (date?.isEmpty == false ? date : nil)
+            ?? (datetime?.isEmpty == false ? datetime : nil)
+            ?? formatted
+        guard let source, !source.isEmpty else { return nil }
+
+        let formats = [
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm",
+            "yyyy-MM-dd",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+            "yyyy-MM-dd'T'HH:mm:ssZ"
+        ]
+        let input = DateFormatter()
+        input.locale = Locale(identifier: "en_US_POSIX")
+        input.timeZone = TimeZone(secondsFromGMT: 0)
+
+        var parsed: Date?
+        var hasTime = false
+        for format in formats {
+            input.dateFormat = format
+            if let date = input.date(from: source) {
+                parsed = date
+                hasTime = format.contains("H")
+                break
+            }
+            if format.contains("HH:mm:ss"), source.count >= 19,
+               let date = input.date(from: String(source.prefix(19))) {
+                parsed = date
+                hasTime = true
+                break
+            }
+            if format == "yyyy-MM-dd", source.count >= 10,
+               let date = input.date(from: String(source.prefix(10))) {
+                parsed = date
+                hasTime = false
+                break
+            }
+        }
+
+        guard let parsed else { return formatted ?? source }
+
+        let output = DateFormatter()
+        output.locale = .current
+        output.dateStyle = .medium
+        output.timeStyle = (includeTime && hasTime) ? .short : .none
+        return output.string(from: parsed)
+    }
 }
 
 struct Category: Codable, Identifiable {
@@ -1558,6 +1608,8 @@ struct AssetFile: Identifiable, Codable {
     let createdBy: CreatedBy?
     let createdAt: DateInfo?
     let availableActions: AssetFileAvailableActions?
+    /// Acceptance / EULA PDF (not a regular upload).
+    var isAcceptance: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, filename, name, filetype, mediatype, url, note
@@ -1566,9 +1618,74 @@ struct AssetFile: Identifiable, Codable {
         case availableActions = "available_actions"
     }
 
+    init(
+        id: Int,
+        filename: String? = nil,
+        name: String? = nil,
+        filetype: String? = nil,
+        mediatype: String? = nil,
+        url: String? = nil,
+        note: String? = nil,
+        createdBy: CreatedBy? = nil,
+        createdAt: DateInfo? = nil,
+        availableActions: AssetFileAvailableActions? = nil,
+        isAcceptance: Bool = false
+    ) {
+        self.id = id
+        self.filename = filename
+        self.name = name
+        self.filetype = filetype
+        self.mediatype = mediatype
+        self.url = url
+        self.note = note
+        self.createdBy = createdBy
+        self.createdAt = createdAt
+        self.availableActions = availableActions
+        self.isAcceptance = isAcceptance
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        filename = try c.decodeIfPresent(String.self, forKey: .filename)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        filetype = try c.decodeIfPresent(String.self, forKey: .filetype)
+        mediatype = try c.decodeIfPresent(String.self, forKey: .mediatype)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        note = try c.decodeIfPresent(String.self, forKey: .note)
+        createdBy = try c.decodeIfPresent(CreatedBy.self, forKey: .createdBy)
+        createdAt = try c.decodeIfPresent(DateInfo.self, forKey: .createdAt)
+        availableActions = try c.decodeIfPresent(AssetFileAvailableActions.self, forKey: .availableActions)
+        isAcceptance = false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(filename, forKey: .filename)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(filetype, forKey: .filetype)
+        try c.encodeIfPresent(mediatype, forKey: .mediatype)
+        try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(note, forKey: .note)
+        try c.encodeIfPresent(createdBy, forKey: .createdBy)
+        try c.encodeIfPresent(createdAt, forKey: .createdAt)
+        try c.encodeIfPresent(availableActions, forKey: .availableActions)
+    }
+
     var decodedFilename: String {
         let raw = filename ?? name ?? ""
         return HTMLDecoder.decode(raw)
+    }
+
+    /// Drop Snipe-IT `asset-{id}-{hash}-` prefix when present.
+    var shortFilename: String {
+        let name = decodedFilename
+        guard let range = name.range(of: #"^asset-\d+-[A-Za-z0-9]+-"#, options: .regularExpression) else {
+            return name
+        }
+        let trimmed = String(name[range.upperBound...])
+        return trimmed.isEmpty ? name : trimmed
     }
 
     var decodedNote: String {
@@ -1576,14 +1693,48 @@ struct AssetFile: Identifiable, Codable {
     }
 
     var canDelete: Bool {
-        availableActions?.delete ?? true
+        if isAcceptance { return false }
+        return availableActions?.delete ?? true
     }
 
     var isImage: Bool {
+        if isAcceptance { return false }
         if let mediatype, mediatype.lowercased().hasPrefix("image/") { return true }
         let lower = decodedFilename.lowercased()
         return lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") || lower.hasSuffix(".png")
             || lower.hasSuffix(".gif") || lower.hasSuffix(".webp") || lower.hasSuffix(".heic")
+    }
+
+    var isPDF: Bool {
+        if let mediatype, mediatype.lowercased().contains("pdf") { return true }
+        return decodedFilename.lowercased().hasSuffix(".pdf")
+    }
+
+    var isEulaURL: Bool {
+        (url ?? "").lowercased().contains("stored-eula-file")
+            || decodedFilename.lowercased().contains("accepted-eula")
+    }
+
+    static func acceptance(from activity: Activity) -> AssetFile? {
+        guard let file = activity.file else { return nil }
+        let action = activity.actionType.lowercased()
+        let looksAccepted = action.contains("accept") || action.contains("eula")
+            || (file.url ?? "").lowercased().contains("stored-eula-file")
+            || (file.filename ?? "").lowercased().contains("accepted-eula")
+        guard looksAccepted else { return nil }
+        let filename = file.decodedFilename.isEmpty ? (file.filename ?? "accepted-eula.pdf") : file.decodedFilename
+        return AssetFile(
+            id: activity.id,
+            filename: filename,
+            name: filename,
+            filetype: "pdf",
+            mediatype: file.mediatype ?? "application/pdf",
+            url: file.url,
+            note: L10n.string("accepted_eula"),
+            createdAt: activity.createdAt,
+            availableActions: AssetFileAvailableActions(delete: false),
+            isAcceptance: true
+        )
     }
 }
 

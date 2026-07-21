@@ -157,22 +157,28 @@ struct HistoryView: View {
                     Text(activity.decodedNote)
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let file = activity.file, !file.decodedFilename.isEmpty {
                     Text(file.decodedFilename)
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let item = activity.item?.name, let target = activity.target?.name {
                     Text("\(HTMLDecoder.decode(item)) → \(HTMLDecoder.decode(target))")
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let item = activity.item?.name {
                     Text(HTMLDecoder.decode(item))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let target = activity.target?.name {
                     Text(HTMLDecoder.decode(target))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(L10n.string("no_details"))
                         .font(.subheadline.weight(.medium))
@@ -180,37 +186,26 @@ struct HistoryView: View {
                 }
             }
 
-            // Meta chips
+            // Meta changes
             if let meta = activity.log_meta, !meta.isEmpty {
-                FlowLayout(spacing: 6) {
+                VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(meta.keys).sorted(), id: \.self) { key in
                         let change = meta[key]
                         let prettyKey = prettifyFieldLabel(key)
                         if let new = change?.new {
                             let oldValue = (change?.old?.isEmpty ?? true) ? "–" : (change?.old ?? "–")
                             let newValue = new.isEmpty ? "–" : new
-                            Text("\(prettyKey): \(oldValue) → \(newValue)")
-                                .font(.caption2)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 8)
-                                .background(Color(.tertiarySystemFill))
-                                .foregroundColor(.secondary)
-                                .clipShape(Capsule())
+                            metaChangeRow("\(prettyKey): \(oldValue) → \(newValue)")
                         } else if let old = change?.old {
-                            Text("\(prettyKey): \(old) → –")
-                                .font(.caption2)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 8)
-                                .background(Color(.tertiarySystemFill))
-                                .foregroundColor(.secondary)
-                                .clipShape(Capsule())
+                            metaChangeRow("\(prettyKey): \(old) → –")
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // User, target, file
-            HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
                 if let user = activity.admin ?? activity.created_by {
                     HStack(spacing: 4) {
                         Image(systemName: "person.crop.circle.fill")
@@ -219,17 +214,20 @@ struct HistoryView: View {
                         Text(user.name)
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                            .lineLimit(2)
                     }
                 }
                 let isCheckout = activity.actionType.lowercased().contains("check") && (activity.actionType.lowercased().contains("out") || activity.actionType.lowercased().contains("uit"))
                 if isCheckout, let target = activity.target {
-                    HStack(spacing: 4) {
+                    HStack(alignment: .top, spacing: 4) {
                         Image(systemName: target.type == "user" ? "person.crop.circle.badge.checkmark" : "mappin.circle.fill")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                            .padding(.top, 1)
                         Text("\(L10n.string("history_to")): \(HTMLDecoder.decode(target.name))")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let file = activity.file, file.url != nil || !(file.filename ?? "").isEmpty {
@@ -252,6 +250,7 @@ struct HistoryView: View {
                     .disabled(downloadingActivityId == activity.id)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,13 +262,50 @@ struct HistoryView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color(.separator).opacity(0.5), lineWidth: 0.5)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func metaChangeRow(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundColor(.secondary)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(Color(.tertiarySystemFill))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func openAttachedFile(activity: Activity, file: ActivityFile) async {
-        downloadingActivityId = activity.id
-        defer { downloadingActivityId = nil }
+        await MainActor.run { downloadingActivityId = activity.id }
+        defer { Task { @MainActor in downloadingActivityId = nil } }
 
         let filename = file.decodedFilename.isEmpty ? (file.filename ?? "file") : file.decodedFilename
+        let action = activity.actionType.lowercased()
+        let isAcceptance = action.contains("accept") || action.contains("eula")
+            || (file.url ?? "").lowercased().contains("stored-eula-file")
+            || filename.lowercased().contains("accepted-eula")
+
+        // Acceptance EULAs live under eula-pdfs/, not hardware files API.
+        if isAcceptance {
+            if let remote = file.url, !remote.isEmpty,
+               let local = await apiClient.downloadFile(from: remote, preferredFilename: filename) {
+                await MainActor.run {
+                    localPreviewUrl = local
+                    isShowingPreview = true
+                }
+                return
+            }
+            if let remote = file.url, !remote.isEmpty, file.isPDF {
+                let absolute = remote.hasPrefix("http")
+                    ? remote
+                    : "\(apiClient.baseURL)\(remote.hasPrefix("/") ? "" : "/")\(remote)"
+                await MainActor.run { openSafariUrl = PdfUrl(url: absolute) }
+                return
+            }
+        }
 
         // file.url is web UI; use API /…/files/{activity.id}.
         if let local = await apiClient.downloadObjectFile(
@@ -278,8 +314,10 @@ struct HistoryView: View {
             fileId: activity.id,
             preferredFilename: filename
         ) {
-            localPreviewUrl = local
-            isShowingPreview = true
+            await MainActor.run {
+                localPreviewUrl = local
+                isShowingPreview = true
+            }
             return
         }
 
@@ -292,16 +330,20 @@ struct HistoryView: View {
                fileId: activity.id,
                preferredFilename: filename
            ) {
-            localPreviewUrl = local
-            isShowingPreview = true
+            await MainActor.run {
+                localPreviewUrl = local
+                isShowingPreview = true
+            }
             return
         }
 
         // Fallback: provided URL (EULA etc).
         if let remote = file.url, !remote.isEmpty,
            let local = await apiClient.downloadFile(from: remote, preferredFilename: filename) {
-            localPreviewUrl = local
-            isShowingPreview = true
+            await MainActor.run {
+                localPreviewUrl = local
+                isShowingPreview = true
+            }
             return
         }
 
@@ -309,44 +351,16 @@ struct HistoryView: View {
             let absolute = remote.hasPrefix("http")
                 ? remote
                 : "\(apiClient.baseURL)\(remote.hasPrefix("/") ? "" : "/")\(remote)"
-            openSafariUrl = PdfUrl(url: absolute)
+            await MainActor.run { openSafariUrl = PdfUrl(url: absolute) }
             return
         }
 
-        presentEphemeralNotice(
-            $ephemeralNotice,
-            L10n.string("file_download_failed"),
-            isError: true
-        )
-    }
-
-    // Flow layout for chips
-    private struct FlowLayout: Layout {
-        var spacing: CGFloat = 8
-        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-            let result = arrange(proposal: proposal, subviews: subviews)
-            return result.size
-        }
-        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-            let result = arrange(proposal: proposal, subviews: subviews)
-            for (i, subview) in subviews.enumerated() {
-                subview.place(at: CGPoint(x: bounds.minX + result.positions[i].x, y: bounds.minY + result.positions[i].y), proposal: .unspecified)
-            }
-        }
-        private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
-            let maxWidth = proposal.width ?? .infinity
-            var positions: [CGPoint] = []
-            var x: CGFloat = 0, y: CGFloat = 0
-            var rowHeight: CGFloat = 0
-            for subview in subviews {
-                let size = subview.sizeThatFits(.unspecified)
-                if maxWidth != .infinity, x + size.width > maxWidth, x > 0 { x = 0; y += rowHeight + spacing; rowHeight = 0 }
-                positions.append(CGPoint(x: x, y: y))
-                rowHeight = max(rowHeight, size.height)
-                x += size.width + spacing
-            }
-            let width = maxWidth.isFinite ? maxWidth : max(0, x - spacing)
-            return (CGSize(width: width, height: y + rowHeight), positions)
+        await MainActor.run {
+            presentEphemeralNotice(
+                $ephemeralNotice,
+                L10n.string("file_download_failed"),
+                isError: true
+            )
         }
     }
 

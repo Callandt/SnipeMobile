@@ -243,10 +243,32 @@ struct ActivityLogView: View {
     }
 
     private func openAttachedFile(activity: Activity, file: ActivityFile) async {
-        downloadingActivityId = activity.id
-        defer { downloadingActivityId = nil }
+        await MainActor.run { downloadingActivityId = activity.id }
+        defer { Task { @MainActor in downloadingActivityId = nil } }
 
         let filename = file.decodedFilename.isEmpty ? (file.filename ?? "file") : file.decodedFilename
+        let action = activity.actionType.lowercased()
+        let isAcceptance = action.contains("accept") || action.contains("eula")
+            || (file.url ?? "").lowercased().contains("stored-eula-file")
+            || filename.lowercased().contains("accepted-eula")
+
+        if isAcceptance {
+            if let remote = file.url, !remote.isEmpty,
+               let local = await apiClient.downloadFile(from: remote, preferredFilename: filename) {
+                await MainActor.run {
+                    localPreviewUrl = local
+                    isShowingPreview = true
+                }
+                return
+            }
+            if let remote = file.url, !remote.isEmpty, file.isPDF {
+                let absolute = remote.hasPrefix("http")
+                    ? remote
+                    : "\(apiClient.baseURL)\(remote.hasPrefix("/") ? "" : "/")\(remote)"
+                await MainActor.run { openSafariUrl = ActivityPdfUrl(url: absolute) }
+                return
+            }
+        }
 
         if let item = activity.item,
            let local = await apiClient.downloadObjectFile(
@@ -255,15 +277,19 @@ struct ActivityLogView: View {
                fileId: activity.id,
                preferredFilename: filename
            ) {
-            localPreviewUrl = local
-            isShowingPreview = true
+            await MainActor.run {
+                localPreviewUrl = local
+                isShowingPreview = true
+            }
             return
         }
 
         if let remote = file.url, !remote.isEmpty,
            let local = await apiClient.downloadFile(from: remote, preferredFilename: filename) {
-            localPreviewUrl = local
-            isShowingPreview = true
+            await MainActor.run {
+                localPreviewUrl = local
+                isShowingPreview = true
+            }
             return
         }
 
@@ -271,15 +297,17 @@ struct ActivityLogView: View {
             let absolute = remote.hasPrefix("http")
                 ? remote
                 : "\(apiClient.baseURL)\(remote.hasPrefix("/") ? "" : "/")\(remote)"
-            openSafariUrl = ActivityPdfUrl(url: absolute)
+            await MainActor.run { openSafariUrl = ActivityPdfUrl(url: absolute) }
             return
         }
 
-        presentEphemeralNotice(
-            $ephemeralNotice,
-            L10n.string("file_download_failed"),
-            isError: true
-        )
+        await MainActor.run {
+            presentEphemeralNotice(
+                $ephemeralNotice,
+                L10n.string("file_download_failed"),
+                isError: true
+            )
+        }
     }
 
     private func color(for activity: Activity) -> Color {

@@ -2,6 +2,12 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
+import SafariServices
+
+private struct LocalPreviewItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
 
 /// Asset files tab.
 struct AssetFilesTab: View {
@@ -12,8 +18,8 @@ struct AssetFilesTab: View {
     @State private var files: [AssetFile] = []
     @State private var isLoading = false
     @State private var showAddSheet = false
-    @State private var previewURL: URL?
-    @State private var showPreview = false
+    @State private var previewItem: LocalPreviewItem?
+    @State private var openSafariUrl: PdfUrl?
     @State private var downloadingFileId: Int?
     @State private var filePendingDelete: AssetFile?
     @State private var ephemeralNotice: EphemeralNotice?
@@ -84,9 +90,12 @@ struct AssetFilesTab: View {
                 await reloadFiles()
             }
         }
-        .sheet(isPresented: $showPreview) {
-            if let previewURL {
-                SnipeFilePreviewSheet(url: previewURL)
+        .sheet(item: $previewItem) { item in
+            SnipeFilePreviewSheet(url: item.url)
+        }
+        .sheet(item: $openSafariUrl) { pdf in
+            if let url = URL(string: pdf.url) {
+                HistoryView.SafariView(url: url)
             }
         }
         .confirmationDialog(
@@ -112,24 +121,85 @@ struct AssetFilesTab: View {
     }
 
     private func reloadFiles() async {
-        if files.isEmpty {
-            isLoading = true
+        let showSpinner = files.isEmpty
+        if showSpinner {
+            await MainActor.run { isLoading = true }
         }
-        defer { isLoading = false }
-        files = await apiClient.fetchAssetFiles(assetId: assetId)
+
+        async let uploads = apiClient.fetchAssetFiles(assetId: assetId)
+        async let activities = apiClient.fetchActivityForItem(
+            itemType: "asset",
+            itemId: assetId,
+            limit: 100
+        )
+        let uploaded = await uploads
+        let acceptances = await activities.compactMap { AssetFile.acceptance(from: $0) }
+        let uploadIds = Set(uploaded.map(\.id))
+        let extra = acceptances.filter { !uploadIds.contains($0.id) }
+        let merged = (uploaded + extra).sorted {
+            ($0.createdAt?.date ?? "") > ($1.createdAt?.date ?? "")
+        }
+        await MainActor.run {
+            files = merged
+            isLoading = false
+        }
     }
 
     private func openFile(_ file: AssetFile) async {
-        downloadingFileId = file.id
-        defer { downloadingFileId = nil }
+        await MainActor.run { downloadingFileId = file.id }
+        defer { Task { @MainActor in downloadingFileId = nil } }
+
+        let filename = file.decodedFilename.isEmpty ? "file-\(file.id).pdf" : file.decodedFilename
+
+        // EULA / acceptance: web stored-eula URL (files API uses the wrong storage path).
+        if file.isAcceptance || file.isEulaURL {
+            if let remote = file.url, !remote.isEmpty,
+               let local = await apiClient.downloadFile(from: remote, preferredFilename: filename) {
+                await MainActor.run { previewItem = LocalPreviewItem(url: local) }
+                return
+            }
+            if let remote = file.url, !remote.isEmpty {
+                let absolute = remote.hasPrefix("http")
+                    ? remote
+                    : "\(apiClient.baseURL)\(remote.hasPrefix("/") ? "" : "/")\(remote)"
+                await MainActor.run { openSafariUrl = PdfUrl(url: absolute) }
+                return
+            }
+            await MainActor.run {
+                presentEphemeralNotice(
+                    $ephemeralNotice,
+                    apiClient.lastApiMessage ?? L10n.string("file_download_failed"),
+                    isError: true
+                )
+            }
+            return
+        }
+
         if let url = await apiClient.downloadAssetFile(
             assetId: assetId,
             fileId: file.id,
-            preferredFilename: file.decodedFilename
+            preferredFilename: filename
         ) {
-            previewURL = url
-            showPreview = true
-        } else {
+            await MainActor.run { previewItem = LocalPreviewItem(url: url) }
+            return
+        }
+
+        // Fallback: file.url (some installs serve downloads there).
+        if let remote = file.url, !remote.isEmpty,
+           let local = await apiClient.downloadFile(from: remote, preferredFilename: filename) {
+            await MainActor.run { previewItem = LocalPreviewItem(url: local) }
+            return
+        }
+
+        if let remote = file.url, !remote.isEmpty, file.isPDF {
+            let absolute = remote.hasPrefix("http")
+                ? remote
+                : "\(apiClient.baseURL)\(remote.hasPrefix("/") ? "" : "/")\(remote)"
+            await MainActor.run { openSafariUrl = PdfUrl(url: absolute) }
+            return
+        }
+
+        await MainActor.run {
             presentEphemeralNotice(
                 $ephemeralNotice,
                 apiClient.lastApiMessage ?? L10n.string("file_download_failed"),
@@ -139,16 +209,18 @@ struct AssetFilesTab: View {
     }
 
     private func deleteFile(_ file: AssetFile) async {
-        filePendingDelete = nil
+        await MainActor.run { filePendingDelete = nil }
         let success = await apiClient.deleteAssetFile(assetId: assetId, fileId: file.id)
         if success {
-            files.removeAll { $0.id == file.id }
+            await MainActor.run { files.removeAll { $0.id == file.id } }
         } else {
-            presentEphemeralNotice(
-                $ephemeralNotice,
-                apiClient.lastApiMessage ?? L10n.string("file_delete_failed"),
-                isError: true
-            )
+            await MainActor.run {
+                presentEphemeralNotice(
+                    $ephemeralNotice,
+                    apiClient.lastApiMessage ?? L10n.string("file_delete_failed"),
+                    isError: true
+                )
+            }
         }
     }
 }
@@ -160,11 +232,26 @@ private struct AssetFileCardView: View {
     var isDownloading: Bool = false
 
     private var accentColor: Color {
+        if file.isAcceptance || file.isPDF { return .red }
         if file.isImage { return .blue }
         let lower = file.decodedFilename.lowercased()
-        if lower.hasSuffix(".pdf") { return .red }
         if lower.hasSuffix(".zip") || lower.hasSuffix(".rar") { return .purple }
         return .accentColor
+    }
+
+    private var titleText: String {
+        let note = file.decodedNote
+        return note.isEmpty ? file.shortFilename : note
+    }
+
+    private var subtitleText: String? {
+        guard !file.decodedNote.isEmpty else { return nil }
+        let short = file.shortFilename
+        return short.isEmpty ? nil : short
+    }
+
+    private var dateText: String? {
+        file.createdAt?.localizedDisplay(includeTime: true)
     }
 
     var body: some View {
@@ -188,28 +275,25 @@ private struct AssetFileCardView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(file.decodedFilename)
+                Text(titleText)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                HStack(spacing: 6) {
-                    if let date = file.createdAt?.formatted, !date.isEmpty {
-                        Text(date)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    if !file.decodedNote.isEmpty {
-                        Text("·")
-                            .font(.subheadline)
-                            .foregroundStyle(.tertiary)
-                        Text(file.decodedNote)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                if let dateText {
+                    Text(dateText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if let subtitleText {
+                    Text(subtitleText)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 8)
 
@@ -235,8 +319,8 @@ private struct AssetFileCardView: View {
     }
 
     private var iconName: String {
+        if file.isAcceptance || file.isPDF { return "doc.richtext.fill" }
         let lower = file.decodedFilename.lowercased()
-        if lower.hasSuffix(".pdf") { return "doc.richtext.fill" }
         if lower.hasSuffix(".zip") || lower.hasSuffix(".rar") { return "doc.zipper" }
         if [".mp4", ".mov", ".webm", ".mp3", ".wav", ".ogg"].contains(where: { lower.hasSuffix($0) }) {
             return "film.fill"

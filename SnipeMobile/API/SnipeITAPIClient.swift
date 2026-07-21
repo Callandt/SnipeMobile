@@ -2736,7 +2736,7 @@ class SnipeITAPIClient: ObservableObject {
         } else if url.hasPrefix("/") {
             resolved = URL(string: "\(baseURL)\(url)")
         } else {
-            resolved = URL(string: url)
+            resolved = URL(string: "\(baseURL)/\(url)")
         }
         guard let fileUrl = resolved else { return nil }
 
@@ -2749,17 +2749,23 @@ class SnipeITAPIClient: ObservableObject {
                 print("Download failed: status code \((response as? HTTPURLResponse)?.statusCode ?? -1)")
                 return nil
             }
-            let rawName = preferredFilename?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let fileName: String
-            if let rawName, !rawName.isEmpty {
-                fileName = rawName.replacingOccurrences(of: "/", with: "-")
-            } else {
-                fileName = fileUrl.lastPathComponent
+            guard Self.isBinaryFilePayload(data) else {
+                if let message = Self.apiErrorMessage(from: data) {
+                    await MainActor.run { self.lastApiMessage = message }
+                }
+                return nil
             }
+            let rawName = preferredFilename?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let preferred = (rawName?.isEmpty == false ? rawName! : fileUrl.lastPathComponent)
+            let fileName = Self.sanitizedDownloadFilename(preferred, fileId: 0, data: data)
             let localUrl = FileManager.default.temporaryDirectory
                 .appendingPathComponent("\(UUID().uuidString)_\(fileName)")
             try data.write(to: localUrl)
             return localUrl
+        } catch is CancellationError {
+            return nil
+        } catch let error as URLError where error.code == .cancelled {
+            return nil
         } catch {
             print("Error downloading file: \(error)")
             return nil
@@ -4139,25 +4145,60 @@ class SnipeITAPIClient: ObservableObject {
                 #endif
                 return nil
             }
-            // Reject accidental JSON error payloads returned as 200.
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               (json["status"] as? String)?.lowercased() == "error" {
+            guard Self.isBinaryFilePayload(data) else {
+                if let message = Self.apiErrorMessage(from: data) {
+                    await MainActor.run { self.lastApiMessage = message }
+                }
                 return nil
             }
-            let safeName = preferredFilename
-                .replacingOccurrences(of: "/", with: "-")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let filename = safeName.isEmpty ? "file-\(fileId)" : safeName
+            let filename = Self.sanitizedDownloadFilename(preferredFilename, fileId: fileId, data: data)
             let localURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("\(UUID().uuidString)-\(filename)")
             try data.write(to: localURL, options: .atomic)
             return localURL
+        } catch is CancellationError {
+            return nil
+        } catch let error as URLError where error.code == .cancelled {
+            return nil
         } catch {
             #if DEBUG
             print("downloadObjectFile error: \(error)")
             #endif
             return nil
         }
+    }
+
+    static func isBinaryFilePayload(_ data: Data) -> Bool {
+        guard !data.isEmpty else { return false }
+        // JSON error bodies (often HTTP 200 from Snipe-IT).
+        if data.first == UInt8(ascii: "{") || data.first == UInt8(ascii: "[") {
+            return false
+        }
+        if let head = String(data: data.prefix(200), encoding: .utf8)?.lowercased(),
+           head.contains("<!doctype html") || head.contains("<html") {
+            return false
+        }
+        return true
+    }
+
+    static func apiErrorMessage(from data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let messages = json["messages"] as? String, !messages.isEmpty { return messages }
+        if let messages = json["messages"] as? [String], let first = messages.first { return first }
+        if let message = json["message"] as? String, !message.isEmpty { return message }
+        return nil
+    }
+
+    static func sanitizedDownloadFilename(_ preferred: String, fileId: Int, data: Data) -> String {
+        var name = preferred
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { name = fileId > 0 ? "file-\(fileId)" : "file" }
+        let ext = (name as NSString).pathExtension.lowercased()
+        if data.starts(with: Data("%PDF".utf8)), ext != "pdf" {
+            name += ".pdf"
+        }
+        return name
     }
 
     /// Map item type → API object_type.

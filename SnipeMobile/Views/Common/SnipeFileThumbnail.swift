@@ -73,14 +73,20 @@ struct SnipeFileThumbnail: View {
             fileId: fileId,
             preferredFilename: filename.isEmpty ? "thumb-\(fileId).jpg" : filename
         ) else {
+            // Scroll/reuse cancels .task — don't treat that as a hard failure.
+            if Task.isCancelled { return }
             failed = true
+            return
+        }
+        if Task.isCancelled {
+            try? FileManager.default.removeItem(at: url)
             return
         }
         defer { try? FileManager.default.removeItem(at: url) }
 
         guard let data = try? Data(contentsOf: url),
               let full = UIImage(data: data) else {
-            failed = true
+            if !Task.isCancelled { failed = true }
             return
         }
         let thumb = full.snipeThumbnail(maxDimension: max(size * 3, 180))
