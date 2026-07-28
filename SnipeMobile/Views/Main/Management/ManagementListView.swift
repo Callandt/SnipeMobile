@@ -20,6 +20,8 @@ struct ManagementListView: View {
     @State private var pendingDelete: ManagementItem?
     @State private var isDeleting = false
     @State private var notice: String?
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     private var config: ManagementEntityConfig { entity.config }
 
@@ -71,6 +73,11 @@ struct ManagementListView: View {
                 if let item = pendingDelete {
                     Text(L10n.string("mgmt_delete_message", config.titleReader(item.raw)))
                 }
+            }
+            .alert(L10n.string("mgmt_delete_failed_title"), isPresented: $showDeleteError) {
+                Button(L10n.string("ok"), role: .cancel) {}
+            } message: {
+                Text(deleteErrorMessage)
             }
             .overlay(alignment: .bottom) {
                 if let notice {
@@ -210,7 +217,11 @@ struct ManagementListView: View {
             items.removeAll { $0.id == item.id }
             await showNotice(L10n.string("mgmt_deleted"))
         } else {
-            await showNotice(result.message ?? L10n.string("mgmt_save_failed"))
+            deleteErrorMessage = SnipeITAPIClient.userFacingDeleteMessage(
+                result.message,
+                kind: .management
+            ) ?? result.message ?? L10n.string("mgmt_delete_still_in_use")
+            showDeleteError = true
         }
     }
 

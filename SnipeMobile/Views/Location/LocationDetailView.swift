@@ -14,6 +14,11 @@ struct LocationDetailView: View {
     @State private var isLoadingAccessories = false
     @State private var isLoadingAssets = false
     @State private var hasLoadedAssignedItems = false
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
+    @Environment(\.dismiss) private var dismiss
 
     // Users at this location.
     private var usersAtLocation: [User] {
@@ -193,7 +198,18 @@ struct LocationDetailView: View {
                 Button { showEditSheet = true } label: {
                     Image(systemName: "pencil")
                 }
+                .disabled(isDeleting)
                 .accessibilityLabel(L10n.string("edit"))
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                }
+                .disabled(isDeleting)
+                .accessibilityLabel(L10n.string("delete"))
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/locations/\(location.id)") {
@@ -203,6 +219,15 @@ struct LocationDetailView: View {
                 }
             }
         }
+        .entityDeleteSupport(
+            showConfirm: $showDeleteConfirm,
+            isDeleting: $isDeleting,
+            showError: $showDeleteError,
+            errorMessage: $deleteErrorMessage,
+            confirmTitle: L10n.string("delete_item_confirm_title", currentLocation.decodedName),
+            confirmMessage: L10n.string("delete_location_confirm_message", currentLocation.decodedName),
+            onDelete: { await deleteCurrentLocation() }
+        )
         .sheet(isPresented: $showEditSheet) {
             LocationEditSheet(
                 apiClient: apiClient,
@@ -244,6 +269,18 @@ struct LocationDetailView: View {
             }) {
                 Label(L10n.string("copy"), systemImage: "doc.on.doc")
             }
+        }
+    }
+
+    private func deleteCurrentLocation() async {
+        isDeleting = true
+        let ok = await apiClient.deleteLocation(locationId: location.id)
+        isDeleting = false
+        if ok {
+            dismiss()
+        } else {
+            deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+            showDeleteError = true
         }
     }
 

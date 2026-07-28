@@ -18,6 +18,11 @@ struct AccessoryDetailView: View {
     @State private var isCheckingIn = false
     @State private var detailImageURL: String? = nil
     @State private var ephemeralNotice: EphemeralNotice?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
+    @Environment(\.dismiss) private var dismiss
 
     /// From apiClient or passed in.
     private var currentAccessory: Accessory {
@@ -221,13 +226,34 @@ struct AccessoryDetailView: View {
                     .minimumScaleFactor(0.7)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/accessories/\(currentAccessory.id)") {
-                    Link(destination: url) {
-                        Image(systemName: "safari")
+                HStack(spacing: 12) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(isDeleting || isCheckingIn)
+                    .accessibilityLabel(L10n.string("delete"))
+                    if let url = URL(string: "\(apiClient.baseURL)/accessories/\(currentAccessory.id)") {
+                        Link(destination: url) {
+                            Image(systemName: "safari")
+                        }
                     }
                 }
             }
         }
+        .entityDeleteSupport(
+            showConfirm: $showDeleteConfirm,
+            isDeleting: $isDeleting,
+            showError: $showDeleteError,
+            errorMessage: $deleteErrorMessage,
+            confirmTitle: L10n.string("delete_item_confirm_title", currentAccessory.decodedName),
+            confirmMessage: (currentAccessory.checkoutsCount ?? 0) > 0 || currentAccessory.statusLabel?.statusMeta?.lowercased() == "deployed"
+                ? L10n.string("delete_item_confirm_message_with_checkin", currentAccessory.decodedName)
+                : L10n.string("delete_item_confirm_message", currentAccessory.decodedName),
+            onDelete: { await deleteCurrentAccessory() }
+        )
         .onAppear { reloadCheckedOut(clearImageWhenAbsent: false) }
         .onChange(of: accessory.id) { reloadCheckedOut(clearImageWhenAbsent: true) }
         .sheet(isPresented: $showEditSheet) {
@@ -274,6 +300,18 @@ struct AccessoryDetailView: View {
             return L10n.string("checkin_generic_confirm_message")
         }
         return String(format: L10n.string("checkin_user_confirm_message"), name)
+    }
+
+    private func deleteCurrentAccessory() async {
+        isDeleting = true
+        let ok = await apiClient.deleteAccessory(accessoryId: currentAccessory.id)
+        isDeleting = false
+        if ok {
+            dismiss()
+        } else {
+            deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+            showDeleteError = true
+        }
     }
 
     private func performCheckin() async {

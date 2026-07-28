@@ -19,6 +19,11 @@ struct LicenseDetailView: View {
     @State private var showEditSheet = false
     @State private var showCheckoutSheet = false
     @State private var ephemeralNotice: EphemeralNotice?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
+    @Environment(\.dismiss) private var dismiss
 
     private var canCheckout: Bool {
         let free = currentLicense.freeSeatsCount ?? currentLicense.remaining ?? 0
@@ -130,13 +135,34 @@ struct LicenseDetailView: View {
                     .minimumScaleFactor(0.7)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/licenses/\(currentLicense.id)") {
-                    Link(destination: url) {
-                        Image(systemName: "safari")
+                HStack(spacing: 12) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(isDeleting || isCheckingIn)
+                    .accessibilityLabel(L10n.string("delete"))
+                    if let url = URL(string: "\(apiClient.baseURL)/licenses/\(currentLicense.id)") {
+                        Link(destination: url) {
+                            Image(systemName: "safari")
+                        }
                     }
                 }
             }
         }
+        .entityDeleteSupport(
+            showConfirm: $showDeleteConfirm,
+            isDeleting: $isDeleting,
+            showError: $showDeleteError,
+            errorMessage: $deleteErrorMessage,
+            confirmTitle: L10n.string("delete_item_confirm_title", currentLicense.decodedName),
+            confirmMessage: seats.contains(where: { $0.assignedUser != nil || $0.assignedAsset != nil })
+                ? L10n.string("delete_item_confirm_message_with_checkin", currentLicense.decodedName)
+                : L10n.string("delete_item_confirm_message", currentLicense.decodedName),
+            onDelete: { await deleteCurrentLicense() }
+        )
         .task(id: license.id) {
             await loadDetail()
         }
@@ -175,6 +201,18 @@ struct LicenseDetailView: View {
         }
         seats = await apiClient.fetchLicenseSeats(licenseId: license.id)
         isLoading = false
+    }
+
+    private func deleteCurrentLicense() async {
+        isDeleting = true
+        let ok = await apiClient.deleteLicense(licenseId: currentLicense.id)
+        isDeleting = false
+        if ok {
+            dismiss()
+        } else {
+            deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+            showDeleteError = true
+        }
     }
 
     @ViewBuilder

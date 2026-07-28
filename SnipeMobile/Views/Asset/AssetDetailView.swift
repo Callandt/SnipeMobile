@@ -63,6 +63,11 @@ struct AssetDetailView: View {
     @State private var showLabelPdf = false
     @State private var showLabelError = false
     @State private var labelErrorMessage = ""
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
 
     /// From apiClient or passed in.
@@ -348,9 +353,17 @@ struct AssetDetailView: View {
                         } label: {
                             Image(systemName: "barcode.viewfinder")
                         }
-                        .disabled(isGeneratingLabel)
+                        .disabled(isGeneratingLabel || isDeleting)
                         .accessibilityLabel(L10n.string("print_label"))
                     }
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(isDeleting)
+                    .accessibilityLabel(L10n.string("delete"))
                     if let url = URL(string: "\(apiClient.baseURL)/hardware/\(currentAsset.id)") {
                         Link(destination: url) {
                             Image(systemName: "safari")
@@ -359,6 +372,17 @@ struct AssetDetailView: View {
                 }
             }
         }
+        .entityDeleteSupport(
+            showConfirm: $showDeleteConfirm,
+            isDeleting: $isDeleting,
+            showError: $showDeleteError,
+            errorMessage: $deleteErrorMessage,
+            confirmTitle: L10n.string("delete_asset_confirm_title"),
+            confirmMessage: currentAsset.assignedTo != nil
+                ? L10n.string("delete_asset_confirm_message_checked_out", currentAsset.decodedAssetTag)
+                : L10n.string("delete_asset_confirm_message", currentAsset.decodedAssetTag),
+            onDelete: { await deleteCurrentAsset() }
+        )
         .onAppear {
             selectedTab = 0
             if !hasLoggedAppearance {
@@ -467,6 +491,18 @@ struct AssetDetailView: View {
     }
 
     @MainActor
+    private func deleteCurrentAsset() async {
+        isDeleting = true
+        let ok = await apiClient.deleteAsset(assetId: currentAsset.id)
+        isDeleting = false
+        if ok {
+            dismiss()
+        } else {
+            deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+            showDeleteError = true
+        }
+    }
+
     private func generateLabel() async {
         let tag = currentAsset.decodedAssetTag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !tag.isEmpty else {

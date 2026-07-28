@@ -17,6 +17,11 @@ struct ComponentDetailView: View {
     @State private var checkinErrorMessage: String?
     @State private var showCheckinError = false
     @State private var isCheckingIn = false
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
+    @Environment(\.dismiss) private var dismiss
 
     private var currentComponent: Component {
         apiClient.components.first { $0.id == component.id } ?? component
@@ -215,13 +220,34 @@ struct ComponentDetailView: View {
                     .frame(maxWidth: 200)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/components/\(currentComponent.id)") {
-                    Link(destination: url) {
-                        Image(systemName: "safari")
+                HStack(spacing: 12) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(isDeleting || isCheckingIn)
+                    .accessibilityLabel(L10n.string("delete"))
+                    if let url = URL(string: "\(apiClient.baseURL)/components/\(currentComponent.id)") {
+                        Link(destination: url) {
+                            Image(systemName: "safari")
+                        }
                     }
                 }
             }
         }
+        .entityDeleteSupport(
+            showConfirm: $showDeleteConfirm,
+            isDeleting: $isDeleting,
+            showError: $showDeleteError,
+            errorMessage: $deleteErrorMessage,
+            confirmTitle: L10n.string("delete_item_confirm_title", currentComponent.decodedName),
+            confirmMessage: checkedOutRows.contains(where: { $0.assignedPivotId != nil })
+                ? L10n.string("delete_component_confirm_message_with_checkin", currentComponent.decodedName)
+                : L10n.string("delete_item_confirm_message", currentComponent.decodedName),
+            onDelete: { await deleteCurrentComponent() }
+        )
         .onAppear { reload() }
         .onChange(of: component.id) { reload() }
         .sheet(isPresented: $showEditSheet) {
@@ -268,6 +294,18 @@ struct ComponentDetailView: View {
             return L10n.string("checkin_generic_confirm_message")
         }
         return String(format: L10n.string("checkin_user_confirm_message"), name)
+    }
+
+    private func deleteCurrentComponent() async {
+        isDeleting = true
+        let ok = await apiClient.deleteComponent(componentId: currentComponent.id)
+        isDeleting = false
+        if ok {
+            dismiss()
+        } else {
+            deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+            showDeleteError = true
+        }
     }
 
     private func requestCheckin(for row: SnipeITAPIClient.ComponentAssetRow) {

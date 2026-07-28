@@ -13,6 +13,11 @@ struct ConsumableDetailView: View {
     @State private var showEditSheet: Bool = false
     @State private var detailImageURL: String? = nil
     @State private var ephemeralNotice: EphemeralNotice?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
+    @Environment(\.dismiss) private var dismiss
 
     private var currentConsumable: Consumable {
         apiClient.consumables.first { $0.id == consumable.id } ?? consumable
@@ -209,13 +214,32 @@ struct ConsumableDetailView: View {
                     .minimumScaleFactor(0.7)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let url = URL(string: "\(apiClient.baseURL)/consumables/\(currentConsumable.id)") {
-                    Link(destination: url) {
-                        Image(systemName: "safari")
+                HStack(spacing: 12) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(isDeleting)
+                    .accessibilityLabel(L10n.string("delete"))
+                    if let url = URL(string: "\(apiClient.baseURL)/consumables/\(currentConsumable.id)") {
+                        Link(destination: url) {
+                            Image(systemName: "safari")
+                        }
                     }
                 }
             }
         }
+        .entityDeleteSupport(
+            showConfirm: $showDeleteConfirm,
+            isDeleting: $isDeleting,
+            showError: $showDeleteError,
+            errorMessage: $deleteErrorMessage,
+            confirmTitle: L10n.string("delete_item_confirm_title", currentConsumable.decodedName),
+            confirmMessage: L10n.string("delete_consumable_confirm_message", currentConsumable.decodedName),
+            onDelete: { await deleteCurrentConsumable() }
+        )
         .onAppear { reload() }
         .onChange(of: consumable.id) { reload() }
         .sheet(isPresented: $showEditSheet) {
@@ -229,6 +253,18 @@ struct ConsumableDetailView: View {
             })
         }
         .ephemeralNotice($ephemeralNotice)
+    }
+
+    private func deleteCurrentConsumable() async {
+        isDeleting = true
+        let ok = await apiClient.deleteConsumable(consumableId: currentConsumable.id)
+        isDeleting = false
+        if ok {
+            dismiss()
+        } else {
+            deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+            showDeleteError = true
+        }
     }
 
     private func reload() {

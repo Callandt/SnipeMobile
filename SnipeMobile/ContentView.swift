@@ -903,6 +903,9 @@ struct HardwareTab: View {
 
     @State private var assetToDelete: Asset?
     @State private var showDeleteConfirm = false
+    @State private var isDeletingAsset = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     // Cross-asset maintenance overview (Hardware → Maintenance subtab).
     // The records live in the cached `apiClient.maintenances` list.
@@ -1302,21 +1305,39 @@ struct HardwareTab: View {
             }
             Button(L10n.string("delete"), role: .destructive) {
                 guard let a = assetToDelete else { return }
-                #if DEBUG
-                print("[SnipeMobile] Gebruiker bevestigde delete: asset id=\(a.id) tag=\(a.decodedAssetTag) — roep DELETE API aan")
-                #endif
                 Task {
+                    isDeletingAsset = true
                     let ok = await apiClient.deleteAsset(assetId: a.id)
-                    #if DEBUG
-                    print("[SnipeMobile] deleteAsset(\(a.id)) result: \(ok)")
-                    #endif
+                    isDeletingAsset = false
+                    if !ok {
+                        deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+                        showDeleteError = true
+                    }
+                    assetToDelete = nil
                 }
-                assetToDelete = nil
-                showDeleteConfirm = false
             }
         } message: {
             if let a = assetToDelete {
-                Text(L10n.string("delete_asset_confirm_message", a.decodedAssetTag))
+                Text(
+                    a.assignedTo != nil
+                        ? L10n.string("delete_asset_confirm_message_checked_out", a.decodedAssetTag)
+                        : L10n.string("delete_asset_confirm_message", a.decodedAssetTag)
+                )
+            }
+        }
+        .alert(L10n.string("delete_failed"), isPresented: $showDeleteError) {
+            Button(L10n.string("ok"), role: .cancel) {}
+        } message: {
+            Text(deleteErrorMessage)
+        }
+        .overlay {
+            if isDeletingAsset {
+                ZStack {
+                    Color.black.opacity(0.15).ignoresSafeArea()
+                    ProgressView(L10n.string("deleting"))
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
             }
         }
     }
@@ -1809,6 +1830,11 @@ private struct LicensesContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var itemToDelete: License?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     private var dimensions: [FilterDimension<License>] {
         [
@@ -1880,6 +1906,14 @@ private struct LicensesContent: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                             .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    itemToDelete = license
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label(L10n.string("delete"), systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -1890,6 +1924,46 @@ private struct LicensesContent: View {
                 .overlay {
                     if filteredLicenses.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                         ContentUnavailableView(L10n.string("no_licenses"), systemImage: "doc.text.fill")
+                    }
+                }
+                .alert(
+                    itemToDelete.map { L10n.string("delete_item_confirm_title", $0.decodedName) } ?? L10n.string("delete"),
+                    isPresented: $showDeleteConfirm
+                ) {
+                    Button(L10n.string("cancel"), role: .cancel) { itemToDelete = nil }
+                    Button(L10n.string("delete"), role: .destructive) {
+                        guard let item = itemToDelete else { return }
+                        Task {
+                            isDeleting = true
+                            let ok = await apiClient.deleteLicense(licenseId: item.id)
+                            isDeleting = false
+                            if !ok {
+                                deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+                                showDeleteError = true
+                            }
+                            itemToDelete = nil
+                        }
+                    }
+                } message: {
+                    if let item = itemToDelete {
+                        let hasAssignments = (item.seats ?? 0) > (item.freeSeatsCount ?? item.remaining ?? item.seats ?? 0)
+                        Text(
+                            hasAssignments
+                                ? L10n.string("delete_item_confirm_message_with_checkin", item.decodedName)
+                                : L10n.string("delete_item_confirm_message", item.decodedName)
+                        )
+                    }
+                }
+                .alert(L10n.string("delete_failed"), isPresented: $showDeleteError) {
+                    Button(L10n.string("ok"), role: .cancel) {}
+                } message: {
+                    Text(deleteErrorMessage)
+                }
+                .overlay {
+                    if isDeleting {
+                        ProgressView(L10n.string("deleting"))
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
                 }
             }
@@ -2078,6 +2152,11 @@ private struct ConsumablesContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var itemToDelete: Consumable?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     private var dimensions: [FilterDimension<Consumable>] {
         [
@@ -2150,6 +2229,14 @@ private struct ConsumablesContent: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                             .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    itemToDelete = consumable
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label(L10n.string("delete"), systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -2160,6 +2247,41 @@ private struct ConsumablesContent: View {
                 .overlay {
                     if filteredConsumables.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                         ContentUnavailableView(L10n.string("no_consumables"), systemImage: "shippingbox")
+                    }
+                }
+                .alert(
+                    itemToDelete.map { L10n.string("delete_item_confirm_title", $0.decodedName) } ?? L10n.string("delete"),
+                    isPresented: $showDeleteConfirm
+                ) {
+                    Button(L10n.string("cancel"), role: .cancel) { itemToDelete = nil }
+                    Button(L10n.string("delete"), role: .destructive) {
+                        guard let item = itemToDelete else { return }
+                        Task {
+                            isDeleting = true
+                            let ok = await apiClient.deleteConsumable(consumableId: item.id)
+                            isDeleting = false
+                            if !ok {
+                                deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+                                showDeleteError = true
+                            }
+                            itemToDelete = nil
+                        }
+                    }
+                } message: {
+                    if let item = itemToDelete {
+                        Text(L10n.string("delete_consumable_confirm_message", item.decodedName))
+                    }
+                }
+                .alert(L10n.string("delete_failed"), isPresented: $showDeleteError) {
+                    Button(L10n.string("ok"), role: .cancel) {}
+                } message: {
+                    Text(deleteErrorMessage)
+                }
+                .overlay {
+                    if isDeleting {
+                        ProgressView(L10n.string("deleting"))
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
                 }
             }
@@ -2174,6 +2296,11 @@ private struct ComponentsContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var itemToDelete: Component?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     private var dimensions: [FilterDimension<Component>] {
         [
@@ -2246,6 +2373,14 @@ private struct ComponentsContent: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                             .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    itemToDelete = component
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label(L10n.string("delete"), systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -2256,6 +2391,47 @@ private struct ComponentsContent: View {
                 .overlay {
                     if filteredComponents.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                         ContentUnavailableView(L10n.string("no_components"), systemImage: "cpu")
+                    }
+                }
+                .alert(
+                    itemToDelete.map { L10n.string("delete_item_confirm_title", $0.decodedName) } ?? L10n.string("delete"),
+                    isPresented: $showDeleteConfirm
+                ) {
+                    Button(L10n.string("cancel"), role: .cancel) { itemToDelete = nil }
+                    Button(L10n.string("delete"), role: .destructive) {
+                        guard let item = itemToDelete else { return }
+                        Task {
+                            isDeleting = true
+                            let ok = await apiClient.deleteComponent(componentId: item.id)
+                            isDeleting = false
+                            if !ok {
+                                deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+                                showDeleteError = true
+                            }
+                            itemToDelete = nil
+                        }
+                    }
+                } message: {
+                    if let item = itemToDelete {
+                        let remaining = item.remaining ?? item.qty ?? 0
+                        let qty = item.qty ?? remaining
+                        Text(
+                            remaining < qty
+                                ? L10n.string("delete_component_confirm_message_with_checkin", item.decodedName)
+                                : L10n.string("delete_item_confirm_message", item.decodedName)
+                        )
+                    }
+                }
+                .alert(L10n.string("delete_failed"), isPresented: $showDeleteError) {
+                    Button(L10n.string("ok"), role: .cancel) {}
+                } message: {
+                    Text(deleteErrorMessage)
+                }
+                .overlay {
+                    if isDeleting {
+                        ProgressView(L10n.string("deleting"))
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
                 }
             }
@@ -2312,6 +2488,11 @@ private struct AccessoriesContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var itemToDelete: Accessory?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     private var dimensions: [FilterDimension<Accessory>] {
         [
@@ -2382,6 +2563,14 @@ private struct AccessoriesContent: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                             .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    itemToDelete = accessory
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label(L10n.string("delete"), systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -2394,6 +2583,45 @@ private struct AccessoriesContent: View {
                     title: L10n.string("no_accessories"),
                     systemImage: "mediastick"
                 )
+                .alert(
+                    itemToDelete.map { L10n.string("delete_item_confirm_title", $0.decodedName) } ?? L10n.string("delete"),
+                    isPresented: $showDeleteConfirm
+                ) {
+                    Button(L10n.string("cancel"), role: .cancel) { itemToDelete = nil }
+                    Button(L10n.string("delete"), role: .destructive) {
+                        guard let item = itemToDelete else { return }
+                        Task {
+                            isDeleting = true
+                            let ok = await apiClient.deleteAccessory(accessoryId: item.id)
+                            isDeleting = false
+                            if !ok {
+                                deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+                                showDeleteError = true
+                            }
+                            itemToDelete = nil
+                        }
+                    }
+                } message: {
+                    if let item = itemToDelete {
+                        Text(
+                            (item.checkoutsCount ?? 0) > 0
+                                ? L10n.string("delete_item_confirm_message_with_checkin", item.decodedName)
+                                : L10n.string("delete_item_confirm_message", item.decodedName)
+                        )
+                    }
+                }
+                .alert(L10n.string("delete_failed"), isPresented: $showDeleteError) {
+                    Button(L10n.string("ok"), role: .cancel) {}
+                } message: {
+                    Text(deleteErrorMessage)
+                }
+                .overlay {
+                    if isDeleting {
+                        ProgressView(L10n.string("deleting"))
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
             }
         }
     }
@@ -2552,6 +2780,11 @@ private struct UsersContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var itemToDelete: User?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     private var dimensions: [FilterDimension<User>] {
         [
@@ -2620,6 +2853,14 @@ private struct UsersContent: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                             .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    itemToDelete = user
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label(L10n.string("delete"), systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -2632,6 +2873,41 @@ private struct UsersContent: View {
                     title: L10n.string("no_users"),
                     systemImage: "person.2"
                 )
+                .alert(
+                    itemToDelete.map { L10n.string("delete_item_confirm_title", $0.decodedName) } ?? L10n.string("delete"),
+                    isPresented: $showDeleteConfirm
+                ) {
+                    Button(L10n.string("cancel"), role: .cancel) { itemToDelete = nil }
+                    Button(L10n.string("delete"), role: .destructive) {
+                        guard let item = itemToDelete else { return }
+                        Task {
+                            isDeleting = true
+                            let ok = await apiClient.deleteUser(userId: item.id)
+                            isDeleting = false
+                            if !ok {
+                                deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+                                showDeleteError = true
+                            }
+                            itemToDelete = nil
+                        }
+                    }
+                } message: {
+                    if let item = itemToDelete {
+                        Text(L10n.string("delete_user_confirm_message", item.decodedName))
+                    }
+                }
+                .alert(L10n.string("delete_failed"), isPresented: $showDeleteError) {
+                    Button(L10n.string("ok"), role: .cancel) {}
+                } message: {
+                    Text(deleteErrorMessage)
+                }
+                .overlay {
+                    if isDeleting {
+                        ProgressView(L10n.string("deleting"))
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
             }
         }
     }
@@ -2642,6 +2918,12 @@ private struct LocationsContent: View {
     @Binding var searchText: String
     @Binding var isRefreshing: Bool
     @Binding var navigationPath: NavigationPath
+
+    @State private var itemToDelete: Location?
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
 
     var filteredLocations: [Location] {
         if searchText.isEmpty { return apiClient.locations }
@@ -2688,6 +2970,14 @@ private struct LocationsContent: View {
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                             .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    itemToDelete = location
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label(L10n.string("delete"), systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -2700,6 +2990,41 @@ private struct LocationsContent: View {
                     title: L10n.string("no_locations"),
                     systemImage: "mappin.and.ellipse"
                 )
+                .alert(
+                    itemToDelete.map { L10n.string("delete_item_confirm_title", $0.decodedName) } ?? L10n.string("delete"),
+                    isPresented: $showDeleteConfirm
+                ) {
+                    Button(L10n.string("cancel"), role: .cancel) { itemToDelete = nil }
+                    Button(L10n.string("delete"), role: .destructive) {
+                        guard let item = itemToDelete else { return }
+                        Task {
+                            isDeleting = true
+                            let ok = await apiClient.deleteLocation(locationId: item.id)
+                            isDeleting = false
+                            if !ok {
+                                deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+                                showDeleteError = true
+                            }
+                            itemToDelete = nil
+                        }
+                    }
+                } message: {
+                    if let item = itemToDelete {
+                        Text(L10n.string("delete_location_confirm_message", item.decodedName))
+                    }
+                }
+                .alert(L10n.string("delete_failed"), isPresented: $showDeleteError) {
+                    Button(L10n.string("ok"), role: .cancel) {}
+                } message: {
+                    Text(deleteErrorMessage)
+                }
+                .overlay {
+                    if isDeleting {
+                        ProgressView(L10n.string("deleting"))
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
             }
         }
     }

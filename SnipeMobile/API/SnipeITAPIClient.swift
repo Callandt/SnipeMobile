@@ -52,7 +52,7 @@ class SnipeITAPIClient: ObservableObject {
     var baseURL: String {
         normalizeBaseURL(UserDefaults.standard.string(forKey: "baseURL") ?? "")
     }
-    private var apiToken: String {
+    var apiToken: String {
         KeychainSecretStore.string(for: .apiToken)
     }
 
@@ -245,7 +245,7 @@ class SnipeITAPIClient: ObservableObject {
         return collected
     }
 
-    private let urlSession: URLSession = {
+    let urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 1
         config.timeoutIntervalForRequest = 60
@@ -1202,14 +1202,30 @@ class SnipeITAPIClient: ObservableObject {
 
         enum CodingKeys: String, CodingKey {
             case assignedPivotId = "assigned_pivot_id"
-            case name, note
+            case name, note, qty
             case assignedQty = "assigned_qty"
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.assignedPivotId = try? container.decodeIfPresent(Int.self, forKey: .assignedPivotId)
-            self.assignedQty = try? container.decodeIfPresent(Int.self, forKey: .assignedQty)
+            if let pivot = try? container.decodeIfPresent(Int.self, forKey: .assignedPivotId) {
+                self.assignedPivotId = pivot
+            } else if let pivotStr = try? container.decodeIfPresent(String.self, forKey: .assignedPivotId),
+                      let pivot = Int(pivotStr) {
+                self.assignedPivotId = pivot
+            } else {
+                self.assignedPivotId = nil
+            }
+            if let qty = try? container.decodeIfPresent(Int.self, forKey: .assignedQty) {
+                self.assignedQty = qty
+            } else if let qtyStr = try? container.decodeIfPresent(String.self, forKey: .assignedQty),
+                      let qty = Int(qtyStr) {
+                self.assignedQty = qty
+            } else if let qty = try? container.decodeIfPresent(Int.self, forKey: .qty) {
+                self.assignedQty = qty
+            } else {
+                self.assignedQty = nil
+            }
             self.note = try? container.decodeIfPresent(String.self, forKey: .note)
             let asset = try? container.decodeIfPresent(NestedAsset.self, forKey: .name)
             self.assetId = asset?.id
@@ -1402,9 +1418,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Checks a component back in from an asset. `componentAssetId` is the pivot id
-    /// (`assigned_pivot_id`) from `GET /components/{id}/assets`, not the component id.
-    /// Returns nil on success, otherwise an error message.
+    // componentAssetId = assigned_pivot_id from /components/{id}/assets
     func checkinComponent(componentId: Int, componentAssetId: Int, quantity: Int) async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentAssetId)/checkin") else {
@@ -1500,22 +1514,30 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Accessories checked out to a hardware asset (`GET /hardware/{id}/assigned/accessories`).
+    /// GET /hardware/{id}/assigned/accessories
     func fetchAssetAccessories(assetId: Int) async -> [Accessory] {
-        await fetchAssignedAccessories(path: "/api/v1/hardware/\(assetId)/assigned/accessories")
+        await fetchAssignedAccessories(path: "/api/v1/hardware/\(assetId)/assigned/accessories").accessories
     }
 
-    /// Accessories checked out to a location (`GET /locations/{id}/assigned/accessories`).
+    /// GET /locations/{id}/assigned/accessories
     func fetchLocationAccessories(locationId: Int) async -> [Accessory] {
-        await fetchAssignedAccessories(path: "/api/v1/locations/\(locationId)/assigned/accessories")
+        await fetchAssignedAccessories(path: "/api/v1/locations/\(locationId)/assigned/accessories").accessories
     }
 
-    /// Assets checked out to a location (`GET /api/v1/locations/{id}/assets`).
+    func fetchAssetAccessoryCheckouts(assetId: Int) async -> [(accessoryId: Int, checkoutId: Int)] {
+        await fetchAssignedAccessories(path: "/api/v1/hardware/\(assetId)/assigned/accessories").checkouts
+    }
+
+    func fetchLocationAccessoryCheckouts(locationId: Int) async -> [(accessoryId: Int, checkoutId: Int)] {
+        await fetchAssignedAccessories(path: "/api/v1/locations/\(locationId)/assigned/accessories").checkouts
+    }
+
+    /// GET /locations/{id}/assigned/assets
     func fetchLocationAssets(locationId: Int) async -> [Asset] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         do {
             return try await fetchAllPaginated(
-                path: "/api/v1/locations/\(locationId)/assets",
+                path: "/api/v1/locations/\(locationId)/assigned/assets",
                 as: Asset.self
             ) ?? []
         } catch {
@@ -1523,9 +1545,9 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    private func fetchAssignedAccessories(path: String) async -> [Accessory] {
-        guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
-        guard let url = URL(string: "\(baseURL)\(path)") else { return [] }
+    private func fetchAssignedAccessories(path: String) async -> (accessories: [Accessory], checkouts: [(accessoryId: Int, checkoutId: Int)]) {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return ([], []) }
+        guard let url = URL(string: "\(baseURL)\(path)") else { return ([], []) }
 
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -1534,29 +1556,47 @@ class SnipeITAPIClient: ObservableObject {
 
         do {
             let (data, response) = try await urlSession.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return [] }
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return ([], []) }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let rows = json["rows"] as? [[String: Any]] else { return [] }
+                  let rows = json["rows"] as? [[String: Any]] else { return ([], []) }
 
-            var ids: [Int] = []
+            var checkouts: [(accessoryId: Int, checkoutId: Int)] = []
+            var accessoryIds: [Int] = []
             var seen = Set<Int>()
+
             for row in rows {
-                guard let accessoryDict = row["accessory"] as? [String: Any],
-                      let id = accessoryDict["id"] as? Int else { continue }
-                if seen.insert(id).inserted { ids.append(id) }
+                let accessoryDict = (row["accessory"] as? [String: Any])
+                    ?? (row["accessories"] as? [String: Any])
+                    ?? row
+                guard let accessoryId = accessoryDict["id"] as? Int else { continue }
+
+                let checkoutId =
+                    (row["assigned_pivot_id"] as? Int)
+                    ?? (row["pivot_id"] as? Int)
+                    ?? (row["id"] as? Int).flatMap { topId in
+                        // row.id is the pivot when accessory is nested
+                        (row["accessory"] != nil || row["accessories"] != nil) ? topId : nil
+                    }
+
+                if let checkoutId {
+                    checkouts.append((accessoryId: accessoryId, checkoutId: checkoutId))
+                }
+                if seen.insert(accessoryId).inserted {
+                    accessoryIds.append(accessoryId)
+                }
             }
 
             var results: [Accessory] = []
-            for id in ids {
+            for id in accessoryIds {
                 if let cached = self.accessories.first(where: { $0.id == id }) {
                     results.append(cached)
                 } else if let fetched = await self.fetchAccessoryDetails(accessoryId: id) {
                     results.append(fetched)
                 }
             }
-            return results
+            return (results, checkouts)
         } catch {
-            return []
+            return ([], [])
         }
     }
 
@@ -3294,70 +3334,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// DELETE asset. 405 → retry with method override.
-    func deleteAsset(assetId: Int) async -> Bool {
-        guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        do {
-            #if DEBUG
-            print("[SnipeMobile] DELETE /hardware/\(assetId) — request started")
-            #endif
-            var (data, response) = try await urlSession.data(for: request)
-            var httpResponse = response as? HTTPURLResponse
-
-            if httpResponse?.statusCode == 405 {
-                #if DEBUG
-                print("[SnipeMobile] DELETE /hardware/\(assetId) — 405 ontvangen, retry met POST + _method=DELETE (Laravel method spoofing)")
-                #endif
-                var postRequest = URLRequest(url: url)
-                postRequest.httpMethod = "POST"
-                postRequest.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-                postRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-                postRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-                postRequest.httpBody = "_method=DELETE".data(using: .utf8)
-                (data, response) = try await urlSession.data(for: postRequest)
-                httpResponse = response as? HTTPURLResponse
-            }
-
-            guard let httpResponse = httpResponse else {
-                #if DEBUG
-                print("[SnipeMobile] DELETE /hardware/\(assetId) — geen HTTP-response")
-                #endif
-                await MainActor.run { self.lastApiMessage = "Geen geldige HTTP-response." }
-                return false
-            }
-            #if DEBUG
-            let responseStr = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
-            print("[SnipeMobile] DELETE /hardware/\(assetId) status=\(httpResponse.statusCode) response=\(responseStr.prefix(400))")
-            #endif
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let result = Self.evaluateWriteResponse(
-                json: json,
-                httpStatus: httpResponse.statusCode,
-                defaultSuccessMessage: "Asset verwijderd.",
-                defaultFailureMessage: "Verwijderen mislukt."
-            )
-            await MainActor.run { self.lastApiMessage = result.message }
-            guard result.success else { return false }
-            await MainActor.run {
-                self.assets.removeAll { $0.id == assetId }
-            }
-            #if DEBUG
-            print("[SnipeMobile] DELETE /hardware/\(assetId) — succes, uit cache verwijderd")
-            #endif
-            return true
-        } catch {
-            #if DEBUG
-            print("[SnipeMobile] DELETE /hardware/\(assetId) error: \(error)")
-            #endif
-            await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
-            return false
-        }
-    }
-
     func updateAsset(assetId: Int, update: AssetUpdateRequest, image: UIImage? = nil) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
         do {
@@ -4317,13 +4293,15 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    // Path id is the checkout pivot id, not the accessory id.
     func checkinAccessory(accessoryId: Int, checkedoutId: Int) async -> Bool {
-        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkin") else { return false }
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(checkedoutId)/checkin") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = ["checkedout_id": checkedoutId]
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let body: [String: Any] = ["note": ""]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
@@ -4335,7 +4313,7 @@ class SnipeITAPIClient: ObservableObject {
                 defaultSuccessMessage: "Check-in successful.",
                 defaultFailureMessage: "Check-in failed."
             )
-            await MainActor.run { self.lastApiMessage = result.message }
+            lastApiMessage = result.message
             guard result.success else { return false }
             await refreshAccessoryInCache(accessoryId: accessoryId)
             syncAllInBackground()

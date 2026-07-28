@@ -17,6 +17,11 @@ struct UserDetailView: View {
     @State private var userAccessories: [Accessory] = []
     @State private var userLicenses: [License] = []
     @State private var userConsumables: [Consumable] = []
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var showDeleteError = false
+    @State private var deleteErrorMessage = ""
+    @Environment(\.dismiss) private var dismiss
 
     private var currentUser: User {
         apiClient.users.first { $0.id == user.id } ?? user
@@ -171,7 +176,18 @@ struct UserDetailView: View {
                 Button { showEditSheet = true } label: {
                     Image(systemName: "pencil")
                 }
+                .disabled(isDeleting)
                 .accessibilityLabel(L10n.string("edit"))
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                }
+                .disabled(isDeleting)
+                .accessibilityLabel(L10n.string("delete"))
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/users/\(user.id)") {
@@ -181,6 +197,15 @@ struct UserDetailView: View {
                 }
             }
         }
+        .entityDeleteSupport(
+            showConfirm: $showDeleteConfirm,
+            isDeleting: $isDeleting,
+            showError: $showDeleteError,
+            errorMessage: $deleteErrorMessage,
+            confirmTitle: L10n.string("delete_item_confirm_title", displayName),
+            confirmMessage: L10n.string("delete_user_confirm_message", displayName),
+            onDelete: { await deleteCurrentUser() }
+        )
         .sheet(isPresented: $showEditSheet) {
             UserEditSheet(
                 apiClient: apiClient,
@@ -311,6 +336,18 @@ struct UserDetailView: View {
             }
         }
         .padding(.horizontal)
+    }
+
+    private func deleteCurrentUser() async {
+        isDeleting = true
+        let ok = await apiClient.deleteUser(userId: user.id)
+        isDeleting = false
+        if ok {
+            dismiss()
+        } else {
+            deleteErrorMessage = apiClient.lastApiMessage ?? L10n.string("delete_failed")
+            showDeleteError = true
+        }
     }
 
     private func reloadAssignedItems() async {
