@@ -397,7 +397,22 @@ class SnipeITAPIClient: ObservableObject {
             await self.fetchCompanies()
             await self.fetchStatusLabels()
             await self.fetchAssetTagSettings()
+            await self.fetchManufacturers()
+            await self.fetchCategories()
+            await self.fetchSuppliers()
+            await self.fetchModels()
         }
+    }
+
+    /// Refreshes lookup lists used by list filters (categories, manufacturers, …).
+    func fetchListFilterCatalogs() async {
+        await fetchCategories()
+        await fetchManufacturers()
+        await fetchLocations()
+        await fetchCompanies()
+        await fetchSuppliers()
+        await fetchModels()
+        await fetchStatusLabels()
     }
 
     // MARK: - Immediate cache refresh after check-in/out

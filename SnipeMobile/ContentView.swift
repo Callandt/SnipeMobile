@@ -945,7 +945,14 @@ struct HardwareTab: View {
     @State private var assetFilter = AssetFilter()
 
     private var assetFilterOptions: AssetFilterOptions {
-        AssetFilterOptions(assets: apiClient.assets, statusLabels: apiClient.statusLabels)
+        AssetFilterOptions(
+            assets: apiClient.assets,
+            statusLabels: apiClient.statusLabels,
+            categoryNames: apiClient.categories(for: "asset").map { HTMLDecoder.decode($0.name) },
+            modelNames: apiClient.models.map { HTMLDecoder.decode($0.name) },
+            manufacturerNames: apiClient.manufacturers.map { HTMLDecoder.decode($0.name) },
+            locationNames: apiClient.locations.map(\.decodedName)
+        )
     }
 
     private var searchFilteredAssets: [Asset] {
@@ -1038,8 +1045,12 @@ struct HardwareTab: View {
                     hasLoadedInitialAssets = true
                 }
             }
-            if apiClient.isConfigured && apiClient.statusLabels.isEmpty {
-                Task { await apiClient.fetchStatusLabels() }
+            if apiClient.isConfigured,
+               apiClient.statusLabels.isEmpty
+                || apiClient.manufacturers.isEmpty
+                || apiClient.categories.isEmpty
+                || apiClient.models.isEmpty {
+                Task { await apiClient.fetchListFilterCatalogs() }
             }
             tryPushPendingQRLink()
         }
@@ -1211,7 +1222,7 @@ struct HardwareTab: View {
                     await loadAllMaintenances(force: true)
                 } else {
                     await apiClient.fetchAssets()
-                    await apiClient.fetchStatusLabels()
+                    await apiClient.fetchListFilterCatalogs()
                 }
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 isRefreshing = false
@@ -1730,6 +1741,7 @@ struct AccessoriesTab: View {
                 if apiClient.isConfigured {
                     isRefreshing = true
                     await apiClient.fetchAccessories()
+                    await apiClient.fetchListFilterCatalogs()
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     isRefreshing = false
                 }
@@ -1790,6 +1802,7 @@ struct LicensesTab: View {
                 if apiClient.isConfigured {
                     isRefreshing = true
                     await apiClient.fetchLicenses()
+                    await apiClient.fetchListFilterCatalogs()
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     isRefreshing = false
                 }
@@ -1846,7 +1859,36 @@ private struct LicensesContent: View {
     }
 
     private var filterOptions: [(title: String, values: [String])] {
-        listFilterOptions(apiClient.licenses, dimensions: dimensions)
+        [
+            (
+                L10n.string("category"),
+                listFilterValues(
+                    catalog: apiClient.categories(for: "license").map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.licenses.map(\.decodedCategoryName)
+                )
+            ),
+            (
+                L10n.string("manufacturer"),
+                listFilterValues(
+                    catalog: apiClient.manufacturers.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.licenses.map(\.decodedManufacturerName)
+                )
+            ),
+            (
+                L10n.string("supplier"),
+                listFilterValues(
+                    catalog: apiClient.suppliers.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.licenses.map(\.decodedSupplierName)
+                )
+            ),
+            (
+                L10n.string("company"),
+                listFilterValues(
+                    catalog: apiClient.companies.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.licenses.map(\.decodedCompanyName)
+                )
+            )
+        ]
     }
 
     var filteredLicenses: [License] {
@@ -2081,6 +2123,7 @@ struct StockTab: View {
                     } else {
                         await apiClient.fetchComponents()
                     }
+                    await apiClient.fetchListFilterCatalogs()
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     isRefreshing = false
                 }
@@ -2168,7 +2211,36 @@ private struct ConsumablesContent: View {
     }
 
     private var filterOptions: [(title: String, values: [String])] {
-        listFilterOptions(apiClient.consumables, dimensions: dimensions)
+        [
+            (
+                L10n.string("category"),
+                listFilterValues(
+                    catalog: apiClient.categories(for: "consumable").map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.consumables.map(\.decodedCategoryName)
+                )
+            ),
+            (
+                L10n.string("manufacturer"),
+                listFilterValues(
+                    catalog: apiClient.manufacturers.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.consumables.map(\.decodedManufacturerName)
+                )
+            ),
+            (
+                L10n.string("company"),
+                listFilterValues(
+                    catalog: apiClient.companies.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.consumables.map(\.decodedCompanyName)
+                )
+            ),
+            (
+                L10n.string("location"),
+                listFilterValues(
+                    catalog: apiClient.locations.map(\.decodedName),
+                    itemValues: apiClient.consumables.map(\.decodedLocationName)
+                )
+            )
+        ]
     }
 
     var filteredConsumables: [Consumable] {
@@ -2312,7 +2384,36 @@ private struct ComponentsContent: View {
     }
 
     private var filterOptions: [(title: String, values: [String])] {
-        listFilterOptions(apiClient.components, dimensions: dimensions)
+        [
+            (
+                L10n.string("category"),
+                listFilterValues(
+                    catalog: apiClient.categories(for: "component").map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.components.map(\.decodedCategoryName)
+                )
+            ),
+            (
+                L10n.string("manufacturer"),
+                listFilterValues(
+                    catalog: apiClient.manufacturers.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.components.map(\.decodedManufacturerName)
+                )
+            ),
+            (
+                L10n.string("company"),
+                listFilterValues(
+                    catalog: apiClient.companies.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.components.map(\.decodedCompanyName)
+                )
+            ),
+            (
+                L10n.string("location"),
+                listFilterValues(
+                    catalog: apiClient.locations.map(\.decodedName),
+                    itemValues: apiClient.components.map(\.decodedLocationName)
+                )
+            )
+        ]
     }
 
     var filteredComponents: [Component] {
@@ -2503,7 +2604,29 @@ private struct AccessoriesContent: View {
     }
 
     private var filterOptions: [(title: String, values: [String])] {
-        listFilterOptions(apiClient.accessories, dimensions: dimensions)
+        [
+            (
+                L10n.string("category"),
+                listFilterValues(
+                    catalog: apiClient.categories(for: "accessory").map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.accessories.map(\.decodedCategoryName)
+                )
+            ),
+            (
+                L10n.string("manufacturer"),
+                listFilterValues(
+                    catalog: apiClient.manufacturers.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.accessories.map(\.decodedManufacturerName)
+                )
+            ),
+            (
+                L10n.string("location"),
+                listFilterValues(
+                    catalog: apiClient.locations.map(\.decodedName),
+                    itemValues: apiClient.accessories.map(\.decodedLocationName)
+                )
+            )
+        ]
     }
 
     var filteredAccessories: [Accessory] {
@@ -2760,6 +2883,7 @@ struct DirectoryTab: View {
                     switch selectedSubmodule {
                     case .users:
                         await apiClient.fetchUsers()
+                        await apiClient.fetchListFilterCatalogs()
                     case .locations:
                         await apiClient.fetchLocations()
                     }
@@ -2795,7 +2919,26 @@ private struct UsersContent: View {
     }
 
     private var filterOptions: [(title: String, values: [String])] {
-        listFilterOptions(apiClient.users, dimensions: dimensions)
+        [
+            (
+                L10n.string("company"),
+                listFilterValues(
+                    catalog: apiClient.companies.map { HTMLDecoder.decode($0.name) },
+                    itemValues: apiClient.users.map(\.decodedCompanyName)
+                )
+            ),
+            (
+                L10n.string("location"),
+                listFilterValues(
+                    catalog: apiClient.locations.map(\.decodedName),
+                    itemValues: apiClient.users.map(\.decodedLocationName)
+                )
+            ),
+            (
+                L10n.string("job_title"),
+                distinctSortedFilterValues(apiClient.users.map(\.decodedJobtitle))
+            )
+        ]
     }
 
     var filteredUsers: [User] {

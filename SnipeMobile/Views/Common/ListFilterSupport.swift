@@ -25,14 +25,24 @@ struct ListFilter: Equatable {
     }
 }
 
+/// Distinct, sorted filter values. Prefer a Snipe-IT catalog when available; otherwise fall back to values on loaded items.
+func listFilterValues(catalog: [String], itemValues: [String]) -> [String] {
+    let fromCatalog = distinctSortedFilterValues(catalog)
+    if !fromCatalog.isEmpty { return fromCatalog }
+    return distinctSortedFilterValues(itemValues)
+}
+
+func distinctSortedFilterValues(_ values: [String]) -> [String] {
+    let cleaned = values
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+    return Array(Set(cleaned)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+}
+
 // distinct, sorted values per dimension, derived from the loaded items
 func listFilterOptions<Item>(_ items: [Item], dimensions: [FilterDimension<Item>]) -> [(title: String, values: [String])] {
     dimensions.map { dim in
-        let cleaned = items
-            .map { dim.value($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let values = Array(Set(cleaned)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        return (dim.title, values)
+        (dim.title, distinctSortedFilterValues(items.map { dim.value($0) }))
     }
 }
 

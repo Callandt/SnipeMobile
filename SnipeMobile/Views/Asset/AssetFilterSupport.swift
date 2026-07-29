@@ -59,7 +59,7 @@ struct AssetFilter: Equatable {
     }
 }
 
-// distinct values per dimension, derived from the loaded assets
+// Filter options prefer Snipe-IT catalogs; fall back to values present on loaded assets.
 struct AssetFilterOptions {
     let statusLabels: [StatusLabel]
     let showDeployed: Bool
@@ -77,32 +77,32 @@ struct AssetFilterOptions {
         showDeployed || !statusLabels.isEmpty
     }
 
-    init(assets: [Asset], statusLabels: [StatusLabel]) {
+    init(
+        assets: [Asset],
+        statusLabels: [StatusLabel],
+        categoryNames: [String] = [],
+        modelNames: [String] = [],
+        manufacturerNames: [String] = [],
+        locationNames: [String] = []
+    ) {
         showDeployed = assets.contains { $0.assignedTo != nil }
-        categories = AssetFilterOptions.distinct(assets.map(\.decodedCategoryName))
-        models = AssetFilterOptions.distinct(assets.map(\.decodedModelName))
-        manufacturers = AssetFilterOptions.distinct(assets.map(\.decodedManufacturerName))
-        locations = AssetFilterOptions.distinct(assets.map(\.decodedLocationName))
+        categories = listFilterValues(catalog: categoryNames, itemValues: assets.map(\.decodedCategoryName))
+        models = listFilterValues(catalog: modelNames, itemValues: assets.map(\.decodedModelName))
+        manufacturers = listFilterValues(catalog: manufacturerNames, itemValues: assets.map(\.decodedManufacturerName))
+        locations = listFilterValues(catalog: locationNames, itemValues: assets.map(\.decodedLocationName))
 
-        var seenStatusIds = Set<Int>()
-        var labelsFromAssets: [StatusLabel] = []
-        for asset in assets {
-            let id = asset.statusLabel.id
-            guard seenStatusIds.insert(id).inserted else { continue }
-            if let full = statusLabels.first(where: { $0.id == id }) {
-                labelsFromAssets.append(full)
-            } else {
+        if !statusLabels.isEmpty {
+            self.statusLabels = AssetStatusFilterSupport.sortedStatusLabels(statusLabels)
+        } else {
+            var seenStatusIds = Set<Int>()
+            var labelsFromAssets: [StatusLabel] = []
+            for asset in assets {
+                let id = asset.statusLabel.id
+                guard seenStatusIds.insert(id).inserted else { continue }
                 labelsFromAssets.append(asset.statusLabel)
             }
+            self.statusLabels = AssetStatusFilterSupport.sortedStatusLabels(labelsFromAssets)
         }
-        self.statusLabels = AssetStatusFilterSupport.sortedStatusLabels(labelsFromAssets)
-    }
-
-    private static func distinct(_ values: [String]) -> [String] {
-        let cleaned = values
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return Array(Set(cleaned)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 }
 
