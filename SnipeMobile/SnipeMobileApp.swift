@@ -166,6 +166,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         KeychainSecretStore.migrateLegacyUserDefaultsSecretsIfNeeded()
         KeychainSecretStore.migrateLocalSecretsToICloudKeychainIfNeeded()
         CloudSettingsStore.shared.mergeFromCloud()
+        DebugLogStore.shared.startIfNeeded()
+        AppLog.info("App launch", category: "app")
     }
     @StateObject private var apiClient = SnipeITAPIClient()
     @StateObject private var appSettings = AppSettings()

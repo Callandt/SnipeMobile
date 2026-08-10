@@ -160,29 +160,40 @@ struct AssetDetailView: View {
         return apiClient.assets.first { $0.id == id }
     }
 
-    private var computedWarrantyExpires: String? {
+    /// Prefer API `warranty_expires`; fall back to purchase date + warranty months.
+    private var warrantyExpiresDate: Date? {
+        if let raw = currentAsset.warrantyExpires?.date
+            ?? currentAsset.warrantyExpires?.datetime
+            ?? currentAsset.warrantyExpires?.formatted,
+           let parsed = DateInfo.parseAPIDate(raw) {
+            return Calendar.current.startOfDay(for: parsed)
+        }
+
         guard
             let purchaseDateString = currentAsset.purchaseDate?.date,
             let warrantyMonthsRaw = currentAsset.warrantyMonths,
             let warrantyMonths = Int(warrantyMonthsRaw.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()),
-            warrantyMonths > 0
+            warrantyMonths > 0,
+            let purchaseDate = DateInfo.parseAPIDate(purchaseDateString),
+            let expiresDate = Calendar.current.date(byAdding: .month, value: warrantyMonths, to: purchaseDate)
         else {
             return nil
         }
+        return Calendar.current.startOfDay(for: expiresDate)
+    }
 
-        let inputFormatter = DateFormatter()
-        inputFormatter.dateFormat = "yyyy-MM-dd"
-        inputFormatter.timeZone = TimeZone(secondsFromGMT: 0)
-        guard let purchaseDate = inputFormatter.date(from: purchaseDateString) else { return nil }
-
-        guard let expiresDate = Calendar.current.date(byAdding: .month, value: warrantyMonths, to: purchaseDate) else {
-            return nil
-        }
-
+    private var computedWarrantyExpires: String? {
+        guard let expiresDate = warrantyExpiresDate else { return nil }
         let outputFormatter = DateFormatter()
+        outputFormatter.locale = L10n.locale
         outputFormatter.dateStyle = .medium
         outputFormatter.timeStyle = .none
         return outputFormatter.string(from: expiresDate)
+    }
+
+    private var isWarrantyExpired: Bool {
+        guard let expiresDate = warrantyExpiresDate else { return false }
+        return expiresDate < Calendar.current.startOfDay(for: Date())
     }
 
     private func displayDate(_ dateInfo: DateInfo?) -> String? {
@@ -822,8 +833,8 @@ struct AssetDetailView: View {
                                 if let v = currentAsset.expectedCheckin?.formatted, !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("expected_checkin"), value: v)
                                 }
-                                if let v = computedWarrantyExpires, !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("warranty_expires"), value: v)
+                                if warrantyExpiresDate != nil {
+                                    warrantyExpiresRow()
                                 }
                                 if let v = displayDate(currentAsset.assetEolDate), !v.isEmpty {
                                     copyableDetailRow(label: L10n.string("eol_date"), value: v)
@@ -915,6 +926,58 @@ struct AssetDetailView: View {
             Button(action: {
                 UIPasteboard.general.string = toCopy
             }) {
+                Label(L10n.string("copy"), systemImage: "doc.on.doc")
+            }
+        }
+    }
+
+    /// Date + status badge (active/expired), similar to Snipe-IT web.
+    @ViewBuilder
+    private func warrantyExpiresRow() -> some View {
+        let dateText = computedWarrantyExpires ?? ""
+        let expired = isWarrantyExpired
+        let statusColor: Color = expired ? .orange : .green
+        let statusIcon = expired ? "exclamationmark.triangle.fill" : "checkmark.shield.fill"
+        let statusTitle = expired
+            ? L10n.string("warranty_expired")
+            : L10n.string("warranty_under_warranty")
+        let copyText = dateText.isEmpty ? statusTitle : dateText
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(L10n.string("warranty_expires")).bold()
+                if expired {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+                }
+            }
+            if !dateText.isEmpty {
+                Text(dateText)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 4) {
+                Image(systemName: statusIcon)
+                    .font(.caption2)
+                Text(statusTitle)
+                    .lineLimit(1)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(statusColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(statusColor.opacity(0.12), in: Capsule())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(statusTitle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = copyText
+            } label: {
                 Label(L10n.string("copy"), systemImage: "doc.on.doc")
             }
         }

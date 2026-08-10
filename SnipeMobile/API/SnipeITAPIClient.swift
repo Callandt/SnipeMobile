@@ -195,9 +195,9 @@ class SnipeITAPIClient: ObservableObject {
                 // Server unreachable / timeout / certificate failure.
                 // Keep cached data, surface a notice.
                 if reportConnectionError {
-                    self.refreshErrorMessage = Self.isTLSCertificateError(error)
-                        ? L10n.string("refresh_failed_certificate")
-                        : L10n.string("refresh_failed_unreachable")
+                    let kind = Self.connectionFailureKind(from: error)
+                    AppLog.network("GET \(path) failed kind=\(kind.rawValue)")
+                    self.refreshErrorMessage = Self.localizedConnectionFailureMessage(from: error)
                     return nil
                 }
                 throw error
@@ -215,9 +215,8 @@ class SnipeITAPIClient: ObservableObject {
                     print("[SnipeMobile] paginated GET \(path) status=\(http.statusCode) body=\(preview)")
                     #endif
                     if reportConnectionError {
-                        self.refreshErrorMessage = http.statusCode == 503
-                            ? L10n.string("refresh_failed_maintenance")
-                            : L10n.string("refresh_failed_unreachable")
+                        AppLog.network("GET \(path) HTTP \(http.statusCode)")
+                        self.refreshErrorMessage = Self.localizedHTTPFailureMessage(statusCode: http.statusCode)
                     }
                     return nil
                 }
@@ -255,33 +254,90 @@ class SnipeITAPIClient: ObservableObject {
 
     // TLS/SSL cert failure (not just unreachable).
     static func isTLSCertificateError(_ error: Error) -> Bool {
-        let codes: Set<URLError.Code> = [
-            .secureConnectionFailed,
-            .serverCertificateHasBadDate,
-            .serverCertificateUntrusted,
-            .serverCertificateHasUnknownRoot,
-            .serverCertificateNotYetValid,
-            .clientCertificateRejected,
-            .clientCertificateRequired
-        ]
-        if let urlError = error as? URLError, codes.contains(urlError.code) {
-            return true
+        connectionFailureKind(from: error) == .tls
+    }
+
+    /// Coarse connection failure category for user-facing messages (no hostnames).
+    enum ConnectionFailureKind: String {
+        case noNetwork
+        case dns
+        case hostUnreachable
+        case timeout
+        case tls
+        case httpBlocked
+        case cancelled
+        case other
+    }
+
+    static func connectionFailureKind(from error: Error) -> ConnectionFailureKind {
+        let urlError = error as? URLError
+        let code = urlError?.code ?? URLError.Code(rawValue: (error as NSError).code)
+
+        if (error as NSError).domain == NSURLErrorDomain || urlError != nil {
+            switch code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff:
+                return .noNetwork
+            case .dnsLookupFailed, .cannotFindHost:
+                return .dns
+            case .cannotConnectToHost:
+                return .hostUnreachable
+            case .timedOut:
+                return .timeout
+            case .secureConnectionFailed,
+                 .serverCertificateHasBadDate,
+                 .serverCertificateUntrusted,
+                 .serverCertificateHasUnknownRoot,
+                 .serverCertificateNotYetValid,
+                 .clientCertificateRejected,
+                 .clientCertificateRequired:
+                return .tls
+            case .appTransportSecurityRequiresSecureConnection:
+                return .httpBlocked
+            case .cancelled:
+                return .cancelled
+            default:
+                break
+            }
         }
-        // NSError fallback.
-        let nsError = error as NSError
-        if nsError.domain == NSURLErrorDomain {
-            let certCodes: Set<Int> = [
-                NSURLErrorSecureConnectionFailed,
-                NSURLErrorServerCertificateHasBadDate,
-                NSURLErrorServerCertificateUntrusted,
-                NSURLErrorServerCertificateHasUnknownRoot,
-                NSURLErrorServerCertificateNotYetValid,
-                NSURLErrorClientCertificateRejected,
-                NSURLErrorClientCertificateRequired
-            ]
-            return certCodes.contains(nsError.code)
+        return .other
+    }
+
+    static func localizedConnectionFailureMessage(from error: Error) -> String {
+        switch connectionFailureKind(from: error) {
+        case .noNetwork:
+            return L10n.string("api_connect_no_network")
+        case .dns:
+            return L10n.string("api_connect_dns")
+        case .hostUnreachable:
+            return L10n.string("api_connect_host_unreachable")
+        case .timeout:
+            return L10n.string("api_connect_timeout")
+        case .tls:
+            return L10n.string("api_connect_tls")
+        case .httpBlocked:
+            return L10n.string("api_validate_http_blocked")
+        case .cancelled:
+            return L10n.string("api_connect_cancelled")
+        case .other:
+            return L10n.string("api_validate_connect_failed")
         }
-        return false
+    }
+
+    static func localizedHTTPFailureMessage(statusCode: Int) -> String {
+        switch statusCode {
+        case 401, 403:
+            return L10n.string("api_validate_unauthorized")
+        case 404:
+            return L10n.string("api_validate_not_found")
+        case 429:
+            return L10n.string("api_connect_rate_limited")
+        case 502, 504:
+            return L10n.string("api_connect_bad_gateway")
+        case 503:
+            return L10n.string("refresh_failed_maintenance")
+        default:
+            return L10n.string("api_validate_http", statusCode)
+        }
     }
 
     private var fetchCurrentUserTask: Task<Void, Never>? = nil
@@ -330,6 +386,7 @@ class SnipeITAPIClient: ObservableObject {
 
     func saveConfiguration(baseURL: String, apiToken: String) {
         let normalizedBaseURL = normalizeBaseURL(baseURL)
+        let normalizedToken = normalizeApiToken(apiToken)
         let isDifferentServer = normalizedBaseURL != self.baseURL
         if isDifferentServer {
             cacheSaveTask?.cancel()
@@ -340,22 +397,54 @@ class SnipeITAPIClient: ObservableObject {
             maintenanceTypesMode = .unknown
         }
         UserDefaults.standard.set(normalizedBaseURL, forKey: "baseURL")
-        KeychainSecretStore.set(apiToken, for: .apiToken)
+        KeychainSecretStore.set(normalizedToken, for: .apiToken)
         UserDefaults.standard.removeObject(forKey: "apiToken")
         self.isConfigured = true
-        CloudSettingsStore.shared.writeAPIConfiguration(baseURL: normalizedBaseURL, apiToken: apiToken, isConfigured: true)
+        CloudSettingsStore.shared.writeAPIConfiguration(
+            baseURL: normalizedBaseURL,
+            apiToken: normalizedToken,
+            isConfigured: true
+        )
+        AppLog.network("Saved API config scheme=\(URL(string: normalizedBaseURL)?.scheme ?? "(none)") tokenLength=\(normalizedToken.count)")
 
         Task {
             await fetchPrimaryThenBackground()
         }
     }
 
+    /// Accepts pasted URLs with/without scheme, trailing slash, or `/api/v1`.
     private func normalizeBaseURL(_ value: String) -> String {
         var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") {
             trimmed.removeLast()
         }
+        guard !trimmed.isEmpty else { return trimmed }
+
+        let lower = trimmed.lowercased()
+        if !lower.hasPrefix("http://"), !lower.hasPrefix("https://") {
+            trimmed = "https://\(trimmed)"
+        }
+
+        let pathSuffixes = ["/index.php/api/v1", "/index.php/api", "/api/v1", "/api", "/index.php"]
+        for suffix in pathSuffixes {
+            if trimmed.lowercased().hasSuffix(suffix) {
+                trimmed = String(trimmed.dropLast(suffix.count))
+                break
+            }
+        }
+        while trimmed.hasSuffix("/") {
+            trimmed.removeLast()
+        }
         return trimmed
+    }
+
+    /// Trims paste noise and strips a duplicated `Bearer ` prefix.
+    private func normalizeApiToken(_ value: String) -> String {
+        var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if token.count >= 7, token.prefix(7).lowercased() == "bearer " {
+            token = String(token.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return token
     }
 
     // Reused so overlapping callers (e.g. two onAppear triggers) await the same
@@ -4368,23 +4457,43 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func validateApiCredentials() async -> String? {
-        guard !baseURL.isEmpty, !apiToken.isEmpty else { return "Please enter both API URL and API Key." }
-        guard let url = URL(string: "\(baseURL)/api/v1/users") else { return "Invalid URL format." }
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            return L10n.string("api_validate_missing")
+        }
+        guard let url = URL(string: "\(baseURL)/api/v1/users?limit=1"),
+              url.scheme == "http" || url.scheme == "https",
+              url.host != nil
+        else {
+            return L10n.string("api_validate_invalid_url")
+        }
+
+        AppLog.network("Validating API credentials scheme=\(url.scheme ?? "?")")
+
         var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (_, response) = try await urlSession.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                return nil // OK
-            } else {
-                return "Invalid API credentials or URL."
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                AppLog.network("Validate: non-HTTP response")
+                return L10n.string("api_validate_connect_failed")
+            }
+
+            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "(none)"
+            AppLog.network("Validate HTTP \(httpResponse.statusCode) bytes=\(data.count) contentType=\(contentType)")
+
+            switch httpResponse.statusCode {
+            case 200...299:
+                return nil
+            default:
+                return Self.localizedHTTPFailureMessage(statusCode: httpResponse.statusCode)
             }
         } catch {
-            if Self.isTLSCertificateError(error) {
-                return L10n.string("refresh_failed_certificate")
-            }
-            return "Could not connect to Snipe-IT. Check your URL and API key."
+            let kind = Self.connectionFailureKind(from: error)
+            AppLog.network("Validate failed kind=\(kind.rawValue)")
+            return Self.localizedConnectionFailureMessage(from: error)
         }
     }
 

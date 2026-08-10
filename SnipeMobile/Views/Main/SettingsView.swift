@@ -2,7 +2,8 @@ import SwiftUI
 import LocalAuthentication
 import StoreKit
 import UIKit
-
+import LinkPresentation
+import UniformTypeIdentifiers
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.openURL) private var openURL
@@ -37,6 +38,9 @@ struct SettingsView: View {
     @State private var versionDisplay = AppInfo.versionBase
     @State private var appChannel: AppInfo.Channel = .debug
     @State private var showSupportMailUnavailable = false
+    @State private var showDebugExportError = false
+    @State private var showDebugExportConfirm = false
+    @State private var isExportingDebug = false
 
     /// Device has iCloud.
     private var isICloudAvailable: Bool {
@@ -226,6 +230,25 @@ struct SettingsView: View {
                 Button(L10n.string("ok"), role: .cancel) {}
             } message: {
                 Text(L10n.string("settings_support_mail_unavailable"))
+            }
+            .alert(
+                L10n.string("debug_export_failed_title"),
+                isPresented: $showDebugExportError
+            ) {
+                Button(L10n.string("ok"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("debug_export_failed"))
+            }
+            .alert(
+                L10n.string("debug_export_confirm_title"),
+                isPresented: $showDebugExportConfirm
+            ) {
+                Button(L10n.string("cancel"), role: .cancel) {}
+                Button(L10n.string("debug_export_confirm_action")) {
+                    exportDebugZip()
+                }
+            } message: {
+                Text(L10n.string("debug_export_confirm_message"))
             }
         }
     }
@@ -419,6 +442,18 @@ struct SettingsView: View {
                 )
             }
             .tint(.primary)
+            Button {
+                showDebugExportConfirm = true
+            } label: {
+                SettingsRow(
+                    icon: "archivebox.fill",
+                    iconColor: .orange,
+                    title: L10n.string("debug_export"),
+                    value: isExportingDebug ? L10n.string("debug_export_working") : nil
+                )
+            }
+            .disabled(isExportingDebug)
+            .tint(.primary)
             Button(role: .destructive) {
                 showResetConfirm = true
             } label: {
@@ -433,7 +468,7 @@ struct SettingsView: View {
         } header: {
             Text(L10n.string("settings_about"))
         } footer: {
-            Text(L10n.string("reset_data_footer_short"))
+            Text(L10n.string("debug_export_footer"))
         }
     }
 
@@ -478,9 +513,27 @@ struct SettingsView: View {
     }
 
     private func apiCredentialsChanged(storedURL: String, storedToken: String) -> Bool {
-        var trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        normalizeURLForCompare(baseURL) != storedURL
+            || apiToken.trimmingCharacters(in: .whitespacesAndNewlines) != storedToken
+    }
+
+    private func normalizeURLForCompare(_ value: String) -> String {
+        // Mirror SnipeITAPIClient.normalizeBaseURL for dirty-check;
+        // saveConfiguration applies the real normalizer.
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return trimmed != storedURL || apiToken != storedToken
+        if !trimmed.isEmpty,
+           !trimmed.lowercased().hasPrefix("http://"),
+           !trimmed.lowercased().hasPrefix("https://") {
+            trimmed = "https://\(trimmed)"
+        }
+        let suffixes = ["/index.php/api/v1", "/index.php/api", "/api/v1", "/api", "/index.php"]
+        for suffix in suffixes where trimmed.lowercased().hasSuffix(suffix) {
+            trimmed = String(trimmed.dropLast(suffix.count))
+            break
+        }
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        return trimmed
     }
 
     private func openSupportMail() {
@@ -492,6 +545,27 @@ struct SettingsView: View {
             return
         }
         openURL(url)
+    }
+
+    private func exportDebugZip() {
+        guard !isExportingDebug else { return }
+        isExportingDebug = true
+        AppLog.info("User requested debug zip export", category: "debug")
+        Task { @MainActor in
+            do {
+                let url = try await DebugLogStore.shared.exportZip(
+                    apiClient: apiClient,
+                    appChannel: appChannel
+                )
+                // Wait for the confirm alert to finish dismissing before presenting UIKit share UI.
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                DebugZipSharePresenter.present(url: url)
+            } catch {
+                AppLog.info("Debug zip export failed: \(error.localizedDescription)", category: "debug")
+                showDebugExportError = true
+            }
+            isExportingDebug = false
+        }
     }
 
     private func authenticateBiometric(completion: @escaping (Bool) -> Void) {
@@ -707,6 +781,116 @@ enum AppInfo {
     }
 }
 
+/// Presents the system share sheet from UIKit (not a SwiftUI sheet — that breaks file sharing).
+private enum DebugZipSharePresenter {
+    static func present(url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              !data.isEmpty
+        else {
+            AppLog.info("Debug zip missing on disk before share", category: "debug")
+            return
+        }
+
+        let item = DebugZipActivityItem(fileName: url.lastPathComponent, data: data)
+        let controller = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+        controller.excludedActivityTypes = [
+            .addToReadingList,
+            .assignToContact
+        ]
+
+        guard let presenter = topViewController() else {
+            AppLog.info("No view controller to present debug share sheet", category: "debug")
+            return
+        }
+
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(
+                x: presenter.view.bounds.midX,
+                y: presenter.view.bounds.midY,
+                width: 0,
+                height: 0
+            )
+            popover.permittedArrowDirections = []
+        }
+
+        presenter.present(controller, animated: true)
+    }
+
+    private static func topViewController(
+        base: UIViewController? = {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            let window = scenes
+                .flatMap(\.windows)
+                .first(where: \.isKeyWindow)
+            return window?.rootViewController
+        }()
+    ) -> UIViewController? {
+        if let nav = base as? UINavigationController {
+            return topViewController(base: nav.visibleViewController)
+        }
+        if let tab = base as? UITabBarController {
+            return topViewController(base: tab.selectedViewController)
+        }
+        if let presented = base?.presentedViewController {
+            return topViewController(base: presented)
+        }
+        return base
+    }
+}
+
+/// Shares zip bytes + filename so Mail / Files / AirDrop don't depend on sandbox file URLs.
+private final class DebugZipActivityItem: NSObject, UIActivityItemSource {
+    let fileName: String
+    let data: Data
+
+    init(fileName: String, data: Data) {
+        self.fileName = fileName
+        self.data = data
+        super.init()
+    }
+
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        data
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? {
+        data
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        subjectForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        fileName
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        "public.zip-archive"
+    }
+
+    @available(iOS 13.0, *)
+    func activityViewControllerLinkMetadata(
+        _ activityViewController: UIActivityViewController
+    ) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = fileName
+        metadata.originalURL = URL(fileURLWithPath: fileName)
+        metadata.url = metadata.originalURL
+        if let image = UIImage(systemName: "archivebox.fill") {
+            metadata.iconProvider = NSItemProvider(object: image)
+        }
+        return metadata
+    }
+}
+
 /// Row with a colored icon, title, and optional trailing value.
 private struct SettingsRow: View {
     let icon: String
@@ -794,6 +978,7 @@ struct APISettingsView: View {
     @Binding var apiToken: String
     @Binding var showAlert: Bool
     @Binding var alertMessage: String
+    @State private var isTesting = false
 
     var body: some View {
         Form {
@@ -810,11 +995,30 @@ struct APISettingsView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.string("api_settings_desc"))
+                    Text(L10n.string("api_url_hint"))
+                        .foregroundStyle(.secondary)
                     Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
                         Text(L10n.string("how_api_key"))
                             .font(.footnote.weight(.medium))
                     }
                 }
+            }
+
+            Section {
+                Button {
+                    testConnection()
+                } label: {
+                    HStack {
+                        Text(L10n.string("api_test_connection"))
+                        Spacer()
+                        if isTesting {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isTesting)
+            } footer: {
+                Text(L10n.string("api_test_connection_footer"))
             }
         }
         .navigationTitle(L10n.string("api_settings"))
@@ -822,6 +1026,23 @@ struct APISettingsView: View {
         .onAppear {
             baseURL = apiClient.baseURL
             apiToken = KeychainSecretStore.string(for: .apiToken)
+        }
+    }
+
+    private func testConnection() {
+        guard !isTesting else { return }
+        isTesting = true
+        apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
+        baseURL = apiClient.baseURL
+        apiToken = KeychainSecretStore.string(for: .apiToken)
+        Task {
+            if let error = await apiClient.validateApiCredentials() {
+                alertMessage = error
+            } else {
+                alertMessage = L10n.string("api_test_connection_ok")
+            }
+            showAlert = true
+            isTesting = false
         }
     }
 }
