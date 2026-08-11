@@ -467,8 +467,6 @@ struct SettingsView: View {
             }
         } header: {
             Text(L10n.string("settings_about"))
-        } footer: {
-            Text(L10n.string("debug_export_footer"))
         }
     }
 

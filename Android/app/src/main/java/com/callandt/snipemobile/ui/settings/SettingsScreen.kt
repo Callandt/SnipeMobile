@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Build
@@ -72,6 +73,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.callandt.snipemobile.debug.AppLog
+import com.callandt.snipemobile.debug.DebugLogStore
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.SettingsGroupedCard
 import com.callandt.snipemobile.ui.components.SettingsRow
@@ -185,7 +188,11 @@ private fun SettingsRootScreen(
     val showMaintenance by viewModel.showMaintenanceSubtab.collectAsState()
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showWipeDialog by remember { mutableStateOf(false) }
+    var showDebugExportConfirm by remember { mutableStateOf(false) }
+    var showDebugExportError by remember { mutableStateOf(false) }
+    var isExportingDebug by remember { mutableStateOf(false) }
     var pendingBiometrics by remember { mutableStateOf<Boolean?>(null) }
 
     val themeLabel = when (appTheme) {
@@ -421,6 +428,17 @@ private fun SettingsRootScreen(
                     )
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
                     SettingsRow(
+                        icon = Icons.Default.Archive,
+                        iconColor = Color(0xFFFF9500),
+                        title = L10n.string("debug_export"),
+                        value = if (isExportingDebug) L10n.string("debug_export_working") else null,
+                        showChevron = false,
+                        onClick = {
+                            if (!isExportingDebug) showDebugExportConfirm = true
+                        },
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                    SettingsRow(
                         icon = Icons.Default.Delete,
                         iconColor = Color(0xFFFF3B30),
                         title = L10n.string("reset_data_button"),
@@ -431,6 +449,54 @@ private fun SettingsRootScreen(
                 }
             }
         }
+    }
+
+    if (showDebugExportConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!isExportingDebug) showDebugExportConfirm = false },
+            title = { Text(L10n.string("debug_export_confirm_title")) },
+            text = { Text(L10n.string("debug_export_confirm_message")) },
+            confirmButton = {
+                TextButton(
+                    enabled = !isExportingDebug,
+                    onClick = {
+                        isExportingDebug = true
+                        AppLog.info("User requested debug zip export", "debug")
+                        scope.launch {
+                            val ok = runCatching {
+                                val zip = DebugLogStore.exportZip(context, viewModel.apiClient)
+                                DebugLogStore.shareZip(context, zip)
+                            }.isSuccess
+                            isExportingDebug = false
+                            showDebugExportConfirm = false
+                            if (!ok) {
+                                AppLog.info("Debug zip export failed", "debug")
+                                showDebugExportError = true
+                            }
+                        }
+                    },
+                ) { Text(L10n.string("debug_export_confirm_action")) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isExportingDebug,
+                    onClick = { showDebugExportConfirm = false },
+                ) { Text(L10n.string("cancel")) }
+            },
+        )
+    }
+
+    if (showDebugExportError) {
+        AlertDialog(
+            onDismissRequest = { showDebugExportError = false },
+            title = { Text(L10n.string("debug_export_failed_title")) },
+            text = { Text(L10n.string("debug_export_failed")) },
+            confirmButton = {
+                TextButton(onClick = { showDebugExportError = false }) {
+                    Text(L10n.string("ok"))
+                }
+            },
+        )
     }
 
     if (showWipeDialog) {

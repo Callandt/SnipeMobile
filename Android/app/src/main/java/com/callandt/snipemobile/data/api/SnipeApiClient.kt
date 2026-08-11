@@ -40,6 +40,7 @@ import com.callandt.snipemobile.data.model.WriteResult
 import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.SecretKey
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.debug.AppLog
 import com.callandt.snipemobile.data.secure.SecureStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,6 +79,7 @@ import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
@@ -254,18 +256,21 @@ class SnipeApiClient(context: Context) {
 
     suspend fun validateApiCredentials(): String? {
         if (baseUrl.isEmpty() || apiToken.isEmpty()) {
-            return "Configure the API URL and token first."
+            return L10n.string("api_validate_missing")
         }
         val url = "$baseUrl/api/v1/users?limit=1".toHttpUrlOrNull()
-            ?: return "Invalid API URL."
+            ?: return L10n.string("api_validate_invalid_url")
         if (url.scheme !in setOf("http", "https") || url.host.isEmpty()) {
-            return "Invalid API URL."
+            return L10n.string("api_validate_invalid_url")
         }
+        AppLog.network("Validating API credentials scheme=${url.scheme}")
         return try {
             val response = executeGet(url.toString(), reportConnectionError = false)
+            AppLog.network("Validate HTTP ${response.code} bytes=${response.body.length}")
             if (response.code in 200..299) null
             else localizedHttpFailureMessage(response.code)
         } catch (e: Exception) {
+            AppLog.network("Validate failed: ${e.javaClass.simpleName}")
             localizedConnectionFailureMessage(e)
         }
     }
@@ -2496,12 +2501,12 @@ class SnipeApiClient(context: Context) {
         }
 
         fun localizedHttpFailureMessage(statusCode: Int): String = when (statusCode) {
-            401, 403 -> "Unauthorized — check your API token."
-            404 -> "API endpoint not found."
-            429 -> "Rate limited — try again shortly."
-            502, 504 -> "Server gateway error."
-            503 -> "Server is under maintenance."
-            else -> "HTTP error $statusCode."
+            401, 403 -> L10n.string("api_validate_unauthorized")
+            404 -> L10n.string("api_validate_not_found")
+            429 -> L10n.string("api_connect_rate_limited")
+            502, 504 -> L10n.string("api_connect_bad_gateway")
+            503 -> L10n.string("refresh_failed_maintenance")
+            else -> L10n.string("api_validate_http", statusCode)
         }
 
         private fun parseAssetTagSettings(json: JsonObject): AssetTagGenerationSettings? {
@@ -2596,13 +2601,82 @@ class SnipeApiClient(context: Context) {
             return "%0${width}d".format(nextNum)
         }
 
-        fun localizedConnectionFailureMessage(error: Throwable): String = when (error) {
-            is UnknownHostException -> "Could not resolve the server hostname."
-            is ConnectException -> "Could not connect to the server."
-            is SocketTimeoutException -> "Connection timed out."
-            is IOException -> "Network error: ${error.message ?: "unknown"}"
-            is CancellationException -> "Request cancelled."
-            else -> "Could not connect: ${error.message ?: "unknown error"}"
+        fun localizedConnectionFailureMessage(error: Throwable): String {
+            val kind = connectionFailureKind(error)
+            AppLog.network("Connection failed kind=${kind.name.lowercase(Locale.US)}")
+            return when (kind) {
+                ConnectionFailureKind.NoNetwork -> L10n.string("api_connect_no_network")
+                ConnectionFailureKind.Dns -> L10n.string("api_connect_dns")
+                ConnectionFailureKind.HostUnreachable -> L10n.string("api_connect_host_unreachable")
+                ConnectionFailureKind.Timeout -> L10n.string("api_connect_timeout")
+                ConnectionFailureKind.Tls -> L10n.string("api_connect_tls")
+                ConnectionFailureKind.HttpBlocked -> L10n.string("api_validate_http_blocked")
+                ConnectionFailureKind.Cancelled -> L10n.string("api_connect_cancelled")
+                ConnectionFailureKind.Other -> L10n.string("api_validate_connect_failed")
+            }
+        }
+
+        private enum class ConnectionFailureKind {
+            NoNetwork,
+            Dns,
+            HostUnreachable,
+            Timeout,
+            Tls,
+            HttpBlocked,
+            Cancelled,
+            Other,
+        }
+
+        private fun connectionFailureKind(error: Throwable): ConnectionFailureKind {
+            val chain = generateSequence(error) { it.cause }.toList()
+            if (chain.any { it is CancellationException }) return ConnectionFailureKind.Cancelled
+
+            val message = chain.mapNotNull { it.message }.joinToString(" ").lowercase(Locale.US)
+            if (message.contains("cleartext")) {
+                return ConnectionFailureKind.HttpBlocked
+            }
+            if (
+                chain.any {
+                    it is javax.net.ssl.SSLException ||
+                        it is java.security.cert.CertificateException
+                } ||
+                message.contains("certificate") ||
+                message.contains("trust anchor") ||
+                message.contains("ssl handshake")
+            ) {
+                return ConnectionFailureKind.Tls
+            }
+            if (chain.any { it is UnknownHostException }) return ConnectionFailureKind.Dns
+            if (chain.any { it is SocketTimeoutException }) return ConnectionFailureKind.Timeout
+            if (
+                chain.any {
+                    it is ConnectException ||
+                        it is java.net.NoRouteToHostException ||
+                        it is java.net.PortUnreachableException
+                }
+            ) {
+                return ConnectionFailureKind.HostUnreachable
+            }
+            if (
+                message.contains("unable to resolve host") ||
+                message.contains("network is unreachable") ||
+                message.contains("failed to connect")
+            ) {
+                return ConnectionFailureKind.HostUnreachable
+            }
+            if (message.contains("unknownhost") || message.contains("nodename nor servname")) {
+                return ConnectionFailureKind.Dns
+            }
+            if (chain.any { it is IOException } &&
+                (message.contains("software caused connection abort") ||
+                    message.contains("connection reset") ||
+                    message.contains("broken pipe") ||
+                    message.contains("enotconn") ||
+                    message.contains("network"))
+            ) {
+                return ConnectionFailureKind.NoNetwork
+            }
+            return ConnectionFailureKind.Other
         }
     }
 

@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="labels" path="labels/" />
     <cache-path name="camera" path="camera/" />
+    <cache-path name="debug_exports" path="DebugExports/" />
 </paths>
