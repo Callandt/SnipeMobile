@@ -124,13 +124,14 @@ fun assetCheckedOutIcon(asset: Asset): ImageVector {
 
 /** Location line shown on asset cards. */
 fun assetCardLocationName(asset: Asset): String? {
-    if (asset.assignedTo == null) {
+    val assigned = asset.assignedTo
+    if (assigned == null) {
         val defaultName = HtmlDecoder.decode(asset.rtdLocation?.name.orEmpty()).trim()
         if (defaultName.isNotEmpty()) return defaultName
         val current = asset.decodedLocationName.trim()
         return current.ifEmpty { null }
     }
-    if (asset.assignedTo?.isLocation == true) return null
+    if (assigned.isLocation) return null
     val location = asset.decodedLocationName.trim()
     if (location.isEmpty()) return null
     val assignee = asset.decodedAssignedToName.trim()

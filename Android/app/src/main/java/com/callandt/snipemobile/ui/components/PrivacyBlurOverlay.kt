@@ -2,16 +2,15 @@ package com.callandt.snipemobile.ui.components
 
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,10 +22,45 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import com.callandt.snipemobile.R
 import com.callandt.snipemobile.ui.util.L10n
+
+/** Scrim used in the app switcher / when resigning active. */
+@Composable
+fun PrivacyCoverOverlay(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xE6121216),
+                        Color(0xF01C1C22),
+                        Color(0xE6121216),
+                    ),
+                ),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_launcher_foreground),
+            contentDescription = null,
+            modifier = Modifier
+                .size(120.dp)
+                .alpha(0.85f),
+        )
+    }
+}
 
 @Composable
 fun PrivacyBlurOverlay(
@@ -34,18 +68,22 @@ fun PrivacyBlurOverlay(
     modifier: Modifier = Modifier,
     authGeneration: Int = 0,
     onAuthenticated: () -> Unit,
-    onUnavailable: () -> Unit,
+    onUnavailable: () -> Unit = {},
+    onContinueWithoutAuth: () -> Unit = onUnavailable,
 ) {
     var promptNonce by remember { mutableStateOf(0) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
 
     fun launchPrompt() {
         val manager = BiometricManager.from(activity)
-        val canAuth = manager.canAuthenticate(
+        val authenticators =
             BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                BiometricManager.Authenticators.DEVICE_CREDENTIAL,
-        )
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val canAuth = manager.canAuthenticate(authenticators)
         if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
+            statusMessage = L10n.string("mgmt_load_failed")
             onUnavailable()
             return
         }
@@ -64,7 +102,6 @@ fun PrivacyBlurOverlay(
                         BiometricPrompt.ERROR_NEGATIVE_BUTTON,
                         BiometricPrompt.ERROR_CANCELED,
                         -> {
-                            // Stay locked; retry via the unlock button.
                             statusMessage = errString.toString().ifBlank { null }
                         }
                         BiometricPrompt.ERROR_LOCKOUT,
@@ -73,7 +110,12 @@ fun PrivacyBlurOverlay(
                         BiometricPrompt.ERROR_NO_BIOMETRICS,
                         BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL,
                         BiometricPrompt.ERROR_HW_NOT_PRESENT,
-                        -> onUnavailable()
+                        -> {
+                            statusMessage = errString.toString().ifBlank {
+                                L10n.string("mgmt_load_failed")
+                            }
+                            onUnavailable()
+                        }
                         else -> statusMessage = errString.toString().ifBlank {
                             L10n.string("mgmt_load_failed")
                         }
@@ -84,51 +126,42 @@ fun PrivacyBlurOverlay(
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(L10n.string("require_biometrics"))
             .setSubtitle(L10n.string("security"))
-            .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    BiometricManager.Authenticators.DEVICE_CREDENTIAL,
-            )
+            .setAllowedAuthenticators(authenticators)
             .build()
         runCatching { prompt.authenticate(info) }
-            .onFailure { onUnavailable() }
+            .onFailure {
+                statusMessage = L10n.string("mgmt_load_failed")
+                onUnavailable()
+            }
     }
 
-    LaunchedEffect(authGeneration, promptNonce) {
-        launchPrompt()
+    // Only prompt while resumed — avoids cancel when leaving to the app switcher.
+    LaunchedEffect(authGeneration, promptNonce, lifecycleState) {
+        if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
+            launchPrompt()
+        }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        PrivacyCoverOverlay()
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(32.dp),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 64.dp, start = 32.dp, end = 32.dp),
         ) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = L10n.string("require_biometrics"),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
             statusMessage?.let {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.85f),
                 )
             }
             Button(onClick = { promptNonce += 1 }) {
                 Text(L10n.string("retry"))
             }
-            TextButton(onClick = onUnavailable) {
+            TextButton(onClick = onContinueWithoutAuth) {
                 Text(L10n.string("continue"))
             }
         }

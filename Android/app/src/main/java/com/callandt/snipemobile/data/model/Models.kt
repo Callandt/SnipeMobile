@@ -1,3 +1,6 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+@file:Suppress("SpellCheckingInspection")
+
 package com.callandt.snipemobile.data.model
 
 import com.callandt.snipemobile.util.HtmlDecoder
@@ -102,12 +105,12 @@ internal object SnipeDecoders {
     fun decodeUserGroups(element: JsonElement?): List<UserGroup> {
         if (element == null || element is JsonNull) return emptyList()
         if (element is JsonArray) {
-            return SnipeJson.decodeFromJsonElement<List<UserGroup>>(element)
+            return SnipeJson.decodeFromJsonElement(element)
         }
         if (element is JsonObject) {
             element["rows"]?.let { rows ->
                 if (rows is JsonArray) {
-                    return SnipeJson.decodeFromJsonElement<List<UserGroup>>(rows)
+                    return SnipeJson.decodeFromJsonElement(rows)
                 }
             }
         }
@@ -194,8 +197,7 @@ object DateInfoSerializer : KSerializer<DateInfo> {
     }
 
     override fun deserialize(decoder: Decoder): DateInfo {
-        val element = (decoder as JsonDecoder).decodeJsonElement()
-        return when (element) {
+        return when (val element = (decoder as JsonDecoder).decodeJsonElement()) {
             is JsonNull -> DateInfo()
             is JsonPrimitive -> {
                 if (element.booleanOrNull == false) return DateInfo()
@@ -280,7 +282,6 @@ typealias Category = NamedId
 typealias Manufacturer = NamedId
 typealias Supplier = NamedId
 typealias Company = NamedId
-typealias DepreciationRow = NamedId
 typealias MaintenanceType = NamedId
 
 @Serializable
@@ -450,11 +451,6 @@ data class UserGroup(
     val decodedName: String get() = HtmlDecoder.decode(name)
 }
 
-@Serializable
-data class GroupsContainer(
-    val rows: List<UserGroup>? = null,
-)
-
 // ---------------------------------------------------------------------------
 // Asset
 // ---------------------------------------------------------------------------
@@ -519,9 +515,7 @@ data class Asset(
     val decodedSupplierName: String get() = HtmlDecoder.decode(supplier?.name ?: "")
     val decodedCompanyName: String get() = HtmlDecoder.decode(company?.name ?: "")
     val decodedNotes: String get() = HtmlDecoder.decode(notes ?: "")
-    val decodedJobtitle: String get() = HtmlDecoder.decode(jobtitle ?: "")
     val decodedWarrantyMonths: String get() = HtmlDecoder.decode(warrantyMonths ?: "")
-    val decodedAge: String get() = HtmlDecoder.decode(age ?: "")
 }
 
 /**
@@ -532,9 +526,8 @@ object AssetSerializer : KSerializer<Asset> {
 
     override fun deserialize(decoder: Decoder): Asset {
         val obj = (decoder as JsonDecoder).decodeJsonElement().jsonObject
-        val statusLabel = obj["status_label"]?.takeUnless { it is JsonNull }?.let {
-            runCatching { SnipeJson.decodeFromJsonElement<StatusLabel>(it) }.getOrNull()
-        } ?: StatusLabel(id = 0, name = "Unknown")
+        val statusLabel: StatusLabel = softDecode(obj["status_label"])
+            ?: StatusLabel(id = 0, name = "Unknown")
 
         return Asset(
             id = SnipeDecoders.flexibleInt(obj["id"]) ?: 0,
@@ -580,9 +573,7 @@ object AssetSerializer : KSerializer<Asset> {
             requestsCounter = SnipeDecoders.flexibleInt(obj["requests_counter"]),
             userCanCheckout = SnipeDecoders.flexibleBool(obj["user_can_checkout"]),
             bookValue = SnipeDecoders.flexibleStringOrNumber(obj["book_value"]),
-            customFields = obj["custom_fields"]?.takeUnless { it is JsonNull }?.let {
-                runCatching { SnipeJson.decodeFromJsonElement<Map<String, CustomField>>(it) }.getOrNull()
-            },
+            customFields = softDecode(obj["custom_fields"]),
             availableActions = softDecode(obj["available_actions"]),
         )
     }
@@ -749,10 +740,10 @@ object UserSerializer : KSerializer<User> {
             phone = obj["phone"]?.jsonPrimitive?.contentOrNull,
             image = SnipeDecoders.normalizeUserImage(imageRaw),
             location = obj["location"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Location>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             company = obj["company"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Company>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             employeeNumber = obj["employee_num"]?.jsonPrimitive?.contentOrNull,
             jobtitle = obj["jobtitle"]?.jsonPrimitive?.contentOrNull,
@@ -815,12 +806,8 @@ data class Accessory(
     /** Snipe-IT accessories have no asset_tag; use id instead. */
     val assetTag: String get() = id.toString()
 
-    val effectiveStatusLabel: StatusLabel
-        get() = statusLabel ?: StatusLabel(id = 0, name = "Unknown")
-
     val decodedName: String get() = HtmlDecoder.decode(name)
     val decodedAssetTag: String get() = HtmlDecoder.decode(assetTag)
-    val decodedStatusLabelName: String get() = HtmlDecoder.decode(effectiveStatusLabel.name)
     val decodedAssignedToName: String get() = HtmlDecoder.decode(assignedTo?.name ?: "")
     val decodedLocationName: String get() = HtmlDecoder.decode(location?.name ?: "")
     val decodedManufacturerName: String get() = HtmlDecoder.decode(manufacturer?.name ?: "")
@@ -836,25 +823,25 @@ object AccessorySerializer : KSerializer<Accessory> {
             id = obj["id"]?.jsonPrimitive?.intOrNull ?: 0,
             name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
             statusLabel = obj["status_label"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<StatusLabel>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             assignedTo = obj["assigned_to"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<AssignedTo>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             location = obj["location"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Location>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             manufacturer = obj["manufacturer"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Manufacturer>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             category = obj["category"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Category>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             company = obj["company"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Company>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             supplier = obj["supplier"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Supplier>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             qty = SnipeDecoders.flexibleInt(obj["qty"]),
             minAmt = SnipeDecoders.flexibleInt(obj["min_amt"]),
@@ -959,19 +946,19 @@ object ConsumableSerializer : KSerializer<Consumable> {
             itemNo = obj["item_no"]?.jsonPrimitive?.contentOrNull,
             modelNumber = obj["model_number"]?.jsonPrimitive?.contentOrNull,
             category = obj["category"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Category>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             company = obj["company"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Company>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             location = obj["location"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Location>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             manufacturer = obj["manufacturer"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Manufacturer>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             supplier = obj["supplier"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Supplier>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             qty = SnipeDecoders.flexibleInt(obj["qty"]),
             minAmt = SnipeDecoders.flexibleInt(obj["min_amt"]),
@@ -1070,19 +1057,19 @@ object ComponentSerializer : KSerializer<Component> {
             serial = obj["serial"]?.jsonPrimitive?.contentOrNull,
             modelNumber = obj["model_number"]?.jsonPrimitive?.contentOrNull,
             category = obj["category"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Category>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             company = obj["company"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Company>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             location = obj["location"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Location>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             manufacturer = obj["manufacturer"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Manufacturer>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             supplier = obj["supplier"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Supplier>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             qty = SnipeDecoders.flexibleInt(obj["qty"]),
             minAmt = SnipeDecoders.flexibleInt(obj["min_amt"]),
@@ -1224,17 +1211,16 @@ data class LicenseSeatRow(
         }
 
         val asset = assets.firstOrNull { it.id == assignedAsset.id } ?: return null
-        if (asset.assignedTo?.isUser != true) return null
+        val assigned = asset.assignedTo ?: return null
+        if (!assigned.isUser) return null
 
-        asset.assignedTo?.id?.let { userId ->
-            users.firstOrNull { it.id == userId }?.let { user ->
-                return LicenseSeatAssignee(
-                    user = user,
-                    name = user.decodedName,
-                    email = user.decodedEmail,
-                    company = user.decodedCompanyName,
-                )
-            }
+        users.firstOrNull { it.id == assigned.id }?.let { user ->
+            return LicenseSeatAssignee(
+                user = user,
+                name = user.decodedName,
+                email = user.decodedEmail,
+                company = user.decodedCompanyName,
+            )
         }
 
         val name = asset.decodedAssignedToName
@@ -1362,36 +1348,6 @@ data class AssetFile(
             if (mediatype?.lowercase(Locale.US)?.contains("pdf") == true) return true
             return decodedFilename.lowercase(Locale.US).endsWith(".pdf")
         }
-
-    val isEulaURL: Boolean
-        get() = (url ?: "").lowercase(Locale.US).contains("stored-eula-file") ||
-            decodedFilename.lowercase(Locale.US).contains("accepted-eula")
-
-    companion object {
-        fun acceptanceFrom(activity: Activity, acceptedEulaLabel: String = "Accepted EULA"): AssetFile? {
-            val file = activity.file ?: return null
-            val action = activity.actionType.lowercase(Locale.US)
-            val looksAccepted = action.contains("accept") || action.contains("eula") ||
-                (file.url ?: "").lowercase(Locale.US).contains("stored-eula-file") ||
-                (file.filename ?: "").lowercase(Locale.US).contains("accepted-eula")
-            if (!looksAccepted) return null
-            val filename = file.decodedFilename.ifEmpty {
-                file.filename ?: "accepted-eula.pdf"
-            }
-            return AssetFile(
-                id = activity.id,
-                filename = filename,
-                name = filename,
-                filetype = "pdf",
-                mediatype = file.mediatype ?: "application/pdf",
-                url = file.url,
-                note = acceptedEulaLabel,
-                createdAt = activity.createdAt,
-                availableActions = AssetFileAvailableActions(delete = false),
-                isAcceptance = true,
-            )
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1476,37 +1432,37 @@ object AssetMaintenanceSerializer : KSerializer<AssetMaintenance> {
             assetMaintenanceType = obj["asset_maintenance_type"]?.jsonPrimitive?.contentOrNull,
             maintenanceType = obj["maintenance_type"]?.jsonPrimitive?.contentOrNull,
             supplier = obj["supplier"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<Supplier>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             cost = obj["cost"]?.jsonPrimitive?.contentOrNull,
             notes = obj["notes"]?.jsonPrimitive?.contentOrNull,
             startDate = obj["start_date"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<DateInfo>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             completionDate = obj["completion_date"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<DateInfo>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             isWarranty = obj["is_warranty"]?.jsonPrimitive?.booleanOrNull ?: false,
             url = obj["url"]?.jsonPrimitive?.contentOrNull,
             image = obj["image"]?.jsonPrimitive?.contentOrNull,
             maintenanceTime = SnipeDecoders.flexibleInt(obj["asset_maintenance_time"]),
             createdBy = obj["created_by"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<CreatedBy>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             responsibleParty = obj["responsible_party"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<CreatedBy>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             completedAt = obj["completed_at"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<DateInfo>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             createdAt = obj["created_at"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<DateInfo>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             updatedAt = obj["updated_at"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<DateInfo>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
             completedBy = obj["completed_by"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement<CreatedBy>(it)
+                SnipeJson.decodeFromJsonElement(it)
             },
         )
     }
@@ -1567,22 +1523,6 @@ object AssetMaintenanceSerializer : KSerializer<AssetMaintenance> {
     )
 }
 
-@Serializable
-data class MaintenanceCreateRequest(
-    @SerialName("asset_id") val assetId: Int,
-    val name: String,
-    @SerialName("asset_maintenance_type") val assetMaintenanceType: String? = null,
-    @SerialName("maintenance_type_id") val maintenanceTypeId: Int? = null,
-    @SerialName("supplier_id") val supplierId: Int? = null,
-    val cost: String? = null,
-    val notes: String? = null,
-    val url: String? = null,
-    @SerialName("responsible_party_id") val responsiblePartyId: Int? = null,
-    @SerialName("start_date") val startDate: String,
-    @SerialName("completion_date") val completionDate: String? = null,
-    @SerialName("is_warranty") val isWarranty: Boolean = false,
-)
-
 @Serializable(with = MaintenanceUpdateRequestSerializer::class)
 data class MaintenanceUpdateRequest(
     val name: String? = null,
@@ -1625,7 +1565,7 @@ object MaintenanceUpdateRequestSerializer : KSerializer<MaintenanceUpdateRequest
 
     override fun serialize(encoder: Encoder, value: MaintenanceUpdateRequest) {
         val output = encoder as JsonEncoder
-        val obj = buildMap<String, JsonElement> {
+        val obj = buildMap {
             value.name?.let { put("name", JsonPrimitive(it)) }
             value.assetMaintenanceType?.let { put("asset_maintenance_type", JsonPrimitive(it)) }
             value.maintenanceTypeId?.let { put("maintenance_type_id", JsonPrimitive(it)) }
@@ -1727,11 +1667,11 @@ object ConsumableUserRowSerializer : KSerializer<ConsumableUserRow> {
 
     override fun serialize(encoder: Encoder, value: ConsumableUserRow) {
         val output = encoder as JsonEncoder
-        val userObj = buildMap<String, JsonElement> {
+        val userObj = buildMap {
             value.userId?.let { put("id", JsonPrimitive(it)) }
             value.name?.let { put("name", JsonPrimitive(it)) }
         }
-        val obj = buildMap<String, JsonElement> {
+        val obj = buildMap {
             if (userObj.isNotEmpty()) put("user", JsonObject(userObj))
             value.note?.let { put("note", JsonPrimitive(it)) }
         }
@@ -1773,12 +1713,12 @@ object ComponentAssetRowSerializer : KSerializer<ComponentAssetRow> {
 
     override fun serialize(encoder: Encoder, value: ComponentAssetRow) {
         val output = encoder as JsonEncoder
-        val assetObj = buildMap<String, JsonElement> {
+        val assetObj = buildMap {
             value.assetId?.let { put("id", JsonPrimitive(it)) }
             value.assetName?.let { put("name", JsonPrimitive(it)) }
             value.assetTag?.let { put("asset_tag", JsonPrimitive(it)) }
         }
-        val obj = buildMap<String, JsonElement> {
+        val obj = buildMap {
             value.assignedPivotId?.let { put("assigned_pivot_id", JsonPrimitive(it)) }
             if (assetObj.isNotEmpty()) put("name", JsonObject(assetObj))
             value.assignedQty?.let { put("assigned_qty", JsonPrimitive(it)) }
@@ -1829,90 +1769,6 @@ data class PagedResponse<T>(
 )
 
 @Serializable
-data class AssetResponse(
-    val total: Int? = null,
-    val rows: List<Asset>? = null,
-)
-
-@Serializable
-data class UserResponse(
-    val total: Int? = null,
-    val rows: List<User>? = null,
-)
-
-@Serializable
-data class AccessoriesResponse(
-    val total: Int? = null,
-    val rows: List<Accessory>? = null,
-)
-
-@Serializable
-data class ConsumablesResponse(
-    val total: Int? = null,
-    val rows: List<Consumable>? = null,
-)
-
-@Serializable
-data class ComponentsResponse(
-    val total: Int? = null,
-    val rows: List<Component>? = null,
-)
-
-@Serializable
-data class LicensesResponse(
-    val total: Int? = null,
-    val rows: List<License>? = null,
-)
-
-@Serializable
-data class LocationsResponse(
-    val total: Int? = null,
-    val rows: List<Location>? = null,
-)
-
-@Serializable
-data class CompaniesResponse(
-    val total: Int? = null,
-    val rows: List<Company>? = null,
-)
-
-@Serializable
-data class GroupsResponse(
-    val total: Int? = null,
-    val rows: List<UserGroup>? = null,
-)
-
-@Serializable
-data class ManufacturersResponse(
-    val total: Int? = null,
-    val rows: List<Manufacturer>? = null,
-)
-
-@Serializable
-data class SuppliersResponse(
-    val total: Int? = null,
-    val rows: List<Supplier>? = null,
-)
-
-@Serializable
-data class MaintenanceTypesResponse(
-    val total: Int? = null,
-    val rows: List<MaintenanceType>? = null,
-)
-
-@Serializable
-data class StatusLabelsResponse(
-    val total: Int? = null,
-    val rows: List<StatusLabel>? = null,
-)
-
-@Serializable
-data class MaintenancesResponse(
-    val total: Int? = null,
-    val rows: List<AssetMaintenance>? = null,
-)
-
-@Serializable
 data class ActivityResponse(
     val rows: List<Activity>? = null,
 )
@@ -1921,24 +1777,6 @@ data class ActivityResponse(
 data class AssetFileResponse(
     val total: Int? = null,
     val rows: List<AssetFile>? = null,
-)
-
-@Serializable
-data class AccessoryCheckedOutResponse(
-    val total: Int? = null,
-    val rows: List<AccessoryCheckedOutRow>? = null,
-)
-
-@Serializable
-data class CheckoutResponse(
-    val status: String,
-    val messages: String,
-    val payload: CheckoutPayload,
-)
-
-@Serializable
-data class CheckoutPayload(
-    val asset: Asset,
 )
 
 // ---------------------------------------------------------------------------

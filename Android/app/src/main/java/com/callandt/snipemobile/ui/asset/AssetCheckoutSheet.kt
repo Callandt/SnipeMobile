@@ -60,7 +60,7 @@ fun AssetCheckoutSheet(
     var hasExpectedCheckin by remember { mutableStateOf(false) }
     var expectedCheckinDate by remember { mutableStateOf(Date()) }
     var showDatePicker by remember { mutableStateOf(false) }
-    var pendingImages by remember { mutableStateOf(emptyList<PendingAssetImage>()) }
+    var pendingImages: List<PendingAssetImage> by remember { mutableStateOf(emptyList()) }
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var dismissAfterError by remember { mutableStateOf(false) }

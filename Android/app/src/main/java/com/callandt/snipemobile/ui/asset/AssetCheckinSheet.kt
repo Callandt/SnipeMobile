@@ -42,7 +42,7 @@ fun AssetCheckinSheet(
     var notes by remember { mutableStateOf("") }
     var selectedStatusId by remember { mutableIntStateOf(0) }
     var selectedLocationId by remember { mutableIntStateOf(0) }
-    var pendingImages by remember { mutableStateOf(emptyList<PendingAssetImage>()) }
+    var pendingImages: List<PendingAssetImage> by remember { mutableStateOf(emptyList()) }
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var dismissAfterError by remember { mutableStateOf(false) }

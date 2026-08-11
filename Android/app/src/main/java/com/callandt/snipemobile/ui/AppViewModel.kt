@@ -157,9 +157,15 @@ class AppViewModel(
         viewModelScope.launch { preferences.setAppTheme(theme) }
     }
 
-    fun setUseBiometrics(enabled: Boolean) {
-        viewModelScope.launch { preferences.setUseBiometrics(enabled) }
+    fun setUseBiometrics(enabled: Boolean, justConfirmed: Boolean = false) {
+        viewModelScope.launch {
+            if (justConfirmed) preferences.setBiometricsJustConfirmed(true)
+            preferences.setUseBiometrics(enabled)
+        }
     }
+
+    suspend fun consumeBiometricsJustConfirmed(): Boolean =
+        preferences.consumeBiometricsJustConfirmed()
 
     fun setShowAccessoriesTab(enabled: Boolean) {
         viewModelScope.launch { preferences.setShowAccessoriesTab(enabled) }

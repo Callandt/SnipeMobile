@@ -5,7 +5,6 @@ import com.callandt.snipemobile.data.model.SnipeDataCacheSnapshot
 import com.callandt.snipemobile.data.model.SnipeJson
 import java.io.File
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 
 /** Local JSON cache per server. */
 object LocalCacheStore {
@@ -36,7 +35,7 @@ object LocalCacheStore {
         val file = file(context, key)
         if (!file.exists()) return null
         return runCatching {
-            SnipeJson.decodeFromString<SnipeDataCacheSnapshot>(file.readText())
+            SnipeJson.decodeFromString(SnipeDataCacheSnapshot.serializer(), file.readText())
         }.getOrNull()
     }
 

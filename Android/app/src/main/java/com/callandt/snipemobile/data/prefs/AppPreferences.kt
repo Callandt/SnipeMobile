@@ -112,6 +112,20 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[Keys.USE_BIOMETRICS] = value }
     }
 
+    suspend fun setBiometricsJustConfirmed(value: Boolean) {
+        context.dataStore.edit { it[Keys.BIOMETRICS_JUST_CONFIRMED] = value }
+    }
+
+    /** Returns true once after settings confirmation, then clears the flag. */
+    suspend fun consumeBiometricsJustConfirmed(): Boolean {
+        var wasConfirmed = false
+        context.dataStore.edit { prefs ->
+            wasConfirmed = prefs[Keys.BIOMETRICS_JUST_CONFIRMED] == true
+            if (wasConfirmed) prefs[Keys.BIOMETRICS_JUST_CONFIRMED] = false
+        }
+        return wasConfirmed
+    }
+
     suspend fun setAutoFillAssetTag(value: Boolean) {
         context.dataStore.edit { it[Keys.AUTO_FILL_ASSET_TAG] = value }
     }

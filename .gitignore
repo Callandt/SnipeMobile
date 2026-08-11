@@ -9,3 +9,14 @@ cmdtools.zip
 android-sdk/
 jdk-*/
 *.jsa
+
+# Android build / release artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+Android/app/release/
+Android/**/build/
+Android/local.properties
+Android/.gradle/
+Android/captures/

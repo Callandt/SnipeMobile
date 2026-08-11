@@ -304,7 +304,10 @@ private fun SettingsRootScreen(
                                 executor,
                                 object : BiometricPrompt.AuthenticationCallback() {
                                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                                        viewModel.setUseBiometrics(newValue)
+                                        viewModel.setUseBiometrics(
+                                            enabled = newValue,
+                                            justConfirmed = true,
+                                        )
                                         pendingBiometrics = null
                                     }
 
