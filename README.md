@@ -7,11 +7,11 @@ Mobile apps to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, us
 ## Get the app
 
 ### iOS / iPadOS
-- **App Store** — [SnipeMobile](https://apps.apple.com/us/app/snipemobile/id6759792710)
-- **TestFlight (beta)** — [join the beta](https://testflight.apple.com/join/TjDwstBE)
+- **App Store** - [SnipeMobile](https://apps.apple.com/us/app/snipemobile/id6759792710)
+- **TestFlight (beta)** - [join the beta](https://testflight.apple.com/join/TjDwstBE)
 
 ### Android
-- Not on a store yet — build from this repo (see below)
+- Not on a store yet - build from this repo (see below)
 
 ## Requirements
 
@@ -61,4 +61,4 @@ cd Android
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
