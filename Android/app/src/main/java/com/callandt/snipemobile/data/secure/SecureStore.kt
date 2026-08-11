@@ -12,7 +12,7 @@ enum class SecretKey(val storageKey: String) {
 }
 
 /**
- * Encrypted storage for API token and Dell TechDirect credentials, mirroring iOS KeychainSecretStore.
+ * Encrypted storage for API token and Dell TechDirect credentials.
  */
 class SecureStore(context: Context) {
 
@@ -49,7 +49,7 @@ class SecureStore(context: Context) {
         SecretKey.entries.forEach { delete(it) }
     }
 
-    /** One-time migration from legacy plaintext SharedPreferences / DataStore copies. */
+    /** Migrate legacy plaintext prefs into encrypted storage. */
     fun migrateLegacyPlaintextSecretsIfNeeded(legacyPrefs: SharedPreferences) {
         if (legacyPrefs.getBoolean(MIGRATION_FLAG, false)) return
         SecretKey.entries.forEach { key ->

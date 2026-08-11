@@ -7,4 +7,13 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <color name="widget_brand">#FF0F3D66</color>
+    <color name="widget_overdue">#FFFF3B30</color>
+    <color name="widget_today">#FFFF9500</color>
+    <color name="widget_soon">#FFD9A600</color>
+    <color name="widget_stock">#FFAF52DE</color>
+    <color name="widget_available">#FF34C759</color>
+    <color name="widget_card">#FFF2F2F7</color>
+    <color name="widget_secondary_text">#FF8E8E93</color>
 </resources>

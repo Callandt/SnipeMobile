@@ -1,7 +1,7 @@
 package com.callandt.snipemobile.util
 
 /**
- * Strip HTML tags and decode common HTML entities, matching the iOS [HTMLDecoder].
+ * Strip HTML tags and decode common HTML entities.
  */
 object HtmlDecoder {
     private val TAG_PATTERN = Regex("<[^>]+>")

@@ -1,3 +1,106 @@
 <resources>
     <string name="app_name">SnipeMobile</string>
+
+    <!-- Tabs -->
+    <string name="tab_hardware">Hardware</string>
+    <string name="tab_accessories">Accessoires</string>
+    <string name="tab_licenses">Licenties</string>
+    <string name="tab_stock">Voorraad</string>
+    <string name="tab_directory">Directory</string>
+    <string name="tab_consumables">Verbruik</string>
+    <string name="tab_components">Componenten</string>
+    <string name="tab_users">Gebruikers</string>
+    <string name="tab_locations">Locaties</string>
+
+    <!-- Onboarding -->
+    <string name="welcome_title">Welkom bij SnipeMobile</string>
+    <string name="welcome_subtitle">Beheer je Snipe-IT assets vanaf je telefoon.</string>
+    <string name="get_started">Aan de slag</string>
+    <string name="api_setup_title">API-instellingen</string>
+    <string name="server_url">Server-URL</string>
+    <string name="api_token">API-token</string>
+    <string name="validate_continue">Valideren en doorgaan</string>
+    <string name="modules_title">Modules</string>
+    <string name="finish">Voltooien</string>
+
+    <!-- Actions -->
+    <string name="checkout">Uitchecken</string>
+    <string name="checkin">Inchecken</string>
+    <string name="audit">Audit</string>
+    <string name="settings">Instellingen</string>
+    <string name="search">Zoeken</string>
+    <string name="refresh">Vernieuwen</string>
+    <string name="cancel">Annuleren</string>
+    <string name="save">Opslaan</string>
+    <string name="back">Terug</string>
+    <string name="scan_qr">QR scannen</string>
+
+    <!-- Empty states -->
+    <string name="empty_assets">Geen assets</string>
+    <string name="empty_accessories">Geen accessoires</string>
+    <string name="empty_licenses">Geen licenties</string>
+    <string name="empty_users">Geen gebruikers</string>
+    <string name="empty_locations">Geen locaties</string>
+
+    <!-- Settings -->
+    <string name="settings_api">API</string>
+    <string name="settings_theme">Weergave</string>
+    <string name="settings_biometrics">Biometrie</string>
+    <string name="settings_modules">Modules</string>
+    <string name="settings_wipe">Alle gegevens wissen</string>
+    <string name="theme_system">Systeem</string>
+    <string name="theme_light">Licht</string>
+    <string name="theme_dark">Donker</string>
+
+    <!-- Biometrics -->
+    <string name="biometric_title">SnipeMobile ontgrendelen</string>
+    <string name="biometric_subtitle">Bevestig je identiteit</string>
+    <string name="biometric_prompt">Ontgrendel met biometrie</string>
+
+    <!-- Labels -->
+    <string name="tag_label">Tag: %1$s</string>
+    <string name="location_label">Locatie: %1$s</string>
+    <string name="assigned_to_label">Uitgegeven aan: %1$s</string>
+    <string name="next_audit_date">Volgende audit</string>
+    <string name="status">Status</string>
+    <!-- Detail tabs -->
+    <string name="tab_details">Details</string>
+    <string name="tab_history">Geschiedenis</string>
+    <string name="tab_files">Bestanden</string>
+    <string name="tab_maintenance">Onderhoud</string>
+    <string name="no_history">Geen geschiedenis</string>
+    <string name="no_files">Geen bestanden</string>
+    <string name="coming_soon">Binnenkort</string>
+
+    <!-- Scanner -->
+    <string name="scanner_title">QR scannen</string>
+    <string name="scanner_hint">Richt de camera op een Snipe-IT QR-code</string>
+    <string name="scanner_close">Sluiten</string>
+    <string name="scanner_permission">Cameratoestemming is vereist.</string>
+    <string name="invalid_qr">Geen geldige Snipe-IT QR-link.</string>
+    <string name="asset_not_found">Asset niet gevonden</string>
+
+    <!-- Widget (AppWidgetProvider description) -->
+    <string name="widget_overview_desc">Audits, onderhoud, assets en voorraad.</string>
+    <string name="widget_overview_name">Overzicht</string>
+    <string name="widget_audits_desc">Te laat, vandaag en binnenkort.</string>
+    <string name="widget_audits_name">Audits</string>
+    <string name="widget_maintenance_desc">Openstaande onderhoudstaken.</string>
+    <string name="widget_maintenance_name">Onderhoud</string>
+    <string name="widget_assets_desc">Totaal, uitgecheckt en beschikbaar.</string>
+    <string name="widget_assets_name">Assets</string>
+    <string name="widget_stock_desc">Items met lage voorraad.</string>
+    <string name="widget_stock_name">Voorraad</string>
+    <string name="widget_preview_audits">Audits</string>
+    <string name="widget_preview_other">Overig</string>
+    <string name="widget_preview_overdue">Te laat</string>
+    <string name="widget_preview_today">Vandaag</string>
+    <string name="widget_preview_soon">Binnenkort</string>
+    <string name="widget_preview_maint">Onderhoud</string>
+    <string name="widget_preview_total">Totaal</string>
+    <string name="widget_preview_deployed">Uitgegeven</string>
+    <string name="widget_preview_deployed_sample">96 uitgegeven</string>
+    <string name="widget_preview_available">Beschikbaar</string>
+    <string name="widget_preview_low_stock">Lage voorraad</string>
+    <string name="widget_preview_open_tasks">Open taken</string>
 </resources>
