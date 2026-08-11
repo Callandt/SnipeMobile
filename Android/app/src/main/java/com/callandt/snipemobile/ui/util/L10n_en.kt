@@ -188,6 +188,8 @@ internal object L10n_en {
         "configure_api_short" to "Configure your API in Settings.",
         "connect_snipe_it" to "Connect to Snipe-IT",
         "connect_snipe_it_desc" to "Enter your Snipe-IT API URL and API Key to sync your assets. You can skip this step and add it later in Settings.",
+        "skip_api_confirm_title" to "Continue without API details?",
+        "skip_api_confirm_message" to "No API URL or key entered. You can continue and add them later in Settings. Continue anyway?",
         "connection_section_footer" to "API connections to Snipe-IT and supported vendor services.",
         "consumable_created" to "Consumable created.",
         "consumable_info" to "Consumable Information",

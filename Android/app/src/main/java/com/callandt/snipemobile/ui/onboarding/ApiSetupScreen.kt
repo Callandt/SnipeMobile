@@ -8,10 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -42,6 +43,7 @@ fun ApiSetupScreen(
     var token by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var validating by remember { mutableStateOf(false) }
+    var showSkipConfirm by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -54,7 +56,7 @@ fun ApiSetupScreen(
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(32.dp))
         Text(
             text = L10n.string("connect_snipe_it_desc"),
             style = MaterialTheme.typography.bodyMedium,
@@ -123,8 +125,7 @@ fun ApiSetupScreen(
                     val urlEmpty = url.trim().isEmpty()
                     val keyEmpty = token.trim().isEmpty()
                     if (urlEmpty || keyEmpty) {
-                        // Empty fields = skip
-                        onContinue()
+                        showSkipConfirm = true
                         return@PrimaryButton
                     }
                     scope.launch {
@@ -140,5 +141,26 @@ fun ApiSetupScreen(
             )
         }
         LoadingOverlay(visible = validating)
+    }
+
+    if (showSkipConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSkipConfirm = false },
+            title = { Text(L10n.string("skip_api_confirm_title")) },
+            text = { Text(L10n.string("skip_api_confirm_message")) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSkipConfirm = false
+                        onContinue()
+                    },
+                ) { Text(L10n.string("continue")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSkipConfirm = false }) {
+                    Text(L10n.string("cancel"))
+                }
+            },
+        )
     }
 }

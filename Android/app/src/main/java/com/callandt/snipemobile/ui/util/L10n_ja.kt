@@ -188,6 +188,8 @@ internal object L10n_ja {
         "configure_api_short" to "設定でAPIを構成してください。",
         "connect_snipe_it" to "Snipe-ITに接続",
         "connect_snipe_it_desc" to "Snipe-ITのAPI URLとAPIキーを入力して資産を同期します。この手順はスキップし、後で設定から追加できます。",
+        "skip_api_confirm_title" to "API情報なしで続行しますか？",
+        "skip_api_confirm_message" to "APIのURLまたはキーが入力されていません。後で設定から追加できます。このまま続行しますか？",
         "connection_section_footer" to "Snipe-ITおよび対応ベンダーサービスへのAPI接続。",
         "consumable_created" to "消耗品を作成しました。",
         "consumable_info" to "消耗品情報",

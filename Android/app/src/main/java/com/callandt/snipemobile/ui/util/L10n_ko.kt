@@ -188,6 +188,8 @@ internal object L10n_ko {
         "configure_api_short" to "설정에서 API를 구성하세요.",
         "connect_snipe_it" to "Snipe-IT에 연결",
         "connect_snipe_it_desc" to "자산을 동기화하려면 Snipe-IT API URL과 API 키를 입력하세요. 이 단계를 건너뛰고 나중에 설정에서 추가할 수 있습니다.",
+        "skip_api_confirm_title" to "API 정보 없이 계속할까요?",
+        "skip_api_confirm_message" to "API URL 또는 키가 입력되지 않았습니다. 나중에 설정에서 추가할 수 있습니다. 그래도 계속할까요?",
         "connection_section_footer" to "Snipe-IT 및 지원되는 공급업체 서비스에 대한 API 연결.",
         "consumable_created" to "소모품이 생성되었습니다.",
         "consumable_info" to "소모품 정보",

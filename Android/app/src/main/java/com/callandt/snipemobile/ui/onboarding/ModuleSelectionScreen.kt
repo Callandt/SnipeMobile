@@ -64,7 +64,7 @@ fun ModuleSelectionScreen(
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(32.dp))
         Text(
             text = L10n.string("module_intro_subtitle"),
             style = MaterialTheme.typography.bodyMedium,

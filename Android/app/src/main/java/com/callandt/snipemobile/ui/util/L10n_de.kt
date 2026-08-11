@@ -188,6 +188,8 @@ internal object L10n_de {
         "configure_api_short" to "Konfigurieren Sie Ihre API in den Einstellungen.",
         "connect_snipe_it" to "Mit Snipe-IT verbinden",
         "connect_snipe_it_desc" to "Geben Sie Ihre Snipe-IT-API-URL und Ihren API-Schlüssel ein. Sie können diesen Schritt überspringen und später in den Einstellungen ergänzen.",
+        "skip_api_confirm_title" to "Ohne API-Daten fortfahren?",
+        "skip_api_confirm_message" to "Es wurde keine API-URL oder kein Schlüssel eingegeben. Sie können fortfahren und dies später in den Einstellungen hinzufügen. Trotzdem fortfahren?",
         "connection_section_footer" to "API-Verbindungen zu Snipe-IT und unterstützten Herstellerdiensten.",
         "consumable_created" to "Verbrauchsmaterial erstellt.",
         "consumable_info" to "Verbrauchsmaterial-Info",

@@ -5,6 +5,7 @@ struct APISettingsOnboardingView: View {
     @State private var apiKey: String = ""
     @State private var showAlert: Bool = false
     @State private var alertMessage: String = ""
+    @State private var showSkipConfirm: Bool = false
     var onContinue: (_ apiUrl: String, _ apiKey: String) -> Void
     var onSkip: () -> Void
     @ObservedObject var apiClient: SnipeITAPIClient
@@ -69,7 +70,7 @@ struct APISettingsOnboardingView: View {
                             let urlEmpty = apiUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             let keyEmpty = apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             if urlEmpty || keyEmpty {
-                                onSkip()
+                                showSkipConfirm = true
                             } else {
                                 Task {
                                     apiClient.saveConfiguration(baseURL: apiUrl, apiToken: apiKey)
@@ -101,6 +102,14 @@ struct APISettingsOnboardingView: View {
         .alert(isPresented: $showAlert) {
             Alert(title: Text(alertMessage))
         }
+        .alert(L10n.string("skip_api_confirm_title"), isPresented: $showSkipConfirm) {
+            Button(L10n.string("continue")) {
+                onSkip()
+            }
+            Button(L10n.string("cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.string("skip_api_confirm_message"))
+        }
     }
 }
 
@@ -109,4 +118,4 @@ struct APISettingsOnboardingView_Previews: PreviewProvider {
     static var previews: some View {
         APISettingsOnboardingView(onContinue: { _, _ in }, onSkip: {}, apiClient: SnipeITAPIClient())
     }
-} 
+}

@@ -188,6 +188,8 @@ internal object L10n_ru {
         "configure_api_short" to "Настройте API в Настройках.",
         "connect_snipe_it" to "Подключение к Snipe-IT",
         "connect_snipe_it_desc" to "Введите URL API и ключ API Snipe-IT для синхронизации активов. Можно пропустить и добавить позже в Настройках.",
+        "skip_api_confirm_title" to "Продолжить без данных API?",
+        "skip_api_confirm_message" to "URL или ключ API не указаны. Вы можете продолжить и добавить их позже в настройках. Всё равно продолжить?",
         "connection_section_footer" to "API-подключения к Snipe-IT и поддерживаемым сервисам поставщиков.",
         "consumable_created" to "Расходник создан.",
         "consumable_info" to "Сведения о расходнике",

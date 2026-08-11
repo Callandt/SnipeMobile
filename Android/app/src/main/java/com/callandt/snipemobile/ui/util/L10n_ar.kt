@@ -188,6 +188,8 @@ internal object L10n_ar {
         "configure_api_short" to "اضبط API في الإعدادات.",
         "connect_snipe_it" to "الاتصال بـ Snipe-IT",
         "connect_snipe_it_desc" to "أدخل URL وAPI Key الخاصين بـ Snipe-IT لمزامنة أصولك. يمكنك تخطي هذه الخطوة وإضافتها لاحقًا في الإعدادات.",
+        "skip_api_confirm_title" to "المتابعة بدون بيانات API؟",
+        "skip_api_confirm_message" to "لم يتم إدخال عنوان URL أو مفتاح API. يمكنك المتابعة وإضافتهما لاحقًا في الإعدادات. المتابعة على أي حال؟",
         "connection_section_footer" to "اتصالات API بـ Snipe-IT وخدمات المورّدين المدعومة.",
         "consumable_created" to "تم إنشاء المستهلك.",
         "consumable_info" to "معلومات المستهلك",

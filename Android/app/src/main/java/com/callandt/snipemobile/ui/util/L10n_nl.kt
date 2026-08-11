@@ -188,6 +188,8 @@ internal object L10n_nl {
         "configure_api_short" to "Configureer je API in Instellingen.",
         "connect_snipe_it" to "Verbind met Snipe-IT",
         "connect_snipe_it_desc" to "Voer je Snipe-IT API-URL en API-sleutel in. Je kunt dit later in Instellingen doen.",
+        "skip_api_confirm_title" to "Doorgaan zonder API-gegevens?",
+        "skip_api_confirm_message" to "Er is geen API-URL of -sleutel ingevuld. Je kunt doorgaan en dit later in Instellingen toevoegen. Toch doorgaan?",
         "connection_section_footer" to "API-verbindingen met Snipe-IT en ondersteunde leveranciersdiensten.",
         "consumable_created" to "Verbruiksartikel aangemaakt.",
         "consumable_info" to "Verbruiksartikel-informatie",

@@ -188,6 +188,8 @@ internal object L10n_zh {
         "configure_api_short" to "在设置中配置 API。",
         "connect_snipe_it" to "连接到 Snipe-IT",
         "connect_snipe_it_desc" to "输入您的 Snipe-IT API URL 和 API 密钥以同步资产。可跳过此步骤，稍后在设置中添加。",
+        "skip_api_confirm_title" to "在没有 API 信息的情况下继续？",
+        "skip_api_confirm_message" to "未填写 API URL 或密钥。你可以继续，稍后再在设置中添加。仍要继续吗？",
         "connection_section_footer" to "与 Snipe-IT 及受支持厂商服务的 API 连接。",
         "consumable_created" to "耗材已创建。",
         "consumable_info" to "耗材信息",

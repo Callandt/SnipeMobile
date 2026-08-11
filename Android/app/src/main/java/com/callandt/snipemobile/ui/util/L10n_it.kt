@@ -188,6 +188,8 @@ internal object L10n_it {
         "configure_api_short" to "Configura l’API in Impostazioni.",
         "connect_snipe_it" to "Connetti a Snipe-IT",
         "connect_snipe_it_desc" to "Inserisci URL e chiave API di Snipe-IT per sincronizzare i tuoi asset. Puoi saltare questo passaggio e aggiungerli dopo in Impostazioni.",
+        "skip_api_confirm_title" to "Continuare senza dati API?",
+        "skip_api_confirm_message" to "Nessun URL o chiave API inseriti. Puoi continuare e aggiungerli dopo in Impostazioni. Continuare comunque?",
         "connection_section_footer" to "Connessioni API a Snipe-IT e servizi fornitori supportati.",
         "consumable_created" to "Consumabile creato.",
         "consumable_info" to "Informazioni consumabile",
