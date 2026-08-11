@@ -3,3 +3,9 @@
 .tools/
 *.xcuserstate
 xcuserdata/
+
+# Local build tooling
+cmdtools.zip
+android-sdk/
+jdk-*/
+*.jsa
