@@ -21,6 +21,7 @@ import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.assetPickerSearchText
 import kotlinx.coroutines.launch
 
 @Composable
@@ -77,7 +78,11 @@ fun ComponentCheckoutSheet(
             SearchablePickerField(
                 label = L10n.string("select_asset_short"),
                 items = assets.map {
-                    PickerItem(it.id, "${it.decodedAssetTag} — ${it.decodedName}")
+                    PickerItem(
+                        it.id,
+                        "${it.decodedAssetTag} — ${it.decodedName}",
+                        searchText = assetPickerSearchText(it),
+                    )
                 },
                 selectedId = selectedAssetId.takeIf { it > 0 },
                 onSelected = { selectedAssetId = it.id },

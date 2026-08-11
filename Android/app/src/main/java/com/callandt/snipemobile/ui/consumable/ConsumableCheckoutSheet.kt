@@ -19,6 +19,7 @@ import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.userPickerSearchText
 import kotlinx.coroutines.launch
 
 @Composable
@@ -66,7 +67,9 @@ fun ConsumableCheckoutSheet(
         ) {
             SearchablePickerField(
                 label = L10n.string("select_user_short"),
-                items = users.map { PickerItem(it.id, it.decodedName) },
+                items = users.map {
+                    PickerItem(it.id, it.decodedName, searchText = userPickerSearchText(it))
+                },
                 selectedId = selectedUserId.takeIf { it > 0 },
                 onSelected = { selectedUserId = it.id },
             )

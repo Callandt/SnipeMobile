@@ -23,6 +23,9 @@ import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.assetPickerSearchText
+import com.callandt.snipemobile.ui.util.locationPickerSearchText
+import com.callandt.snipemobile.ui.util.userPickerSearchText
 import kotlinx.coroutines.launch
 
 private enum class AccessoryCheckoutTarget(val labelKey: String) {
@@ -113,20 +116,28 @@ fun AccessoryCheckoutSheet(
             when (target) {
                 AccessoryCheckoutTarget.User -> SearchablePickerField(
                     label = L10n.string("user"),
-                    items = users.map { PickerItem(it.id, it.decodedName) },
+                    items = users.map {
+                        PickerItem(it.id, it.decodedName, searchText = userPickerSearchText(it))
+                    },
                     selectedId = selectedUserId.takeIf { it > 0 },
                     onSelected = { selectedUserId = it.id },
                 )
                 AccessoryCheckoutTarget.Location -> SearchablePickerField(
                     label = L10n.string("location"),
-                    items = locations.map { PickerItem(it.id, it.decodedName) },
+                    items = locations.map {
+                        PickerItem(it.id, it.decodedName, searchText = locationPickerSearchText(it))
+                    },
                     selectedId = selectedLocationId.takeIf { it > 0 },
                     onSelected = { selectedLocationId = it.id },
                 )
                 AccessoryCheckoutTarget.Asset -> SearchablePickerField(
                     label = L10n.string("asset"),
                     items = assets.map {
-                        PickerItem(it.id, "${it.decodedAssetTag} — ${it.decodedName}")
+                        PickerItem(
+                            it.id,
+                            "${it.decodedAssetTag} — ${it.decodedName}",
+                            searchText = assetPickerSearchText(it),
+                        )
                     },
                     selectedId = selectedAssetId.takeIf { it > 0 },
                     onSelected = { selectedAssetId = it.id },

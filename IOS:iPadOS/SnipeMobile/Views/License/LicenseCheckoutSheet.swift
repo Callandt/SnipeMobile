@@ -127,12 +127,7 @@ struct LicenseCheckoutSheet: View {
 
     private var filteredAssets: [Asset] {
         apiClient.assets
-            .filter {
-                assetSearchText.isEmpty ||
-                $0.decodedName.localizedCaseInsensitiveContains(assetSearchText) ||
-                $0.decodedAssetTag.localizedCaseInsensitiveContains(assetSearchText) ||
-                $0.decodedSerial.localizedCaseInsensitiveContains(assetSearchText)
-            }
+            .filter { SearchHelpers.assetMatches($0, query: assetSearchText) }
             .sorted { $0.decodedAssetTag.localizedCaseInsensitiveCompare($1.decodedAssetTag) == .orderedAscending }
     }
 

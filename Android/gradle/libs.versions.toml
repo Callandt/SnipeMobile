@@ -11,7 +11,6 @@ composeBom = "2025.06.01"
 navigationCompose = "2.9.1"
 okhttp = "4.12.0"
 kotlinxSerialization = "1.8.1"
-securityCrypto = "1.1.0"
 biometric = "1.1.0"
 coil = "2.7.0"
 camerax = "1.4.2"
@@ -42,7 +41,6 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
-androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }

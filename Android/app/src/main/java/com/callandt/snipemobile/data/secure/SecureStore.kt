@@ -2,57 +2,61 @@ package com.callandt.snipemobile.data.secure
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import java.nio.ByteBuffer
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
-enum class SecretKey(val storageKey: String) {
+enum class AppSecret(val storageKey: String) {
     API_TOKEN("apiToken"),
     DELL_TECH_DIRECT_CLIENT_ID("dellTechDirectClientId"),
     DELL_TECH_DIRECT_CLIENT_SECRET("dellTechDirectClientSecret"),
 }
 
+/** Alias kept for existing call sites. */
+typealias SecretKey = AppSecret
+
 /**
- * Encrypted storage for API token and Dell TechDirect credentials.
+ * Secrets encrypted with an AES key in the Android Keystore.
+ * Ciphertext is stored in ordinary SharedPreferences.
  */
 class SecureStore(context: Context) {
 
-    private val prefs: SharedPreferences
+    private val prefs: SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
 
-    init {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        prefs = EncryptedSharedPreferences.create(
-            context,
-            PREFS_FILE,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    private val aesKey: SecretKey by lazy { getOrCreateKeystoreKey() }
+
+    fun getString(key: AppSecret): String {
+        val encoded = prefs.getString(key.storageKey, null) ?: return ""
+        return runCatching { decrypt(encoded) }.getOrDefault("")
     }
 
-    fun getString(key: SecretKey): String = prefs.getString(key.storageKey, "").orEmpty()
-
-    fun setString(key: SecretKey, value: String) {
+    fun setString(key: AppSecret, value: String) {
         if (value.isEmpty()) {
             delete(key)
             return
         }
-        prefs.edit().putString(key.storageKey, value).apply()
+        prefs.edit().putString(key.storageKey, encrypt(value)).apply()
     }
 
-    fun delete(key: SecretKey) {
+    fun delete(key: AppSecret) {
         prefs.edit().remove(key.storageKey).apply()
     }
 
     fun wipeAll() {
-        SecretKey.entries.forEach { delete(it) }
+        AppSecret.entries.forEach { delete(it) }
     }
 
-    /** Migrate legacy plaintext prefs into encrypted storage. */
+    /** Migrate legacy plaintext prefs into Keystore-backed storage. */
     fun migrateLegacyPlaintextSecretsIfNeeded(legacyPrefs: SharedPreferences) {
         if (legacyPrefs.getBoolean(MIGRATION_FLAG, false)) return
-        SecretKey.entries.forEach { key ->
+        AppSecret.entries.forEach { key ->
             val legacy = legacyPrefs.getString(key.storageKey, "").orEmpty()
             if (legacy.isNotEmpty() && getString(key).isEmpty()) {
                 setString(key, legacy)
@@ -62,8 +66,57 @@ class SecureStore(context: Context) {
         legacyPrefs.edit().putBoolean(MIGRATION_FLAG, true).apply()
     }
 
+    private fun encrypt(plain: String): String {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, aesKey)
+        val iv = cipher.iv
+        val ciphertext = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+        val payload = ByteBuffer.allocate(4 + iv.size + ciphertext.size)
+            .putInt(iv.size)
+            .put(iv)
+            .put(ciphertext)
+            .array()
+        return Base64.encodeToString(payload, Base64.NO_WRAP)
+    }
+
+    private fun decrypt(encoded: String): String {
+        val payload = Base64.decode(encoded, Base64.NO_WRAP)
+        val buffer = ByteBuffer.wrap(payload)
+        val ivSize = buffer.int
+        require(ivSize in 1..64) { "Invalid IV size" }
+        val iv = ByteArray(ivSize)
+        buffer.get(iv)
+        val ciphertext = ByteArray(buffer.remaining())
+        buffer.get(ciphertext)
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, aesKey, GCMParameterSpec(GCM_TAG_BITS, iv))
+        return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+    }
+
+    private fun getOrCreateKeystoreKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        generator.init(
+            KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build(),
+        )
+        return generator.generateKey()
+    }
+
     companion object {
-        private const val PREFS_FILE = "snipe_secrets"
+        private const val PREFS_FILE = "snipe_secrets_v2"
         private const val MIGRATION_FLAG = "didMigrateSecretsToEncryptedPrefsV1"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val KEY_ALIAS = "snipe_mobile_secrets_aes"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val GCM_TAG_BITS = 128
     }
 }

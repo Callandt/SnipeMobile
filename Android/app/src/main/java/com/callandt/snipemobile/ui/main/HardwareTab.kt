@@ -64,7 +64,8 @@ import com.callandt.snipemobile.ui.util.AssetFilterOptions
 import com.callandt.snipemobile.ui.util.AuditDateHelper
 import com.callandt.snipemobile.ui.util.AuditListFilter
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.matchesSearch
+import com.callandt.snipemobile.ui.util.assetMatchesSearch
+import com.callandt.snipemobile.ui.util.maintenanceMatchesSearch
 
 private enum class HardwareSubtab { All, Audit, Maintenance }
 
@@ -173,17 +174,7 @@ fun HardwareTab(
     val searchableAssets = remember(assets, searchQuery, assetFilter, statusLabels) {
         assets
             .filter { assetFilter.matches(it, statusLabels) }
-            .filter {
-                matchesSearch(
-                    it.decodedName,
-                    it.decodedAssetTag,
-                    it.decodedSerial,
-                    it.decodedModelName,
-                    it.decodedAssignedToName,
-                    it.decodedLocationName,
-                    query = searchQuery,
-                )
-            }
+            .filter { assetMatchesSearch(it, searchQuery) }
     }
 
     val filteredAssets = remember(searchableAssets, currentSubtab) {
@@ -208,14 +199,7 @@ fun HardwareTab(
     val displayedMaintenances = remember(maintenances, maintenanceFilter, searchQuery) {
         maintenances
             .filter { maintenanceFilter.matches(it) }
-            .filter {
-                matchesSearch(
-                    it.decodedTitle,
-                    it.displayType,
-                    it.assetDisplayLabel,
-                    query = searchQuery,
-                )
-            }
+            .filter { maintenanceMatchesSearch(it, searchQuery) }
     }
 
     ErrorSnackbar(refreshError, snackbarHostState)

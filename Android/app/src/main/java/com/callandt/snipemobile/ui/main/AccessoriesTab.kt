@@ -34,7 +34,7 @@ import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.matchesSearch
+import com.callandt.snipemobile.ui.util.accessoryMatchesSearch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +53,7 @@ fun AccessoriesTab(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val filtered = items.filter {
-        matchesSearch(it.decodedName, it.decodedAssetTag, it.decodedCategoryName, query = searchQuery)
+        accessoryMatchesSearch(it, searchQuery)
     }
 
     ErrorSnackbar(refreshError, snackbarHostState)

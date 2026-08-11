@@ -5,8 +5,15 @@ import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.data.model.Asset
+import com.callandt.snipemobile.data.model.AssetMaintenance
+import com.callandt.snipemobile.data.model.Component
+import com.callandt.snipemobile.data.model.Consumable
 import com.callandt.snipemobile.data.model.DateInfo
+import com.callandt.snipemobile.data.model.License
+import com.callandt.snipemobile.data.model.Location
+import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.util.HtmlDecoder
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -96,6 +103,182 @@ fun matchesSearch(vararg fields: String?, query: String): Boolean {
     if (q.isEmpty()) return true
     return fields.any { it?.lowercase()?.contains(q) == true }
 }
+
+fun assetMatchesSearch(asset: Asset, query: String): Boolean {
+    val q = query.trim().lowercase()
+    if (q.isEmpty()) return true
+    if (
+        matchesSearch(
+            asset.decodedName,
+            asset.decodedAssetTag,
+            asset.decodedSerial,
+            asset.decodedModelName,
+            asset.modelNumber,
+            asset.decodedStatusLabelName,
+            asset.decodedCategoryName,
+            asset.decodedManufacturerName,
+            asset.decodedSupplierName,
+            asset.decodedCompanyName,
+            asset.decodedLocationName,
+            asset.rtdLocation?.name?.let(HtmlDecoder::decode),
+            asset.decodedAssignedToName,
+            asset.decodedNotes,
+            asset.orderNumber,
+            asset.altBarcode,
+            asset.jobtitle?.let(HtmlDecoder::decode),
+            query = q,
+        )
+    ) {
+        return true
+    }
+    return asset.customFields?.values?.any { field ->
+        field.decodedValue.lowercase().contains(q) || field.field.lowercase().contains(q)
+    } == true
+}
+
+fun userMatchesSearch(user: User, query: String): Boolean =
+    matchesSearch(
+        user.decodedName,
+        user.decodedFirstName,
+        user.decodedLastName,
+        user.decodedUsername,
+        user.decodedEmail,
+        user.decodedPhone,
+        user.decodedEmployeeNumber,
+        user.decodedJobtitle,
+        user.decodedNotes,
+        user.decodedLocationName,
+        user.decodedCompanyName,
+        query = query,
+    )
+
+fun accessoryMatchesSearch(accessory: Accessory, query: String): Boolean =
+    matchesSearch(
+        accessory.decodedName,
+        accessory.decodedAssetTag,
+        accessory.statusLabel?.name?.let(HtmlDecoder::decode),
+        accessory.decodedAssignedToName,
+        accessory.decodedLocationName,
+        accessory.decodedManufacturerName,
+        accessory.decodedCategoryName,
+        accessory.company?.name?.let(HtmlDecoder::decode),
+        accessory.supplier?.name?.let(HtmlDecoder::decode),
+        accessory.modelNumber,
+        accessory.orderNumber,
+        query = query,
+    )
+
+fun licenseMatchesSearch(license: License, query: String): Boolean =
+    matchesSearch(
+        license.decodedName,
+        license.decodedProductKey,
+        license.decodedLicenseName,
+        license.decodedLicenseEmail,
+        license.serial,
+        license.decodedNotes,
+        license.decodedManufacturerName,
+        license.decodedCategoryName,
+        license.decodedSupplierName,
+        license.decodedCompanyName,
+        license.orderNumber,
+        license.purchaseOrder,
+        query = query,
+    )
+
+fun consumableMatchesSearch(consumable: Consumable, query: String): Boolean =
+    matchesSearch(
+        consumable.decodedName,
+        consumable.decodedItemNo,
+        consumable.decodedModelNumber,
+        consumable.decodedLocationName,
+        consumable.decodedManufacturerName,
+        consumable.decodedCategoryName,
+        consumable.decodedCompanyName,
+        consumable.supplier?.name?.let(HtmlDecoder::decode),
+        consumable.orderNumber,
+        consumable.notes?.let(HtmlDecoder::decode),
+        query = query,
+    )
+
+fun componentMatchesSearch(component: Component, query: String): Boolean =
+    matchesSearch(
+        component.decodedName,
+        component.decodedSerial,
+        component.decodedModelNumber,
+        component.decodedLocationName,
+        component.decodedManufacturerName,
+        component.decodedCategoryName,
+        component.decodedCompanyName,
+        component.supplier?.name?.let(HtmlDecoder::decode),
+        component.orderNumber,
+        component.notes?.let(HtmlDecoder::decode),
+        query = query,
+    )
+
+fun locationMatchesSearch(location: Location, query: String): Boolean =
+    matchesSearch(
+        location.decodedName,
+        location.address,
+        location.address2,
+        location.city,
+        location.state,
+        location.country,
+        location.zip,
+        location.parent?.name?.let(HtmlDecoder::decode),
+        query = query,
+    )
+
+fun maintenanceMatchesSearch(record: AssetMaintenance, query: String): Boolean =
+    matchesSearch(
+        record.decodedTitle,
+        record.displayType,
+        record.assetDisplayLabel,
+        record.decodedNotes,
+        record.supplier?.name?.let(HtmlDecoder::decode),
+        record.cost,
+        record.responsibleParty?.name?.let(HtmlDecoder::decode),
+        record.createdBy?.name?.let(HtmlDecoder::decode),
+        record.completedBy?.name?.let(HtmlDecoder::decode),
+        query = query,
+    )
+
+/** Extra searchable blob for picker UIs (not shown as subtitle). */
+fun userPickerSearchText(user: User): String =
+    listOf(
+        user.decodedUsername,
+        user.decodedEmail,
+        user.decodedPhone,
+        user.decodedEmployeeNumber,
+        user.decodedJobtitle,
+        user.decodedLastName,
+        user.decodedCompanyName,
+        user.decodedNotes,
+    ).filter { it.isNotBlank() }.joinToString(" ")
+
+fun locationPickerSearchText(location: Location): String =
+    listOf(
+        location.address,
+        location.address2,
+        location.city,
+        location.state,
+        location.country,
+        location.zip,
+        location.parent?.name?.let(HtmlDecoder::decode),
+    ).mapNotNull { it?.takeIf(String::isNotBlank) }.joinToString(" ")
+
+fun assetPickerSearchText(asset: Asset): String =
+    buildList {
+        add(asset.decodedSerial)
+        add(asset.decodedModelName)
+        add(asset.modelNumber.orEmpty())
+        add(asset.decodedLocationName)
+        add(asset.decodedAssignedToName)
+        add(asset.decodedNotes)
+        add(asset.orderNumber.orEmpty())
+        add(asset.altBarcode.orEmpty())
+        asset.customFields?.values?.forEach { add(it.decodedValue) }
+    }.filter { it.isNotBlank() }.joinToString(" ")
+
 
 fun assetCardTitle(asset: Asset): String =
     asset.decodedModelName.ifEmpty { asset.decodedName.ifEmpty { asset.decodedAssetTag } }

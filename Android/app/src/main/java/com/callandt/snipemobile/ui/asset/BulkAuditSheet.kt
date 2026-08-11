@@ -66,7 +66,7 @@ import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.matchesSearch
+import com.callandt.snipemobile.ui.util.assetMatchesSearch
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.launch
@@ -300,13 +300,7 @@ internal fun AssetMultiSelectScreen(
     var searchQuery by remember { mutableStateOf("") }
     val filtered = remember(assets, searchQuery) {
         assets.filter {
-            matchesSearch(
-                it.decodedName,
-                it.decodedModelName,
-                it.decodedAssetTag,
-                it.decodedAssignedToName,
-                query = searchQuery,
-            )
+            assetMatchesSearch(it, searchQuery)
         }
     }
 

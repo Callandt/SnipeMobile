@@ -41,7 +41,8 @@ import com.callandt.snipemobile.ui.components.UserCard
 import com.callandt.snipemobile.ui.location.AddLocationSheet
 import com.callandt.snipemobile.ui.user.AddUserSheet
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.matchesSearch
+import com.callandt.snipemobile.ui.util.locationMatchesSearch
+import com.callandt.snipemobile.ui.util.userMatchesSearch
 
 private enum class DirectorySubtab { Users, Locations }
 
@@ -121,7 +122,7 @@ fun DirectoryTab(
                 }
                 if (currentSubtab == DirectorySubtab.Users) {
                     val filtered = users.filter {
-                        matchesSearch(it.decodedName, it.decodedEmail, it.decodedUsername, query = searchQuery)
+                        userMatchesSearch(it, searchQuery)
                     }
                     if (filtered.isEmpty()) {
                         EmptyState(
@@ -143,7 +144,7 @@ fun DirectoryTab(
                     }
                 } else {
                     val filtered = locations.filter {
-                        matchesSearch(it.decodedName, it.city, it.address, query = searchQuery)
+                        locationMatchesSearch(it, searchQuery)
                     }
                     if (filtered.isEmpty()) {
                         EmptyState(

@@ -555,22 +555,11 @@ struct MainSplitView: View {
     // Filtered lists per tab
     var filteredAssets: [Asset] {
         if searchText.isEmpty { return apiClient.assets }
-        return apiClient.assets.filter {
-            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedModelName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssignedToName.lowercased().contains(searchText.lowercased())
-        }
+        return apiClient.assets.filter { SearchHelpers.assetMatches($0, query: searchText) }
     }
     var filteredAccessories: [Accessory] {
         if searchText.isEmpty { return apiClient.accessories }
-        return apiClient.accessories.filter {
-            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssignedToName.lowercased().contains(searchText.lowercased())
-        }
+        return apiClient.accessories.filter { SearchHelpers.accessoryMatches($0, query: searchText) }
     }
 
     private var isMaintenanceSubtabActive: Bool {
@@ -596,12 +585,7 @@ struct MainSplitView: View {
     private var displayedMaintenances: [AssetMaintenance] {
         var records = apiClient.maintenances.filter { maintenanceFilter.matches($0) }
         if !searchText.isEmpty {
-            let q = searchText.lowercased()
-            records = records.filter {
-                $0.decodedTitle.lowercased().contains(q) ||
-                ($0.displayType?.lowercased().contains(q) ?? false) ||
-                ($0.assetDisplayLabel?.lowercased().contains(q) ?? false)
-            }
+            records = records.filter { SearchHelpers.maintenanceMatches($0, query: searchText) }
         }
         return records
     }
@@ -625,53 +609,23 @@ struct MainSplitView: View {
     }
     var filteredLicenses: [License] {
         if searchText.isEmpty { return apiClient.licenses }
-        let needle = searchText.lowercased()
-        return apiClient.licenses.filter {
-            $0.decodedName.lowercased().contains(needle) ||
-            $0.decodedManufacturerName.lowercased().contains(needle) ||
-            $0.decodedCategoryName.lowercased().contains(needle) ||
-            $0.decodedLicenseName.lowercased().contains(needle) ||
-            $0.decodedLicenseEmail.lowercased().contains(needle)
-        }
+        return apiClient.licenses.filter { SearchHelpers.licenseMatches($0, query: searchText) }
     }
     var filteredConsumables: [Consumable] {
         if searchText.isEmpty { return apiClient.consumables }
-        let needle = searchText.lowercased()
-        return apiClient.consumables.filter {
-            $0.decodedName.lowercased().contains(needle) ||
-            $0.decodedItemNo.lowercased().contains(needle) ||
-            $0.decodedModelNumber.lowercased().contains(needle) ||
-            $0.decodedLocationName.lowercased().contains(needle) ||
-            $0.decodedManufacturerName.lowercased().contains(needle) ||
-            $0.decodedCategoryName.lowercased().contains(needle)
-        }
+        return apiClient.consumables.filter { SearchHelpers.consumableMatches($0, query: searchText) }
     }
     var filteredComponents: [Component] {
         if searchText.isEmpty { return apiClient.components }
-        let needle = searchText.lowercased()
-        return apiClient.components.filter {
-            $0.decodedName.lowercased().contains(needle) ||
-            $0.decodedSerial.lowercased().contains(needle) ||
-            $0.decodedModelNumber.lowercased().contains(needle) ||
-            $0.decodedLocationName.lowercased().contains(needle) ||
-            $0.decodedManufacturerName.lowercased().contains(needle) ||
-            $0.decodedCategoryName.lowercased().contains(needle)
-        }
+        return apiClient.components.filter { SearchHelpers.componentMatches($0, query: searchText) }
     }
     var filteredUsers: [User] {
         if searchText.isEmpty { return apiClient.users }
-        return apiClient.users.filter {
-            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedFirstName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedEmail.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedLocationName.lowercased().contains(searchText.lowercased())
-        }
+        return apiClient.users.filter { SearchHelpers.userMatches($0, query: searchText) }
     }
     var filteredLocations: [Location] {
         if searchText.isEmpty { return apiClient.locations }
-        return apiClient.locations.filter {
-            $0.decodedName.lowercased().contains(searchText.lowercased())
-        }
+        return apiClient.locations.filter { SearchHelpers.locationMatches($0, query: searchText) }
     }
 
     private var auditNow: Date { Date() }

@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -131,7 +131,7 @@ fun AssetCard(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (showAssetName) {
                         MetaIconRow(
-                            icon = Icons.Outlined.Label,
+                            icon = Icons.AutoMirrored.Outlined.Label,
                             text = asset.decodedName,
                         )
                     }

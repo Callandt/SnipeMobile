@@ -961,14 +961,7 @@ struct HardwareTab: View {
             assets = assets.filter { assetFilter.matches($0, statusLabels: apiClient.statusLabels) }
         }
         if searchText.isEmpty { return assets }
-        let q = searchText.lowercased()
-        return assets.filter {
-            $0.decodedName.lowercased().contains(q) ||
-            $0.decodedModelName.lowercased().contains(q) ||
-            $0.decodedAssetTag.lowercased().contains(q) ||
-            $0.decodedLocationName.lowercased().contains(q) ||
-            $0.decodedAssignedToName.lowercased().contains(q)
-        }
+        return assets.filter { SearchHelpers.assetMatches($0, query: searchText) }
     }
 
     private var dueTodayAssets: [Asset] {
@@ -1019,12 +1012,7 @@ struct HardwareTab: View {
     private var displayedMaintenances: [AssetMaintenance] {
         var records = apiClient.maintenances.filter { maintenanceFilter.matches($0) }
         if !searchText.isEmpty {
-            let q = searchText.lowercased()
-            records = records.filter {
-                $0.decodedTitle.lowercased().contains(q) ||
-                ($0.displayType?.lowercased().contains(q) ?? false) ||
-                ($0.assetDisplayLabel?.lowercased().contains(q) ?? false)
-            }
+            records = records.filter { SearchHelpers.maintenanceMatches($0, query: searchText) }
         }
         return records
     }
@@ -1897,14 +1885,7 @@ private struct LicensesContent: View {
             items = items.filter { filter.matches($0, dimensions: dimensions) }
         }
         if searchText.isEmpty { return items }
-        let needle = searchText.lowercased()
-        return items.filter {
-            $0.decodedName.lowercased().contains(needle) ||
-            $0.decodedManufacturerName.lowercased().contains(needle) ||
-            $0.decodedCategoryName.lowercased().contains(needle) ||
-            $0.decodedLicenseName.lowercased().contains(needle) ||
-            $0.decodedLicenseEmail.lowercased().contains(needle)
-        }
+        return items.filter { SearchHelpers.licenseMatches($0, query: searchText) }
     }
 
     var body: some View {
@@ -2249,15 +2230,7 @@ private struct ConsumablesContent: View {
             items = items.filter { filter.matches($0, dimensions: dimensions) }
         }
         if searchText.isEmpty { return items }
-        let needle = searchText.lowercased()
-        return items.filter {
-            $0.decodedName.lowercased().contains(needle) ||
-            $0.decodedItemNo.lowercased().contains(needle) ||
-            $0.decodedModelNumber.lowercased().contains(needle) ||
-            $0.decodedLocationName.lowercased().contains(needle) ||
-            $0.decodedManufacturerName.lowercased().contains(needle) ||
-            $0.decodedCategoryName.lowercased().contains(needle)
-        }
+        return items.filter { SearchHelpers.consumableMatches($0, query: searchText) }
     }
 
     var body: some View {
@@ -2422,15 +2395,7 @@ private struct ComponentsContent: View {
             items = items.filter { filter.matches($0, dimensions: dimensions) }
         }
         if searchText.isEmpty { return items }
-        let needle = searchText.lowercased()
-        return items.filter {
-            $0.decodedName.lowercased().contains(needle) ||
-            $0.decodedSerial.lowercased().contains(needle) ||
-            $0.decodedModelNumber.lowercased().contains(needle) ||
-            $0.decodedLocationName.lowercased().contains(needle) ||
-            $0.decodedManufacturerName.lowercased().contains(needle) ||
-            $0.decodedCategoryName.lowercased().contains(needle)
-        }
+        return items.filter { SearchHelpers.componentMatches($0, query: searchText) }
     }
 
     var body: some View {
@@ -2635,14 +2600,7 @@ private struct AccessoriesContent: View {
             items = items.filter { filter.matches($0, dimensions: dimensions) }
         }
         if searchText.isEmpty { return items }
-        return items.filter {
-            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssetTag.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedLocationName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedAssignedToName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedManufacturerName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedCategoryName.lowercased().contains(searchText.lowercased())
-        }
+        return items.filter { SearchHelpers.accessoryMatches($0, query: searchText) }
     }
 
     var body: some View {
@@ -2947,12 +2905,7 @@ private struct UsersContent: View {
             items = items.filter { filter.matches($0, dimensions: dimensions) }
         }
         if searchText.isEmpty { return items }
-        return items.filter {
-            $0.decodedName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedFirstName.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedEmail.lowercased().contains(searchText.lowercased()) ||
-            $0.decodedLocationName.lowercased().contains(searchText.lowercased())
-        }
+        return items.filter { SearchHelpers.userMatches($0, query: searchText) }
     }
 
     var body: some View {
@@ -3070,7 +3023,7 @@ private struct LocationsContent: View {
 
     var filteredLocations: [Location] {
         if searchText.isEmpty { return apiClient.locations }
-        return apiClient.locations.filter { $0.decodedName.lowercased().contains(searchText.lowercased()) }
+        return apiClient.locations.filter { SearchHelpers.locationMatches($0, query: searchText) }
     }
 
     var body: some View {

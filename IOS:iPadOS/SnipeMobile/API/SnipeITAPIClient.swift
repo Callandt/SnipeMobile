@@ -844,17 +844,11 @@ class SnipeITAPIClient: ObservableObject {
 
     func filteredCheckoutUsers(searchText: String) -> [User] {
         let pinnedId = defaultCheckoutUser?.id
-        var filtered = users.filter {
-            searchText.isEmpty ||
-            $0.decodedName.localizedCaseInsensitiveContains(searchText) ||
-            $0.decodedEmail.localizedCaseInsensitiveContains(searchText)
-        }
+        var filtered = users.filter { SearchHelpers.userMatches($0, query: searchText) }
 
         if let pinned = defaultCheckoutUser {
-            let matchesSearch = searchText.isEmpty ||
-                pinned.decodedName.localizedCaseInsensitiveContains(searchText) ||
-                pinned.decodedEmail.localizedCaseInsensitiveContains(searchText)
-            if matchesSearch, !filtered.contains(where: { $0.id == pinned.id }) {
+            if SearchHelpers.userMatches(pinned, query: searchText),
+               !filtered.contains(where: { $0.id == pinned.id }) {
                 filtered.insert(pinned, at: 0)
             }
         }

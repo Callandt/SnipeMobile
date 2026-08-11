@@ -34,7 +34,7 @@ import com.callandt.snipemobile.ui.components.LicenseCard
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.license.AddLicenseSheet
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.matchesSearch
+import com.callandt.snipemobile.ui.util.licenseMatchesSearch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +53,7 @@ fun LicensesTab(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val filtered = items.filter {
-        matchesSearch(it.decodedName, it.decodedProductKey, it.decodedCategoryName, query = searchQuery)
+        licenseMatchesSearch(it, searchQuery)
     }
 
     ErrorSnackbar(refreshError, snackbarHostState)

@@ -41,7 +41,8 @@ import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.consumable.AddConsumableSheet
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.matchesSearch
+import com.callandt.snipemobile.ui.util.componentMatchesSearch
+import com.callandt.snipemobile.ui.util.consumableMatchesSearch
 
 private enum class StockSubtab { Consumables, Components }
 
@@ -130,12 +131,7 @@ fun StockTab(
                 }
                 if (showConsumablesList) {
                     val filtered = consumables.filter {
-                        matchesSearch(
-                            it.decodedName,
-                            it.decodedItemNo,
-                            it.decodedCategoryName,
-                            query = searchQuery,
-                        )
+                        consumableMatchesSearch(it, searchQuery)
                     }
                     if (filtered.isEmpty()) {
                         EmptyState(
@@ -157,12 +153,7 @@ fun StockTab(
                     }
                 } else {
                     val filtered = components.filter {
-                        matchesSearch(
-                            it.decodedName,
-                            it.decodedSerial,
-                            it.decodedModelNumber,
-                            query = searchQuery,
-                        )
+                        componentMatchesSearch(it, searchQuery)
                     }
                     if (filtered.isEmpty()) {
                         EmptyState(

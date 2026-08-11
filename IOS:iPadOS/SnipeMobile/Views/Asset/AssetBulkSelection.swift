@@ -116,13 +116,7 @@ struct AssetMultiSelectView: View {
 
     private var filteredAssets: [Asset] {
         if searchText.isEmpty { return assets }
-        let q = searchText.lowercased()
-        return assets.filter {
-            $0.decodedName.lowercased().contains(q) ||
-            $0.decodedModelName.lowercased().contains(q) ||
-            $0.decodedAssetTag.lowercased().contains(q) ||
-            $0.decodedAssignedToName.lowercased().contains(q)
-        }
+        return assets.filter { SearchHelpers.assetMatches($0, query: searchText) }
     }
 
     var body: some View {

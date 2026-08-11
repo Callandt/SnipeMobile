@@ -4,16 +4,19 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val appVersionCode = 2
+val appVersionName = "1.0"
+
 android {
     namespace = "com.callandt.snipemobile"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.callandt.snipemobile"
         minSdk = 26
-        targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 37
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -47,6 +50,12 @@ android {
     }
 }
 
+// AGP 9+: applicationVariants is gone. archivesName sets the APK/AAB base name.
+// Example: SnipeMobile-V1.0-B1-release.apk
+base {
+    archivesName.set("SnipeMobile-V${appVersionName}-B${appVersionCode}")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -67,7 +76,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.biometric)
     implementation(libs.coil.compose)
     implementation(libs.androidx.camera.camera2)

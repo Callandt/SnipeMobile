@@ -29,6 +29,9 @@ import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.assetPickerSearchText
+import com.callandt.snipemobile.ui.util.locationPickerSearchText
+import com.callandt.snipemobile.ui.util.userPickerSearchText
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -155,19 +158,35 @@ fun AssetCheckoutSheet(
             when (target) {
                 AssetCheckoutTarget.User -> SearchablePickerField(
                     label = L10n.string("select_user_short"),
-                    items = users.map { PickerItem(it.id, it.decodedName, it.decodedEmail) },
+                    items = users.map {
+                        PickerItem(
+                            it.id,
+                            it.decodedName,
+                            it.decodedEmail,
+                            searchText = userPickerSearchText(it),
+                        )
+                    },
                     selectedId = selectedUserId.takeIf { it > 0 },
                     onSelected = { selectedUserId = it.id },
                 )
                 AssetCheckoutTarget.Location -> SearchablePickerField(
                     label = L10n.string("select_location_short"),
-                    items = locations.map { PickerItem(it.id, it.decodedName) },
+                    items = locations.map {
+                        PickerItem(it.id, it.decodedName, searchText = locationPickerSearchText(it))
+                    },
                     selectedId = selectedLocationId.takeIf { it > 0 },
                     onSelected = { selectedLocationId = it.id },
                 )
                 AssetCheckoutTarget.Asset -> SearchablePickerField(
                     label = L10n.string("select_asset_short"),
-                    items = filteredAssets.map { PickerItem(it.id, it.decodedAssetTag, it.decodedName) },
+                    items = filteredAssets.map {
+                        PickerItem(
+                            it.id,
+                            it.decodedAssetTag,
+                            it.decodedName,
+                            searchText = assetPickerSearchText(it),
+                        )
+                    },
                     selectedId = selectedAssetId.takeIf { it > 0 },
                     onSelected = { selectedAssetId = it.id },
                 )

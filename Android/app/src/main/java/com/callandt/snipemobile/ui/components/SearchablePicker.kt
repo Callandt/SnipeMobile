@@ -30,6 +30,8 @@ data class PickerItem(
     val id: Int,
     val title: String,
     val subtitle: String? = null,
+    /** Extra text used only for search filtering (not shown in the UI). */
+    val searchText: String? = null,
 )
 
 @Composable
@@ -93,7 +95,8 @@ fun SearchablePickerDialog(
         if (q.isEmpty()) items
         else items.filter {
             it.title.lowercase().contains(q) ||
-                (it.subtitle?.lowercase()?.contains(q) == true)
+                (it.subtitle?.lowercase()?.contains(q) == true) ||
+                (it.searchText?.lowercase()?.contains(q) == true)
         }
     }
 

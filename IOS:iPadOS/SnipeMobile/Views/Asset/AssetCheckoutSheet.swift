@@ -148,10 +148,7 @@ struct AssetCheckoutSheet: View {
 
     var filteredLocations: [Location] {
         apiClient.locations
-            .filter {
-                locationSearchText.isEmpty ||
-                $0.decodedName.localizedCaseInsensitiveContains(locationSearchText)
-            }
+            .filter { SearchHelpers.locationMatches($0, query: locationSearchText) }
             .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
     }
 
@@ -159,13 +156,7 @@ struct AssetCheckoutSheet: View {
     var filteredTargetAssets: [Asset] {
         apiClient.assets
             .filter { $0.id != asset.id }
-            .filter {
-                assetSearchText.isEmpty ||
-                $0.decodedName.localizedCaseInsensitiveContains(assetSearchText) ||
-                $0.decodedAssetTag.localizedCaseInsensitiveContains(assetSearchText) ||
-                $0.decodedModelName.localizedCaseInsensitiveContains(assetSearchText) ||
-                $0.decodedSerial.localizedCaseInsensitiveContains(assetSearchText)
-            }
+            .filter { SearchHelpers.assetMatches($0, query: assetSearchText) }
             .sorted { $0.decodedAssetTag.localizedCaseInsensitiveCompare($1.decodedAssetTag) == .orderedAscending }
     }
 
