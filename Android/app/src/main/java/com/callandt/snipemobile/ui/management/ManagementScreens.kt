@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeApiClient
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
 import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
@@ -287,7 +288,10 @@ fun ManagementListScreen(
                                 notice = L10n.string("mgmt_deleted")
                                 viewModel.syncInBackground()
                             } else {
-                                deleteError = result.message ?: L10n.string("delete_failed")
+                                deleteError = viewModel.apiClient.userFacingDeleteMessage(
+                                    result.message,
+                                    SnipeApiClient.DeleteFailureKind.Management,
+                                ) ?: result.message ?: L10n.string("mgmt_delete_still_in_use")
                             }
                         }
                     },

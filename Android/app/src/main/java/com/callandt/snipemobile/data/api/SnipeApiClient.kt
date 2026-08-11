@@ -1753,12 +1753,13 @@ class SnipeApiClient(context: Context) {
     enum class DeleteFailureKind {
         Generic,
         Location,
+        Management,
         Component,
         Consumable,
         User,
     }
 
-    private fun userFacingDeleteMessage(
+    fun userFacingDeleteMessage(
         raw: String?,
         kind: DeleteFailureKind = DeleteFailureKind.Generic,
     ): String? {
@@ -1810,6 +1811,7 @@ class SnipeApiClient(context: Context) {
         if (looksInUse) {
             return when (kind) {
                 DeleteFailureKind.Location -> L10n.string("delete_still_in_use_location")
+                DeleteFailureKind.Management -> L10n.string("mgmt_delete_still_in_use")
                 DeleteFailureKind.Component -> L10n.string("delete_component_still_checked_out")
                 DeleteFailureKind.Consumable -> L10n.string("delete_consumable_failed")
                 DeleteFailureKind.User -> L10n.string("delete_user_still_in_use")
