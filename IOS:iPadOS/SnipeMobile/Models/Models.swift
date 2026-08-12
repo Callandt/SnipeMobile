@@ -127,7 +127,7 @@ struct Asset: Identifiable, Codable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, assetTag = "asset_tag", serial, model, byod, requestable, modelNumber = "model_number", eol, assetEolDate = "asset_eol_date", statusLabel = "status_label", category, manufacturer, supplier, notes, orderNumber = "order_number", company, location, rtdLocation = "rtd_location", image, qr, altBarcode = "alt_barcode", assignedTo = "assigned_to", jobtitle, warrantyMonths = "warranty_months", warrantyExpires = "warranty_expires", createdBy = "created_by", createdAt = "created_at", updatedAt = "updated_at", lastAuditDate = "last_audit_date", nextAuditDate = "next_audit_date", deletedAt = "deleted_at", purchaseDate = "purchase_date", age, lastCheckout = "last_checkout", lastCheckin = "last_checkin", expectedCheckin = "expected_checkin", purchaseCost = "purchase_cost", checkinCounter = "checkin_counter", checkoutCounter = "checkout_counter", requestsCounter = "requests_counter", userCanCheckout = "user_can_checkout", bookValue = "book_value", customFields = "custom_fields", availableActions = "available_actions"
+        case id, name, assetTag = "asset_tag", serial, model, byod, requestable, modelNumber = "model_number", eol, assetEolDate = "asset_eol_date", statusLabel = "status_label", status, category, manufacturer, supplier, notes, orderNumber = "order_number", company, location, rtdLocation = "rtd_location", image, qr, altBarcode = "alt_barcode", assignedTo = "assigned_to", jobtitle, warrantyMonths = "warranty_months", warrantyExpires = "warranty_expires", createdBy = "created_by", createdAt = "created_at", updatedAt = "updated_at", lastAuditDate = "last_audit_date", nextAuditDate = "next_audit_date", deletedAt = "deleted_at", purchaseDate = "purchase_date", age, lastCheckout = "last_checkout", lastCheckin = "last_checkin", expectedCheckin = "expected_checkin", purchaseCost = "purchase_cost", checkinCounter = "checkin_counter", checkoutCounter = "checkout_counter", requestsCounter = "requests_counter", userCanCheckout = "user_can_checkout", bookValue = "book_value", customFields = "custom_fields", availableActions = "available_actions"
     }
 
     // compare shown content so views refresh after a checkout/checkin/edit
@@ -159,26 +159,63 @@ struct Asset: Identifiable, Codable, Hashable {
 }
 
 extension Asset {
+    /// Flexible bool (missing, 0/1, true/false).
+    private static func decodeFlexibleBool(_ container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys, default defaultValue: Bool) -> Bool {
+        if let value = try? container.decodeIfPresent(Bool.self, forKey: key) { return value }
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) { return value == 1 }
+        if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+            let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if lowered == "1" || lowered == "true" { return true }
+            if lowered == "0" || lowered == "false" { return false }
+        }
+        return defaultValue
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let id = try container.decode(Int.self, forKey: .id)
         let name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? ""
         let assetTag = try container.decode(String.self, forKey: .assetTag)
         let serial = try? container.decodeIfPresent(String.self, forKey: .serial)
-        let model = try? container.decodeIfPresent(Model.self, forKey: .model)
-        let byod = try container.decode(Bool.self, forKey: .byod)
-        let requestable = try container.decode(Bool.self, forKey: .requestable)
+        // model object, or plain name on requestable list.
+        let model: Model?
+        if let nested = try? container.decodeIfPresent(Model.self, forKey: .model) {
+            model = nested
+        } else if let modelName = try? container.decodeIfPresent(String.self, forKey: .model), !modelName.isEmpty {
+            model = Model(id: 0, name: modelName)
+        } else {
+            model = nil
+        }
+        let byod = Self.decodeFlexibleBool(container, key: .byod, default: false)
+        // Missing flag → treat as requestable (requestable list).
+        let requestable = Self.decodeFlexibleBool(container, key: .requestable, default: true)
         let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
         let eol = try? container.decodeIfPresent(String.self, forKey: .eol)
         let assetEolDate = try? container.decodeIfPresent(DateInfo.self, forKey: .assetEolDate)
-        let statusLabel = try container.decode(StatusLabel.self, forKey: .statusLabel)
+        // status_label object, or status string on requestable list.
+        let statusLabel: StatusLabel
+        if let label = try? container.decode(StatusLabel.self, forKey: .statusLabel) {
+            statusLabel = label
+        } else if let meta = try? container.decodeIfPresent(String.self, forKey: .status), !meta.isEmpty {
+            statusLabel = StatusLabel(id: 0, name: meta, statusMeta: meta)
+        } else {
+            statusLabel = StatusLabel(id: 0, name: "")
+        }
         let category = try? container.decodeIfPresent(Category.self, forKey: .category)
         let manufacturer = try? container.decodeIfPresent(Manufacturer.self, forKey: .manufacturer)
         let supplier = try? container.decodeIfPresent(Supplier.self, forKey: .supplier)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
         let orderNumber = try? container.decodeIfPresent(String.self, forKey: .orderNumber)
         let company = try? container.decodeIfPresent(Company.self, forKey: .company)
-        let location = try? container.decodeIfPresent(Location.self, forKey: .location)
+        // location object, or plain name on requestable list.
+        let location: Location?
+        if let nested = try? container.decodeIfPresent(Location.self, forKey: .location) {
+            location = nested
+        } else if let locationName = try? container.decodeIfPresent(String.self, forKey: .location), !locationName.isEmpty {
+            location = Location(id: 0, name: locationName)
+        } else {
+            location = nil
+        }
         let rtdLocation = try? container.decodeIfPresent(Location.self, forKey: .rtdLocation)
         let image = try? container.decodeIfPresent(String.self, forKey: .image)
         let qr = try? container.decodeIfPresent(String.self, forKey: .qr)
@@ -202,12 +239,62 @@ extension Asset {
         let checkinCounter = try? container.decodeIfPresent(Int.self, forKey: .checkinCounter)
         let checkoutCounter = try? container.decodeIfPresent(Int.self, forKey: .checkoutCounter)
         let requestsCounter = try? container.decodeIfPresent(Int.self, forKey: .requestsCounter)
-        let userCanCheckout = try container.decode(Bool.self, forKey: .userCanCheckout)
+        let userCanCheckout = Self.decodeFlexibleBool(container, key: .userCanCheckout, default: false)
         let bookValue = try? container.decodeIfPresent(String.self, forKey: .bookValue)
         let customFields = try? container.decodeIfPresent([String: CustomField].self, forKey: .customFields)
         let availableActions = try? container.decodeIfPresent(AvailableActions.self, forKey: .availableActions)
 
         self.init(id: id, name: name, assetTag: assetTag, serial: serial, model: model, byod: byod, requestable: requestable, modelNumber: modelNumber, eol: eol, assetEolDate: assetEolDate, statusLabel: statusLabel, category: category, manufacturer: manufacturer, supplier: supplier, notes: notes, orderNumber: orderNumber, company: company, location: location, rtdLocation: rtdLocation, image: image, qr: qr, altBarcode: altBarcode, assignedTo: assignedTo, jobtitle: jobtitle, warrantyMonths: warrantyMonths, warrantyExpires: warrantyExpires, createdBy: createdBy, createdAt: createdAt, updatedAt: updatedAt, lastAuditDate: lastAuditDate, nextAuditDate: nextAuditDate, deletedAt: deletedAt, purchaseDate: purchaseDate, age: age, lastCheckout: lastCheckout, lastCheckin: lastCheckin, expectedCheckin: expectedCheckin, purchaseCost: purchaseCost, checkinCounter: checkinCounter, checkoutCounter: checkoutCounter, requestsCounter: requestsCounter, userCanCheckout: userCanCheckout, bookValue: bookValue, customFields: customFields, availableActions: availableActions)
+    }
+
+    // Manual encode: custom decoder + decode-only `status`.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(assetTag, forKey: .assetTag)
+        try container.encodeIfPresent(serial, forKey: .serial)
+        try container.encodeIfPresent(model, forKey: .model)
+        try container.encode(byod, forKey: .byod)
+        try container.encode(requestable, forKey: .requestable)
+        try container.encodeIfPresent(modelNumber, forKey: .modelNumber)
+        try container.encodeIfPresent(eol, forKey: .eol)
+        try container.encodeIfPresent(assetEolDate, forKey: .assetEolDate)
+        try container.encode(statusLabel, forKey: .statusLabel)
+        try container.encodeIfPresent(category, forKey: .category)
+        try container.encodeIfPresent(manufacturer, forKey: .manufacturer)
+        try container.encodeIfPresent(supplier, forKey: .supplier)
+        try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encodeIfPresent(orderNumber, forKey: .orderNumber)
+        try container.encodeIfPresent(company, forKey: .company)
+        try container.encodeIfPresent(location, forKey: .location)
+        try container.encodeIfPresent(rtdLocation, forKey: .rtdLocation)
+        try container.encodeIfPresent(image, forKey: .image)
+        try container.encodeIfPresent(qr, forKey: .qr)
+        try container.encodeIfPresent(altBarcode, forKey: .altBarcode)
+        try container.encodeIfPresent(assignedTo, forKey: .assignedTo)
+        try container.encodeIfPresent(jobtitle, forKey: .jobtitle)
+        try container.encodeIfPresent(warrantyMonths, forKey: .warrantyMonths)
+        try container.encodeIfPresent(warrantyExpires, forKey: .warrantyExpires)
+        try container.encodeIfPresent(createdBy, forKey: .createdBy)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(lastAuditDate, forKey: .lastAuditDate)
+        try container.encodeIfPresent(nextAuditDate, forKey: .nextAuditDate)
+        try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+        try container.encodeIfPresent(purchaseDate, forKey: .purchaseDate)
+        try container.encodeIfPresent(age, forKey: .age)
+        try container.encodeIfPresent(lastCheckout, forKey: .lastCheckout)
+        try container.encodeIfPresent(lastCheckin, forKey: .lastCheckin)
+        try container.encodeIfPresent(expectedCheckin, forKey: .expectedCheckin)
+        try container.encodeIfPresent(purchaseCost, forKey: .purchaseCost)
+        try container.encodeIfPresent(checkinCounter, forKey: .checkinCounter)
+        try container.encodeIfPresent(checkoutCounter, forKey: .checkoutCounter)
+        try container.encodeIfPresent(requestsCounter, forKey: .requestsCounter)
+        try container.encode(userCanCheckout, forKey: .userCanCheckout)
+        try container.encodeIfPresent(bookValue, forKey: .bookValue)
+        try container.encodeIfPresent(customFields, forKey: .customFields)
+        try container.encodeIfPresent(availableActions, forKey: .availableActions)
     }
 }
 
@@ -523,13 +610,16 @@ struct CustomField: Codable {
 }
 
 struct AvailableActions: Codable {
-    let checkout: Bool
-    let checkin: Bool
-    let clone: Bool
-    let restore: Bool
-    let update: Bool
-    let audit: Bool
-    let delete: Bool
+    let checkout: Bool?
+    let checkin: Bool?
+    let clone: Bool?
+    let restore: Bool?
+    let update: Bool?
+    let audit: Bool?
+    let delete: Bool?
+    /// From requestable hardware list.
+    let request: Bool?
+    let cancel: Bool?
 }
 
 struct AssetResponse: Codable {

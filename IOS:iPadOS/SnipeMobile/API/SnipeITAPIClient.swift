@@ -41,6 +41,8 @@ class SnipeITAPIClient: ObservableObject {
     @Published var hasCompletedInitialLoad: Bool = false
     // Transient notice for a failed refresh (maintenance / unreachable). Cached data stays.
     @Published var refreshErrorMessage: String?
+    /// Set after 401/403 while configured (wipe alert → onboarding).
+    @Published var pendingUnauthorizedSessionWipe: Bool = false
     @Published var statusLabels: [StatusLabel] = [] { didSet { scheduleCacheSave() } }
 
     /// Asset ids to re-fetch by id after bulk list sync (avoids stale status/assignment).
@@ -144,7 +146,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     /// Fetches all pages from a Snipe-IT list endpoint. Returns nil on error or cancellation.
-    private func fetchAllPaginated<T: Decodable>(
+    func fetchAllPaginated<T: Decodable>(
         path: String,
         as type: T.Type,
         extraQueryItems: [URLQueryItem] = [],
@@ -194,10 +196,10 @@ class SnipeITAPIClient: ObservableObject {
             } catch {
                 // Server unreachable / timeout / certificate failure.
                 // Keep cached data, surface a notice.
-                if reportConnectionError {
+                    if reportConnectionError {
                     let kind = Self.connectionFailureKind(from: error)
                     AppLog.network("GET \(path) failed kind=\(kind.rawValue)")
-                    self.refreshErrorMessage = Self.localizedConnectionFailureMessage(from: error)
+                    self.reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
                     return nil
                 }
                 throw error
@@ -216,7 +218,7 @@ class SnipeITAPIClient: ObservableObject {
                     #endif
                     if reportConnectionError {
                         AppLog.network("GET \(path) HTTP \(http.statusCode)")
-                        self.refreshErrorMessage = Self.localizedHTTPFailureMessage(statusCode: http.statusCode)
+                        self.reportHTTPRefreshFailure(statusCode: http.statusCode)
                     }
                     return nil
                 }
@@ -347,6 +349,46 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    static func isUnauthorizedStatus(_ statusCode: Int) -> Bool {
+        statusCode == 401 || statusCode == 403
+    }
+
+    /// Keep the first refresh error of a sync.
+    func reportRefreshError(_ message: String) {
+        if refreshErrorMessage == nil {
+            refreshErrorMessage = message
+        }
+    }
+
+    /// 401/403 → wipe alert (when configured).
+    func reportUnauthorizedSession() {
+        let onboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        guard isConfigured, onboarded else {
+            reportRefreshError(L10n.string("api_validate_unauthorized"))
+            return
+        }
+        guard !pendingUnauthorizedSessionWipe else { return }
+        refreshErrorMessage = nil
+        pendingUnauthorizedSessionWipe = true
+    }
+
+    /// Map HTTP failure to refresh error or session wipe.
+    func reportHTTPRefreshFailure(statusCode: Int) {
+        if Self.isUnauthorizedStatus(statusCode) {
+            reportUnauthorizedSession()
+        } else {
+            reportRefreshError(Self.localizedHTTPFailureMessage(statusCode: statusCode))
+        }
+    }
+
+    func clearRefreshError() {
+        refreshErrorMessage = nil
+    }
+
+    func clearPendingUnauthorizedSessionWipe() {
+        pendingUnauthorizedSessionWipe = false
+    }
+
     private var fetchCurrentUserTask: Task<Void, Never>? = nil
 
     init() {
@@ -367,42 +409,81 @@ class SnipeITAPIClient: ObservableObject {
         NotificationCenter.default.addObserver(forName: .appDataDidWipe, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
-                self.cacheSaveTask?.cancel()
-                LocalCacheStore.clearAll()
-                self.hasCompletedInitialLoad = false
+                self.clearSessionData(resetAppMode: true, fullWipe: true)
                 self.isConfigured = false
-                self.assets = []
-                self.users = []
-                self.currentUser = nil
-                self.accessories = []
-                self.licenses = []
-                self.consumables = []
-                self.components = []
-                self.locations = []
-                self.companies = []
-                self.manufacturers = []
-                self.suppliers = []
-                self.statusLabels = []
-                self.maintenances = []
-                self.maintenanceTypes = []
-                self.maintenanceTypesMode = .unknown
-                WidgetSnapshotBuilder.clear()
             }
         }
     }
 
-    func saveConfiguration(baseURL: String, apiToken: String) {
+    /// Clear lists and on-disk cache.
+    func clearSessionData(resetAppMode: Bool = true, fullWipe: Bool = false) {
+        cacheSaveTask?.cancel()
+        primaryFetchTask?.cancel()
+        primaryFetchTask = nil
+        fetchAssetsTask?.cancel()
+        fetchAssetsGeneration += 1
+        fetchCurrentUserTask?.cancel()
+        fetchCurrentUserTask = nil
+
+        isApplyingCache = true
+        assets = []
+        users = []
+        currentUser = nil
+        accessories = []
+        licenses = []
+        consumables = []
+        components = []
+        locations = []
+        companies = []
+        groups = []
+        manufacturers = []
+        suppliers = []
+        depreciations = []
+        statusLabels = []
+        maintenances = []
+        maintenanceTypes = []
+        maintenanceTypesMode = .unknown
+        models = []
+        categories = []
+        fieldDefinitions = []
+        modelFieldDefinitions = nil
+        fieldsets = nil
+        assetTagSettings = nil
+        assetsPendingDetailRefresh = []
+        isApplyingCache = false
+
+        LocalCacheStore.clearAll()
+        WidgetSnapshotBuilder.clear()
+        hasCompletedInitialLoad = false
+        isLoading = false
+        loadingProgress = nil
+        errorMessage = nil
+        lastApiMessage = nil
+        refreshErrorMessage = nil
+        pendingUnauthorizedSessionWipe = false
+
+        if resetAppMode {
+            if fullWipe {
+                AppModeStore.clear()
+            } else {
+                AppModeStore.clearForServerChange()
+            }
+        }
+    }
+
+    func saveConfiguration(baseURL: String, apiToken: String, syncAfterSave: Bool = true) {
         let normalizedBaseURL = normalizeBaseURL(baseURL)
         let normalizedToken = normalizeApiToken(apiToken)
-        let isDifferentServer = normalizedBaseURL != self.baseURL
-        if isDifferentServer {
-            cacheSaveTask?.cancel()
-            LocalCacheStore.clearAll()
-            currentUser = nil
-            assetTagSettings = nil
-            maintenanceTypes = []
-            maintenanceTypesMode = .unknown
+        let previousURL = self.baseURL
+        let previousToken = self.apiToken
+        let credentialsChanged = normalizedBaseURL != previousURL
+            || normalizedToken != previousToken
+
+        if credentialsChanged {
+            // Clear session when URL or token changes.
+            clearSessionData(resetAppMode: true, fullWipe: false)
         }
+
         UserDefaults.standard.set(normalizedBaseURL, forKey: "baseURL")
         KeychainSecretStore.set(normalizedToken, for: .apiToken)
         UserDefaults.standard.removeObject(forKey: "apiToken")
@@ -412,14 +493,16 @@ class SnipeITAPIClient: ObservableObject {
             apiToken: normalizedToken,
             isConfigured: true
         )
-        AppLog.network("Saved API config scheme=\(URL(string: normalizedBaseURL)?.scheme ?? "(none)") tokenLength=\(normalizedToken.count)")
+        AppLog.network("Saved API config scheme=\(URL(string: normalizedBaseURL)?.scheme ?? "(none)") tokenLength=\(normalizedToken.count) credentialsChanged=\(credentialsChanged)")
 
-        Task {
-            await fetchPrimaryThenBackground()
+        if syncAfterSave {
+            Task {
+                await syncForCurrentAppMode()
+            }
         }
     }
 
-    /// Accepts pasted URLs with/without scheme, trailing slash, or `/api/v1`.
+    /// Normalize pasted base URLs.
     private func normalizeBaseURL(_ value: String) -> String {
         var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") {
@@ -432,7 +515,16 @@ class SnipeITAPIClient: ObservableObject {
             trimmed = "https://\(trimmed)"
         }
 
-        let pathSuffixes = ["/index.php/api/v1", "/index.php/api", "/api/v1", "/api", "/index.php"]
+        // Prefer `/account/api` over bare `/api` (tokens page paste).
+        let pathSuffixes = [
+            "/index.php/account/api",
+            "/account/api",
+            "/index.php/api/v1",
+            "/index.php/api",
+            "/api/v1",
+            "/api",
+            "/index.php",
+        ]
         for suffix in pathSuffixes {
             if trimmed.lowercased().hasSuffix(suffix) {
                 trimmed = String(trimmed.dropLast(suffix.count))
@@ -458,27 +550,43 @@ class SnipeITAPIClient: ObservableObject {
     // sync instead of starting a second one that cancels the first mid-flight.
     private var primaryFetchTask: Task<Void, Never>? = nil
 
-    func fetchPrimaryThenBackground() async {
+    /// - Parameter clearRefreshError: true for pull-to-refresh / user refresh.
+    func fetchPrimaryThenBackground(clearRefreshError: Bool = false) async {
         if let existing = primaryFetchTask {
             await existing.value
             return
         }
 
-        let task = Task { await self.performPrimaryThenBackground() }
+        let task = Task { await self.performPrimaryThenBackground(clearRefreshError: clearRefreshError) }
         primaryFetchTask = task
         await task.value
         primaryFetchTask = nil
     }
 
-    private func performPrimaryThenBackground() async {
+    private func performPrimaryThenBackground(clearRefreshError: Bool) async {
         isLoading = true
         errorMessage = nil
-        refreshErrorMessage = nil
+        if clearRefreshError {
+            refreshErrorMessage = nil
+        }
 
         await fetchCurrentUser()
         await fetchAssets()
+        // Stop after auth/connectivity failure.
+        if refreshErrorMessage != nil || pendingUnauthorizedSessionWipe {
+            isLoading = false
+            hasCompletedInitialLoad = true
+            return
+        }
+
         await fetchUsers()
         reconcileCurrentUserWithUsersList()
+        if refreshErrorMessage != nil || pendingUnauthorizedSessionWipe {
+            isLoading = false
+            hasCompletedInitialLoad = true
+            return
+        }
+
         await fetchAccessories()
         await fetchLicenses()
         await fetchConsumables()
@@ -488,6 +596,8 @@ class SnipeITAPIClient: ObservableObject {
 
         isLoading = false
         hasCompletedInitialLoad = true
+
+        guard refreshErrorMessage == nil, !pendingUnauthorizedSessionWipe else { return }
 
         Task(priority: .background) {
             await self.fetchCompanies()
@@ -515,12 +625,16 @@ class SnipeITAPIClient: ObservableObject {
 
     /// Full list sync in the background — does not block the UI.
     func syncAllInBackground() {
-        Task { await fetchPrimaryThenBackground() }
+        Task { await fetchPrimaryThenBackground(clearRefreshError: false) }
     }
 
     /// Updates the shared widget snapshot from the API.
     func syncWidgetDataFromServer() async {
         guard isConfigured, !baseURL.isEmpty else { return }
+        if AppModeStore.isUserMode {
+            WidgetSnapshotBuilder.publishAdminOnly(baseURL: baseURL, isConfigured: isConfigured)
+            return
+        }
         cacheSaveTask?.cancel()
         await fetchAssets()
         await fetchAccessories()
@@ -625,13 +739,12 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func fetchAssets() async {
-        refreshErrorMessage = nil
         fetchAssetsGeneration += 1
         let myGen = fetchAssetsGeneration
 
         fetchAssetsTask = Task {
             guard !baseURL.isEmpty, !apiToken.isEmpty else {
-                await MainActor.run { errorMessage = "Configure the API settings first." }
+                await MainActor.run { errorMessage = L10n.string("configure_api_short") }
                 return
             }
 
@@ -771,11 +884,10 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchUsers() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
-            await MainActor.run { errorMessage = "Configure the API settings first." }
+            await MainActor.run { errorMessage = L10n.string("configure_api_short") }
             return
         }
 
-        refreshErrorMessage = nil
         do {
             guard let rows = try await fetchAllPaginated(
                 path: "/api/v1/users",
@@ -801,46 +913,87 @@ class SnipeITAPIClient: ObservableObject {
         reconcileCurrentUserWithUsersList()
     }
 
-    func fetchCurrentUser() async {
+    func fetchCurrentUser(reportErrors: Bool = false) async {
         if let existing = fetchCurrentUserTask {
             await existing.value
+            if reportErrors, currentUser == nil, refreshErrorMessage == nil {
+                await performFetchCurrentUser(reportErrors: true)
+            }
             return
         }
 
-        let task = Task { await self.performFetchCurrentUser() }
+        let task = Task { await self.performFetchCurrentUser(reportErrors: reportErrors) }
         fetchCurrentUserTask = task
         await task.value
         fetchCurrentUserTask = nil
     }
 
-    private func performFetchCurrentUser() async {
-        guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        guard let url = URL(string: "\(baseURL)/api/v1/users/me") else { return }
+    private func performFetchCurrentUser(reportErrors: Bool) async {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else {
+            if reportErrors {
+                reportRefreshError(L10n.string("api_validate_missing"))
+            }
+            return
+        }
+        guard let url = URL(string: "\(baseURL)/api/v1/users/me") else {
+            if reportErrors {
+                reportRefreshError(L10n.string("api_validate_invalid_url"))
+            }
+            return
+        }
 
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         do {
             let (data, response) = try await urlSession.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode) else { return }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                if reportErrors {
+                    reportRefreshError(L10n.string("api_validate_connect_failed"))
+                }
+                return
+            }
+            guard (200...299).contains(httpResponse.statusCode) else {
+                if Self.isUnauthorizedStatus(httpResponse.statusCode) {
+                    AppLog.network("GET /users/me HTTP \(httpResponse.statusCode)")
+                    reportUnauthorizedSession()
+                } else if reportErrors {
+                    AppLog.network("GET /users/me HTTP \(httpResponse.statusCode)")
+                    reportRefreshError(Self.localizedHTTPFailureMessage(statusCode: httpResponse.statusCode))
+                }
+                return
+            }
 
-            guard let user = Self.decodeUser(from: data) else { return }
+            guard let user = Self.decodeUser(from: data) else {
+                if reportErrors {
+                    reportRefreshError(L10n.string("api_validate_connect_failed"))
+                }
+                return
+            }
             currentUser = user
             reconcileCurrentUserWithUsersList()
         } catch {
-            #if DEBUG
-            print("Error fetching current user: \(error)")
-            #endif
+            if reportErrors {
+                let kind = Self.connectionFailureKind(from: error)
+                AppLog.network("GET /users/me failed kind=\(kind.rawValue)")
+                reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
+            } else {
+                #if DEBUG
+                print("Error fetching current user: \(error)")
+                #endif
+            }
         }
     }
 
     private func reconcileCurrentUserWithUsersList() {
         guard let id = currentUser?.id,
               let match = users.first(where: { $0.id == id }) else { return }
+        // User mode: keep `/users/me`, don't overwrite from the users list.
+        if AppModeStore.isUserMode { return }
         currentUser = match
     }
 
@@ -888,7 +1041,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    private static func decodeUser(from data: Data) -> User? {
+    static func decodeUser(from data: Data) -> User? {
         if let user = try? JSONDecoder().decode(User.self, from: data) {
             return user
         }
@@ -908,11 +1061,10 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchAccessories() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
-            await MainActor.run { errorMessage = "Configure the API settings first." }
+            await MainActor.run { errorMessage = L10n.string("configure_api_short") }
             return
         }
 
-        refreshErrorMessage = nil
         do {
             guard let rows = try await fetchAllPaginated(
                 path: "/api/v1/accessories",
@@ -934,11 +1086,10 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchLicenses() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
-            await MainActor.run { errorMessage = "Configure the API settings first." }
+            await MainActor.run { errorMessage = L10n.string("configure_api_short") }
             return
         }
 
-        refreshErrorMessage = nil
         do {
             guard let rows = try await fetchAllPaginated(
                 path: "/api/v1/licenses",
@@ -960,11 +1111,10 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchConsumables() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
-            await MainActor.run { errorMessage = "Configure the API settings first." }
+            await MainActor.run { errorMessage = L10n.string("configure_api_short") }
             return
         }
 
-        refreshErrorMessage = nil
         do {
             guard let rows = try await fetchAllPaginated(
                 path: "/api/v1/consumables",
@@ -1237,7 +1387,6 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchComponents() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
-        refreshErrorMessage = nil
         do {
             guard let rows = try await fetchAllPaginated(
                 path: "/api/v1/components",
@@ -1556,45 +1705,64 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     /// Licenses assigned to a user. Returns full License objects (same shape as /api/v1/licenses rows).
-    func fetchUserLicenses(userId: Int) async -> [License] {
+    func fetchUserLicenses(userId: Int, reportErrors: Bool = false) async -> [License] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         do {
             return try await fetchAllPaginated(
                 path: "/api/v1/users/\(userId)/licenses",
-                as: License.self
+                as: License.self,
+                reportConnectionError: reportErrors
             ) ?? []
         } catch {
+            if reportErrors {
+                reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
+            }
             return []
         }
     }
 
     /// Assets assigned to a user (`GET /api/v1/users/{id}/assets`).
-    func fetchUserAssets(userId: Int) async -> [Asset] {
+    func fetchUserAssets(userId: Int, reportErrors: Bool = false) async -> [Asset] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         do {
             return try await fetchAllPaginated(
                 path: "/api/v1/users/\(userId)/assets",
-                as: Asset.self
+                as: Asset.self,
+                reportConnectionError: reportErrors
             ) ?? []
         } catch {
+            if reportErrors {
+                reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
+            }
             return []
         }
     }
 
     /// Accessories checked out to a user.
-    /// Prefers `GET /api/v1/users/{id}/accessories`; falls back to scanning
-    /// accessory checkouts when that endpoint returns empty (some Snipe-IT
-    /// versions mishandle assigned_type / transform on the user relation).
-    func fetchUserAccessories(userId: Int) async -> [Accessory] {
+    /// Prefers the user accessories endpoint; admin may scan checkouts.
+    /// User mode skips the catalog scan.
+    func fetchUserAccessories(userId: Int, reportErrors: Bool = false) async -> [Accessory] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         do {
             let fromEndpoint = try await fetchAllPaginated(
                 path: "/api/v1/users/\(userId)/accessories",
-                as: Accessory.self
-            ) ?? []
-            if !fromEndpoint.isEmpty { return fromEndpoint }
+                as: Accessory.self,
+                reportConnectionError: reportErrors
+            )
+            if let fromEndpoint {
+                if !fromEndpoint.isEmpty || AppModeStore.isUserMode {
+                    return fromEndpoint
+                }
+            } else if AppModeStore.isUserMode {
+                // No catalog scan in user mode.
+                return []
+            }
         } catch {
-            // Fall through to checkout scan.
+            if reportErrors {
+                reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
+            }
+            if AppModeStore.isUserMode { return [] }
+            // Admin: fall through to checkout scan.
         }
 
         if accessories.isEmpty {
@@ -2610,7 +2778,6 @@ class SnipeITAPIClient: ObservableObject {
             return
         }
 
-        refreshErrorMessage = nil
         do {
             guard let rows = try await fetchAllPaginated(
                 path: "/api/v1/locations",
@@ -4527,7 +4694,7 @@ class SnipeITAPIClient: ObservableObject {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
             return L10n.string("api_validate_missing")
         }
-        guard let url = URL(string: "\(baseURL)/api/v1/users?limit=1"),
+        guard let url = URL(string: "\(baseURL)/api/v1/users/me"),
               url.scheme == "http" || url.scheme == "https",
               url.host != nil
         else {
@@ -4553,6 +4720,9 @@ class SnipeITAPIClient: ObservableObject {
 
             switch httpResponse.statusCode {
             case 200...299:
+                if let user = Self.decodeUser(from: data) {
+                    currentUser = user
+                }
                 return nil
             default:
                 return Self.localizedHTTPFailureMessage(statusCode: httpResponse.statusCode)

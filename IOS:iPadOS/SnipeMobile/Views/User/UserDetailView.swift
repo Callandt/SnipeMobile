@@ -4,6 +4,8 @@ struct UserDetailView: View {
     let user: User
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var isDetailViewActive: Bool
+    /// User-mode read-only profile.
+    var isReadOnly: Bool = false
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
@@ -24,7 +26,12 @@ struct UserDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var currentUser: User {
-        apiClient.users.first { $0.id == user.id } ?? user
+        // Don't overwrite `/users/me` from the users list in user mode.
+        if isReadOnly {
+            if let me = apiClient.currentUser, me.id == user.id { return me }
+            return user
+        }
+        return apiClient.users.first { $0.id == user.id } ?? user
     }
 
     private func cleaned(_ value: String?) -> String? {
@@ -32,43 +39,60 @@ struct UserDetailView: View {
         return trimmed
     }
 
-    private var displayName: String {
-        if let detail = detailUser, detail.id == user.id, !detail.decodedName.isEmpty {
-            return detail.decodedName
-        }
-        return currentUser.decodedName
+    private var profileSource: User {
+        if let detail = detailUser, detail.id == user.id { return detail }
+        return currentUser
     }
 
+    private var displayName: String {
+        let name = profileSource.decodedName
+        return name.isEmpty ? currentUser.decodedName : name
+    }
+
+    private var firstNameValue: String? {
+        cleaned(profileSource.decodedFirstName)
+    }
+
+    private var lastNameValue: String? {
+        cleaned(profileSource.decodedLastName)
+    }
+
+    /// Prefer loaded detail fields over list-row fallbacks.
     private func field(_ keyPath: KeyPath<User, String?>) -> String? {
-        if let detail = detailUser, detail.id == user.id, let value = cleaned(detail[keyPath: keyPath]) {
-            return HTMLDecoder.decode(value)
+        if let detail = detailUser, detail.id == user.id {
+            return cleaned(detail[keyPath: keyPath]).map(HTMLDecoder.decode)
         }
         return cleaned(currentUser[keyPath: keyPath]).map(HTMLDecoder.decode)
     }
 
     private var companyName: String? {
-        if let detail = detailUser, detail.id == user.id, let value = cleaned(detail.company?.name) {
-            return HTMLDecoder.decode(value)
+        if let detail = detailUser, detail.id == user.id {
+            return cleaned(detail.company?.name).map(HTMLDecoder.decode)
         }
         return cleaned(currentUser.company?.name).map(HTMLDecoder.decode)
     }
 
     private var locationName: String? {
-        if let detail = detailUser, detail.id == user.id, let value = cleaned(detail.location?.name) {
-            return HTMLDecoder.decode(value)
+        if let detail = detailUser, detail.id == user.id {
+            return cleaned(detail.location?.name).map(HTMLDecoder.decode)
         }
         return cleaned(currentUser.location?.name).map(HTMLDecoder.decode)
     }
 
     private var activatedState: Bool? {
-        if let detail = detailUser, detail.id == user.id, let value = detail.activated {
-            return value
+        if let detail = detailUser, detail.id == user.id {
+            return detail.activated
         }
         return currentUser.activated
     }
 
     private var groupNames: String? {
-        let source = (detailUser?.id == user.id ? detailUser : nil) ?? currentUser
+        let source: User
+        if let detail = detailUser, detail.id == user.id {
+            source = detail
+        } else {
+            source = currentUser
+        }
         let names = source.groups
             .map { $0.decodedName }
             .filter { !$0.isEmpty }
@@ -94,60 +118,80 @@ struct UserDetailView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                Picker("Details", selection: $selectedTab) {
-                    Text(L10n.string("details")).tag(0)
-                    Text(L10n.string("history")).tag(1)
+                if !isReadOnly {
+                    Picker("Details", selection: $selectedTab) {
+                        Text(L10n.string("details")).tag(0)
+                        Text(L10n.string("history")).tag(1)
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
                 }
-                .pickerStyle(SegmentedPickerStyle())
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 2)
 
-                if selectedTab == 0 {
+                if selectedTab == 0 || isReadOnly {
                     ScrollView {
                         VStack(spacing: 12) {
                             userInfoSection
 
-                            if !userAssets.isEmpty {
-                                assignedSection(title: L10n.string("assigned_assets")) {
-                                    ForEach(userAssets) { asset in
-                                        Button { onOpenAsset?(asset) } label: {
-                                            AssignedAssetCard(asset: asset)
+                            if !isReadOnly {
+                                if !userAssets.isEmpty {
+                                    assignedSection(title: L10n.string("assigned_assets")) {
+                                        ForEach(userAssets) { asset in
+                                            if let onOpenAsset {
+                                                Button { onOpenAsset(asset) } label: {
+                                                    AssignedAssetCard(asset: asset)
+                                                }
+                                                .buttonStyle(.plain)
+                                            } else {
+                                                AssignedAssetCard(asset: asset)
+                                            }
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
-                            }
 
-                            if !userAccessories.isEmpty {
-                                assignedSection(title: L10n.string("tab_accessories")) {
-                                    ForEach(userAccessories) { accessory in
-                                        Button { onOpenAccessory?(accessory) } label: {
-                                            AssignedAccessoryCard(accessory: accessory)
+                                if !userAccessories.isEmpty {
+                                    assignedSection(title: L10n.string("tab_accessories")) {
+                                        ForEach(userAccessories) { accessory in
+                                            if let onOpenAccessory {
+                                                Button { onOpenAccessory(accessory) } label: {
+                                                    AssignedAccessoryCard(accessory: accessory)
+                                                }
+                                                .buttonStyle(.plain)
+                                            } else {
+                                                AssignedAccessoryCard(accessory: accessory)
+                                            }
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
-                            }
 
-                            if !userLicenses.isEmpty {
-                                assignedSection(title: L10n.string("tab_licenses")) {
-                                    ForEach(userLicenses) { license in
-                                        Button { onOpenLicense?(license) } label: {
-                                            AssignedLicenseCard(license: license)
+                                if !userLicenses.isEmpty {
+                                    assignedSection(title: L10n.string("tab_licenses")) {
+                                        ForEach(userLicenses) { license in
+                                            if let onOpenLicense {
+                                                Button { onOpenLicense(license) } label: {
+                                                    AssignedLicenseCard(license: license)
+                                                }
+                                                .buttonStyle(.plain)
+                                            } else {
+                                                AssignedLicenseCard(license: license)
+                                            }
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
-                            }
 
-                            if !userConsumables.isEmpty {
-                                assignedSection(title: L10n.string("tab_consumables")) {
-                                    ForEach(userConsumables) { consumable in
-                                        Button { onOpenConsumable?(consumable) } label: {
-                                            AssignedConsumableCard(consumable: consumable)
+                                if !userConsumables.isEmpty {
+                                    assignedSection(title: L10n.string("tab_consumables")) {
+                                        ForEach(userConsumables) { consumable in
+                                            if let onOpenConsumable {
+                                                Button { onOpenConsumable(consumable) } label: {
+                                                    AssignedConsumableCard(consumable: consumable)
+                                                }
+                                                .buttonStyle(.plain)
+                                            } else {
+                                                AssignedConsumableCard(consumable: consumable)
+                                            }
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
                             }
@@ -162,32 +206,34 @@ struct UserDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(isReadOnly ? L10n.string("user_mode_my_profile") : "")
+        .navigationBarTitleDisplayMode(isReadOnly ? .large : .inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(displayName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showEditSheet = true } label: {
-                    Image(systemName: "pencil")
+            if !isReadOnly {
+                ToolbarItem(placement: .principal) {
+                    Text(displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
-                .disabled(isDeleting)
-                .accessibilityLabel(L10n.string("edit"))
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    Image(systemName: "trash")
-                        .foregroundStyle(.red)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showEditSheet = true } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .disabled(isDeleting)
+                    .accessibilityLabel(L10n.string("edit"))
                 }
-                .disabled(isDeleting)
-                .accessibilityLabel(L10n.string("delete"))
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .disabled(isDeleting)
+                    .accessibilityLabel(L10n.string("delete"))
+                }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/users/\(user.id)") {
@@ -224,20 +270,42 @@ struct UserDetailView: View {
                 }
             )
         }
+        .onAppear {
+            if !isReadOnly {
+                isDetailViewActive = true
+            }
+        }
+        .onDisappear {
+            if !isReadOnly {
+                isDetailViewActive = false
+            }
+        }
+        .hidesTabBarWhenPushed(if: !isReadOnly)
         .task(id: user.id) {
-            DispatchQueue.main.async { isDetailViewActive = true }
-            defer { isDetailViewActive = false }
-            await reloadAssignedItems()
-            if let fullUser = await apiClient.fetchUserDetails(userId: user.id) {
-                detailUser = fullUser
-                if let image = fullUser.image,
-                   !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    detailImageURL = image
+            if isReadOnly {
+                // Assigned items live on My Assets.
+                await apiClient.fetchCurrentUser()
+                if let me = apiClient.currentUser, me.id == user.id {
+                    detailUser = me
+                    detailImageURL = cleaned(me.image)
                 } else {
-                    detailImageURL = nil
+                    detailUser = user
+                    detailImageURL = cleaned(user.image)
                 }
             } else {
-                detailImageURL = nil
+                await reloadAssignedItems()
+                if let fullUser = await apiClient.fetchUserDetails(userId: user.id) {
+                    detailUser = fullUser
+                    if let image = fullUser.image,
+                       !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        detailImageURL = image
+                    } else {
+                        detailImageURL = nil
+                    }
+                } else {
+                    detailUser = user
+                    detailImageURL = user.image
+                }
             }
         }
     }
@@ -284,6 +352,12 @@ struct UserDetailView: View {
             VStack(alignment: .leading, spacing: 15) {
                 if let username = field(\.username) {
                     copyableDetailRow(label: L10n.string("username"), value: username)
+                }
+                if let firstName = firstNameValue {
+                    copyableDetailRow(label: L10n.string("first_name"), value: firstName)
+                }
+                if let lastName = lastNameValue {
+                    copyableDetailRow(label: L10n.string("last_name"), value: lastName)
                 }
                 if let jobtitle = field(\.jobtitle) {
                     copyableDetailRow(label: L10n.string("job_title"), value: jobtitle)
@@ -354,11 +428,15 @@ struct UserDetailView: View {
         async let assets = apiClient.fetchUserAssets(userId: user.id)
         async let accessories = apiClient.fetchUserAccessories(userId: user.id)
         async let licenses = apiClient.fetchUserLicenses(userId: user.id)
-        async let consumables = apiClient.fetchUserConsumables(userId: user.id)
         userAssets = await assets
         userAccessories = await accessories
         userLicenses = await licenses
-        userConsumables = await consumables
+        // No consumable catalog scan in user mode.
+        if isReadOnly {
+            userConsumables = []
+        } else {
+            userConsumables = await apiClient.fetchUserConsumables(userId: user.id)
+        }
     }
 
     @ViewBuilder

@@ -1,14 +1,55 @@
 import SwiftUI
 
-struct AssetCardView: View {
+struct AssetCardView<Footer: View>: View {
     let asset: Asset
     /// iPad: transparent row vs card background.
     var useExplicitBackground: Bool = true
     /// Used in the audit subtab to show the next audit date on the card.
     var showNextAuditDate: Bool = false
+    /// Optional tap on the info section.
+    var onSelect: (() -> Void)? = nil
+    @ViewBuilder private var footer: () -> Footer
     @EnvironmentObject var appSettings: AppSettings
 
+    init(
+        asset: Asset,
+        useExplicitBackground: Bool = true,
+        showNextAuditDate: Bool = false,
+        onSelect: (() -> Void)? = nil,
+        @ViewBuilder footer: @escaping () -> Footer
+    ) {
+        self.asset = asset
+        self.useExplicitBackground = useExplicitBackground
+        self.showNextAuditDate = showNextAuditDate
+        self.onSelect = onSelect
+        self.footer = footer
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Group {
+                if let onSelect {
+                    infoSection
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: onSelect)
+                } else {
+                    infoSection
+                }
+            }
+
+            footer()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            useExplicitBackground ? Color(.secondarySystemBackground) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var infoSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Image(systemName: "laptopcomputer")
@@ -86,13 +127,6 @@ struct AssetCardView: View {
                 checkedOutBanner(assigneeName: assigneeName)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            useExplicitBackground ? Color(.secondarySystemBackground) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
-        .contentShape(Rectangle())
     }
 
     private func checkedOutBanner(assigneeName: String) -> some View {
@@ -163,5 +197,22 @@ struct AssetCardView: View {
         if !name.isEmpty { return name }
         let meta = asset.statusLabel.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return meta.isEmpty ? nil : L10n.statusLabel(meta)
+    }
+}
+
+extension AssetCardView where Footer == EmptyView {
+    init(
+        asset: Asset,
+        useExplicitBackground: Bool = true,
+        showNextAuditDate: Bool = false,
+        onSelect: (() -> Void)? = nil
+    ) {
+        self.init(
+            asset: asset,
+            useExplicitBackground: useExplicitBackground,
+            showNextAuditDate: showNextAuditDate,
+            onSelect: onSelect,
+            footer: { EmptyView() }
+        )
     }
 }

@@ -166,6 +166,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         KeychainSecretStore.migrateLegacyUserDefaultsSecretsIfNeeded()
         KeychainSecretStore.migrateLocalSecretsToICloudKeychainIfNeeded()
         CloudSettingsStore.shared.mergeFromCloud()
+        AppModeStore.migrateAdminCapableIfNeeded()
         DebugLogStore.shared.startIfNeeded()
         AppLog.info("App launch", category: "app")
     }
@@ -175,9 +176,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     @StateObject private var widgetNavigationRouter = WidgetNavigationRouter()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @AppStorage("hasSeenModulesIntro") private var hasSeenModulesIntro: Bool = false
+    @AppStorage("appMode") private var appModeRaw: String = ""
+    @AppStorage("hasDetectedAppMode") private var hasDetectedAppMode: Bool = false
     @State private var showAPISettings: Bool = false
+    @State private var showRightsCheck: Bool = false
     @State private var showModuleSelection: Bool = false
     @State private var showModulesIntroForExisting: Bool = false
+    @State private var isConfirmingUnauthorizedWipe = false
     @State private var isLocked = false
     @State private var showBiometricError = false
     @State private var biometricErrorMessage = ""
@@ -207,15 +212,45 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                             CloudSettingsStore.shared.setHasCompletedOnboarding(true)
                             CloudSettingsStore.shared.setHasSeenModulesIntro(true)
                             showModuleSelection = false
+                            showRightsCheck = false
                             showAPISettings = false
+                            Task { await apiClient.syncForCurrentAppMode() }
                         })
+                    } else if showRightsCheck {
+                        RightsCheckOnboardingView(
+                            apiClient: apiClient,
+                            onFinished: { mode in
+                                appModeRaw = mode.rawValue
+                                showRightsCheck = false
+                                if mode == .admin {
+                                    showModuleSelection = true
+                                } else {
+                                    hasCompletedOnboarding = true
+                                    hasSeenModulesIntro = true
+                                    CloudSettingsStore.shared.setHasCompletedOnboarding(true)
+                                    CloudSettingsStore.shared.setHasSeenModulesIntro(true)
+                                    showAPISettings = false
+                                    Task { await apiClient.syncForCurrentAppMode() }
+                                }
+                            },
+                            onFailed: {
+                                showRightsCheck = false
+                                showAPISettings = true
+                            }
+                        )
                     } else if showAPISettings {
                         APISettingsOnboardingView(
                             onContinue: { url, key in
-                                apiClient.saveConfiguration(baseURL: url, apiToken: key)
-                                showModuleSelection = true
+                                apiClient.saveConfiguration(
+                                    baseURL: url,
+                                    apiToken: key,
+                                    syncAfterSave: false
+                                )
+                                showRightsCheck = true
                             },
                             onSkip: {
+                                AppModeStore.apply(mode: .admin, canRequestAssets: false)
+                                appModeRaw = AppMode.admin.rawValue
                                 showModuleSelection = true
                             },
                             apiClient: apiClient
@@ -227,7 +262,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                     }
                 } else {
                     Group {
-                        if UIDevice.current.userInterfaceIdiom == .pad {
+                        if appModeRaw == AppMode.user.rawValue {
+                            UserModeRootView(apiClient: apiClient)
+                        } else if UIDevice.current.userInterfaceIdiom == .pad {
                             MainSplitView(apiClient: apiClient)
                         } else {
                             ContentView()
@@ -240,7 +277,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                         appSettings.appTheme == "light" ? .light :
                         appSettings.appTheme == "dark" ? .dark : nil
                     )
-                    // Blur until biometrics done
+
                     if (isLocked && appSettings.useBiometrics == true) || showPrivacyBlur {
                         ZStack {
                             StrongBlurView()
@@ -259,6 +296,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                         }
                     }
                 }
+            }
+            .alert(
+                L10n.string("session_unauthorized_title"),
+                isPresented: Binding(
+                    get: { apiClient.pendingUnauthorizedSessionWipe && hasCompletedOnboarding },
+                    set: { newValue in
+                        if !newValue {
+                            // Dismissed → wipe → Welcome.
+                            DispatchQueue.main.async {
+                                self.confirmUnauthorizedSessionWipe()
+                            }
+                        }
+                    }
+                )
+            ) {
+                Button(L10n.string("ok"), role: .cancel) {
+                    confirmUnauthorizedSessionWipe()
+                }
+            } message: {
+                Text(L10n.string("session_unauthorized_message"))
             }
             .onAppear {
                 WidgetBackgroundRefreshService.configure(apiClient: apiClient)
@@ -287,8 +344,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                 }
 
                 // One-time module picker for users upgrading from before it existed.
-                if hasCompletedOnboarding && !hasSeenModulesIntro {
+                if hasCompletedOnboarding && !hasSeenModulesIntro && !AppModeStore.isUserMode {
                     showModulesIntroForExisting = true
+                }
+
+                // Existing installs: detect mode in the background.
+                if hasCompletedOnboarding,
+                   apiClient.isConfigured,
+                   !hasDetectedAppMode {
+                    Task { await runBackgroundModeDetectionIfNeeded() }
                 }
             }
             .fullScreenCover(isPresented: $showModulesIntroForExisting) {
@@ -348,6 +412,41 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     private var currentAppVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    }
+
+    /// Wipe after unauthorized confirm.
+    @MainActor
+    private func confirmUnauthorizedSessionWipe() {
+        guard !isConfirmingUnauthorizedWipe else { return }
+        isConfirmingUnauthorizedWipe = true
+        apiClient.clearPendingUnauthorizedSessionWipe()
+        showAPISettings = false
+        showRightsCheck = false
+        showModuleSelection = false
+        showModulesIntroForExisting = false
+        appModeRaw = ""
+        hasDetectedAppMode = false
+        CloudSettingsStore.shared.wipeAllData()
+        isConfirmingUnauthorizedWipe = false
+    }
+
+    /// Background mode detect for existing installs.
+    @MainActor
+    private func runBackgroundModeDetectionIfNeeded() async {
+        guard hasCompletedOnboarding, apiClient.isConfigured, !hasDetectedAppMode else { return }
+
+        let result = await apiClient.detectAppMode()
+        if let mode = result.detectedMode {
+            appModeRaw = mode.rawValue
+            hasDetectedAppMode = true
+            if mode == .user {
+                await apiClient.syncForCurrentAppMode()
+            }
+        } else {
+            AppModeStore.apply(mode: .admin, canRequestAssets: false)
+            appModeRaw = AppMode.admin.rawValue
+            hasDetectedAppMode = true
+        }
     }
 
     private func maybeRequestAppStoreReviewIfEligible() {
@@ -800,7 +899,7 @@ struct MainSplitView: View {
         .alert(
             L10n.string("refresh_failed_title"),
             isPresented: Binding(
-                get: { apiClient.refreshErrorMessage != nil },
+                get: { apiClient.refreshErrorMessage != nil && !apiClient.pendingUnauthorizedSessionWipe },
                 set: { if !$0 { apiClient.refreshErrorMessage = nil } }
             )
         ) {
@@ -2005,6 +2104,7 @@ struct MainSplitView: View {
             .refreshable {
                 if apiClient.isConfigured {
                     isRefreshing = true
+                    apiClient.clearRefreshError()
                     if isMaintenanceSubtabActive {
                         await loadAllMaintenances(force: true)
                     } else {

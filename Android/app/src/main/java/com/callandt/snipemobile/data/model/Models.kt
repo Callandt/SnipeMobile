@@ -456,6 +456,9 @@ data class AvailableActions(
     val update: Boolean = false,
     val audit: Boolean = false,
     val delete: Boolean = false,
+    /** From requestable hardware list. */
+    val request: Boolean = false,
+    val cancel: Boolean = false,
 )
 
 @Serializable
@@ -534,24 +537,47 @@ data class Asset(
 }
 
 /**
- * Lenient Asset decode: skip bad fields instead of dropping the whole row.
+ * Soft Asset decode: ignore bad fields instead of dropping the row.
  */
 object AssetSerializer : KSerializer<Asset> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("Asset")
 
     override fun deserialize(decoder: Decoder): Asset {
         val obj = (decoder as JsonDecoder).decodeJsonElement().jsonObject
+        // status_label object, or status string on requestable list.
         val statusLabel: StatusLabel = softDecode(obj["status_label"])
+            ?: obj["status"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let {
+                StatusLabel(id = 0, name = it, statusMeta = it)
+            }
             ?: StatusLabel(id = 0, name = "Unknown")
+
+        // model object, or plain name string on requestable list.
+        val model: Model? = softDecode(obj["model"])
+            ?: obj["model"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let {
+                Model(id = 0, name = it)
+            }
+
+        // location object, or plain name string on requestable list.
+        val location: Location? = softDecode(obj["location"])
+            ?: obj["location"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let {
+                Location(id = 0, name = it)
+            }
+
+        // Missing flag → treat as requestable (requestable list).
+        val requestable = if (obj.containsKey("requestable")) {
+            SnipeDecoders.flexibleBool(obj["requestable"])
+        } else {
+            true
+        }
 
         return Asset(
             id = SnipeDecoders.flexibleInt(obj["id"]) ?: 0,
             name = obj["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             assetTag = obj["asset_tag"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             serial = obj["serial"]?.jsonPrimitive?.contentOrNull,
-            model = softDecode(obj["model"]),
+            model = model,
             byod = SnipeDecoders.flexibleBool(obj["byod"]),
-            requestable = SnipeDecoders.flexibleBool(obj["requestable"]),
+            requestable = requestable,
             modelNumber = SnipeDecoders.flexibleStringOrNumber(obj["model_number"]),
             eol = SnipeDecoders.flexibleStringOrNumber(obj["eol"]),
             assetEolDate = SnipeDecoders.flexibleDateInfo(obj["asset_eol_date"]),
@@ -562,7 +588,7 @@ object AssetSerializer : KSerializer<Asset> {
             notes = obj["notes"]?.jsonPrimitive?.contentOrNull,
             orderNumber = SnipeDecoders.flexibleStringOrNumber(obj["order_number"]),
             company = softDecode(obj["company"]),
-            location = softDecode(obj["location"]),
+            location = location,
             rtdLocation = softDecode(obj["rtd_location"]),
             image = obj["image"]?.jsonPrimitive?.contentOrNull,
             qr = obj["qr"]?.jsonPrimitive?.contentOrNull,

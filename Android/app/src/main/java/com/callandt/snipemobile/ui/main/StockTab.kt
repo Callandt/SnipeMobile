@@ -153,7 +153,7 @@ fun StockTab(
         )
     }
 
-    ErrorSnackbar(refreshError, snackbarHostState)
+    ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
     Scaffold(
         modifier = modifier,

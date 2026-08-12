@@ -16,6 +16,8 @@ struct SettingsView: View {
     @AppStorage("settingsLanguage") private var settingsLanguage: String = "en"
     @AppStorage("biometricsJustConfirmed") private var biometricsJustConfirmed: Bool = false
     @AppStorage("useCloudSync") private var useCloudSync: Bool = true
+    @AppStorage("appMode") private var appModeRaw: String = ""
+    @AppStorage("apiIsAdminCapable") private var apiIsAdminCapable: Bool = false
     @AppStorage("auditNotificationsEnabled") private var auditNotificationsEnabled: Bool = false
     @AppStorage("auditNotificationHour") private var auditNotificationHour: Int = 9
     @AppStorage("auditNotificationMinute") private var auditNotificationMinute: Int = 0
@@ -78,11 +80,18 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Form {
+                if apiIsAdminCapable {
+                    modeSwitcherSection
+                }
                 generalSection
-                modulesSection
-                managementSection
+                if appModeRaw != AppMode.user.rawValue {
+                    modulesSection
+                    managementSection
+                }
                 privacySection
-                featuresSection
+                if appModeRaw != AppMode.user.rawValue {
+                    featuresSection
+                }
                 connectionSection
                 aboutAndResetSection
             }
@@ -101,8 +110,8 @@ struct SettingsView: View {
                         apiClient: apiClient,
                         baseURL: $baseURL,
                         apiToken: $apiToken,
-                        showAlert: $showAlert,
-                        alertMessage: $alertMessage
+                        appModeRaw: $appModeRaw,
+                        apiIsAdminCapable: $apiIsAdminCapable
                     )
                 case .audit:
                     AuditSettingsView(
@@ -361,19 +370,59 @@ struct SettingsView: View {
                     value: apiStatusLabel
                 )
             }
-            NavigationLink(value: SettingsRoute.dell) {
-                SettingsRow(
-                    icon: "desktopcomputer",
-                    iconColor: .gray,
-                    title: L10n.string("settings_dell"),
-                    value: nil
-                )
+            if appModeRaw != AppMode.user.rawValue {
+                NavigationLink(value: SettingsRoute.dell) {
+                    SettingsRow(
+                        icon: "desktopcomputer",
+                        iconColor: .gray,
+                        title: L10n.string("settings_dell"),
+                        value: nil
+                    )
+                }
             }
         } header: {
             Text(L10n.string("settings_connection"))
         } footer: {
             Text(L10n.string("connection_section_footer"))
         }
+    }
+
+    private var modeSwitcherSection: some View {
+        Section {
+            Picker(selection: modePickerBinding) {
+                Text(L10n.string("app_mode_admin")).tag(AppMode.admin.rawValue)
+                Text(L10n.string("app_mode_user")).tag(AppMode.user.rawValue)
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.segmented)
+            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+        } header: {
+            Text(L10n.string("app_mode_section"))
+        } footer: {
+            Text(L10n.string("app_mode_switch_footer"))
+        }
+    }
+
+    private var modePickerBinding: Binding<String> {
+        Binding(
+            get: {
+                appModeRaw.isEmpty ? AppMode.admin.rawValue : appModeRaw
+            },
+            set: { newValue in
+                guard let mode = AppMode(rawValue: newValue) else { return }
+                guard mode != AppMode(rawValue: appModeRaw) else { return }
+                AppModeStore.setActiveMode(mode)
+                appModeRaw = mode.rawValue
+                Task {
+                    await apiClient.syncForCurrentAppMode()
+                }
+                // Close settings after mode switch.
+                if !isPresentedAsTab {
+                    dismiss()
+                }
+            }
+        )
     }
 
     private var featuresSection: some View {
@@ -475,10 +524,9 @@ struct SettingsView: View {
         if !isPresentedAsTab {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(L10n.string("close")) {
-                    let storedToken = KeychainSecretStore.string(for: .apiToken)
-                    if apiCredentialsChanged(storedURL: apiClient.baseURL, storedToken: storedToken) {
-                        apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
-                    }
+                    // API URL/token only saved via Save (with rights check).
+                    baseURL = apiClient.baseURL
+                    apiToken = KeychainSecretStore.string(for: .apiToken)
                     CloudSettingsStore.shared.pushToCloud()
                     dismiss()
                 }
@@ -508,30 +556,6 @@ struct SettingsView: View {
             second: 0,
             of: Date()
         ) ?? Date()
-    }
-
-    private func apiCredentialsChanged(storedURL: String, storedToken: String) -> Bool {
-        normalizeURLForCompare(baseURL) != storedURL
-            || apiToken.trimmingCharacters(in: .whitespacesAndNewlines) != storedToken
-    }
-
-    private func normalizeURLForCompare(_ value: String) -> String {
-        // Mirror SnipeITAPIClient.normalizeBaseURL for dirty-check;
-        // saveConfiguration applies the real normalizer.
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        if !trimmed.isEmpty,
-           !trimmed.lowercased().hasPrefix("http://"),
-           !trimmed.lowercased().hasPrefix("https://") {
-            trimmed = "https://\(trimmed)"
-        }
-        let suffixes = ["/index.php/api/v1", "/index.php/api", "/api/v1", "/api", "/index.php"]
-        for suffix in suffixes where trimmed.lowercased().hasSuffix(suffix) {
-            trimmed = String(trimmed.dropLast(suffix.count))
-            break
-        }
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return trimmed
     }
 
     private func openSupportMail() {
@@ -974,9 +998,12 @@ struct APISettingsView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var baseURL: String
     @Binding var apiToken: String
-    @Binding var showAlert: Bool
-    @Binding var alertMessage: String
-    @State private var isTesting = false
+    @Binding var appModeRaw: String
+    @Binding var apiIsAdminCapable: Bool
+
+    @State private var isChecking = false
+    @State private var checkProgress = AppModeCheckProgress()
+    @State private var showCheckProgress = false
 
     var body: some View {
         Form {
@@ -986,15 +1013,13 @@ struct APISettingsView: View {
                     .textContentType(.URL)
                     .keyboardType(.URL)
                     .disableAutocorrection(true)
-                SecureField(L10n.string("dell_client_id"), text: $apiToken)
+                SecureField("API Key", text: $apiToken)
                     .textContentType(.password)
             } header: {
                 Text(L10n.string("api_settings"))
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.string("api_settings_desc"))
-                    Text(L10n.string("api_url_hint"))
-                        .foregroundStyle(.secondary)
                     Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
                         Text(L10n.string("how_api_key"))
                             .font(.footnote.weight(.medium))
@@ -1004,19 +1029,52 @@ struct APISettingsView: View {
 
             Section {
                 Button {
-                    testConnection()
+                    Task { await saveAndCheck() }
                 } label: {
                     HStack {
-                        Text(L10n.string("api_test_connection"))
+                        Text(L10n.string("save"))
                         Spacer()
-                        if isTesting {
+                        if isChecking {
                             ProgressView()
                         }
                     }
                 }
-                .disabled(isTesting)
+                .disabled(isChecking
+                          || baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                          || apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if showCheckProgress {
+                    RightsCheckProgressList(progress: checkProgress)
+
+                    if checkProgress.succeeded, let mode = checkProgress.detectedMode {
+                        Text(
+                            mode == .admin
+                                ? L10n.string("rights_check_result_admin")
+                                : L10n.string("rights_check_result_user")
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    } else if case .failure(let message) = checkProgress.connection {
+                        Text(message ?? L10n.string("rights_check_failed"))
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    } else if case .failure(let message) = checkProgress.rights {
+                        Text(message ?? L10n.string("rights_check_failed"))
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
             } footer: {
-                Text(L10n.string("api_test_connection_footer"))
+                Text(L10n.string("api_save_check_footer"))
+            }
+
+            Section {
+                SettingsRow(
+                    icon: appModeRaw == AppMode.user.rawValue ? "person.fill" : "person.badge.key.fill",
+                    iconColor: .indigo,
+                    title: L10n.string("app_mode_label"),
+                    value: AppMode(rawValue: appModeRaw)?.localizedTitle ?? L10n.string("app_mode_unknown")
+                )
             }
         }
         .navigationTitle(L10n.string("api_settings"))
@@ -1027,21 +1085,37 @@ struct APISettingsView: View {
         }
     }
 
-    private func testConnection() {
-        guard !isTesting else { return }
-        isTesting = true
-        apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken)
+    private func saveAndCheck() async {
+        guard !isChecking else { return }
+        isChecking = true
+        showCheckProgress = true
+        checkProgress = AppModeCheckProgress()
+
+        apiClient.saveConfiguration(baseURL: baseURL, apiToken: apiToken, syncAfterSave: false)
         baseURL = apiClient.baseURL
         apiToken = KeychainSecretStore.string(for: .apiToken)
-        Task {
-            if let error = await apiClient.validateApiCredentials() {
-                alertMessage = error
-            } else {
-                alertMessage = L10n.string("api_test_connection_ok")
-            }
-            showAlert = true
-            isTesting = false
+
+        let result = await apiClient.detectAppMode { updated in
+            checkProgress = updated
         }
+
+        if result.succeeded, let mode = result.detectedMode {
+            // Mode already applied; non-admin stays in user mode.
+            apiIsAdminCapable = AppModeStore.isAdminCapable
+            appModeRaw = (AppModeStore.current ?? mode).rawValue
+            isChecking = false
+            // Sync in background; shell may switch after.
+            Task { await apiClient.syncForCurrentAppMode() }
+            return
+        }
+
+        // Check failed — keep using the app.
+        if AppModeStore.current == nil {
+            AppModeStore.apply(mode: .admin, canRequestAssets: false)
+            appModeRaw = AppMode.admin.rawValue
+        }
+        apiIsAdminCapable = AppModeStore.isAdminCapable
+        isChecking = false
     }
 }
 

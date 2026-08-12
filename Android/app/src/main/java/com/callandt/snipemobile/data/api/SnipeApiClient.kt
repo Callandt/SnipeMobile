@@ -38,6 +38,9 @@ import com.callandt.snipemobile.data.model.StatusLabel
 import com.callandt.snipemobile.data.model.Supplier
 import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.data.model.WriteResult
+import com.callandt.snipemobile.data.prefs.AppMode
+import com.callandt.snipemobile.data.prefs.AppModeCheckProgress
+import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.SecretKey
 import com.callandt.snipemobile.ui.util.L10n
@@ -109,14 +112,23 @@ private data class AssignedAccessoriesResult(
     val checkouts: List<AccessoryCheckoutRef>,
 )
 
+data class AuthorizedProbeResult(
+    val statusCode: Int,
+    val data: String,
+    val ok: Boolean,
+)
+
 /**
  * OkHttp-based Snipe-IT API client.
  */
-class SnipeApiClient(context: Context) {
+class SnipeApiClient(
+    context: Context,
+    private val preferences: AppPreferences,
+    private val appModeStore: AppModeStore,
+    private val secureStore: SecureStore = SecureStore(context.applicationContext),
+) {
 
     private val appContext = context.applicationContext
-    private val secureStore = SecureStore(appContext)
-    private val preferences = AppPreferences(appContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val client = OkHttpClient.Builder()
@@ -208,6 +220,46 @@ class SnipeApiClient(context: Context) {
     private val _refreshErrorMessage = MutableStateFlow<String?>(null)
     val refreshErrorMessage: StateFlow<String?> = _refreshErrorMessage.asStateFlow()
 
+    private val _pendingUnauthorizedSessionWipe = MutableStateFlow(false)
+    val pendingUnauthorizedSessionWipe: StateFlow<Boolean> = _pendingUnauthorizedSessionWipe.asStateFlow()
+
+    /** Keep the first refresh error of a sync. */
+    private fun reportRefreshError(message: String) {
+        if (_refreshErrorMessage.value == null) {
+            _refreshErrorMessage.value = message
+        }
+    }
+
+    fun clearRefreshError() {
+        _refreshErrorMessage.value = null
+    }
+
+    fun clearPendingUnauthorizedSessionWipe() {
+        _pendingUnauthorizedSessionWipe.value = false
+    }
+
+    private fun isUnauthorizedStatus(code: Int): Boolean = code == 401 || code == 403
+
+    /** 401/403 → wipe dialog (when configured). */
+    private fun reportUnauthorizedSession() {
+        val onboarded = preferences.getHasCompletedOnboardingBlocking()
+        if (!_isConfigured.value || !onboarded) {
+            reportRefreshError(L10n.string("api_validate_unauthorized"))
+            return
+        }
+        if (_pendingUnauthorizedSessionWipe.value) return
+        _refreshErrorMessage.value = null
+        _pendingUnauthorizedSessionWipe.value = true
+    }
+
+    private fun reportHttpRefreshFailure(statusCode: Int) {
+        if (isUnauthorizedStatus(statusCode)) {
+            reportUnauthorizedSession()
+        } else {
+            reportRefreshError(localizedHttpFailureMessage(statusCode))
+        }
+    }
+
     private val _lastApiMessage = MutableStateFlow<String?>(null)
     val lastApiMessage: StateFlow<String?> = _lastApiMessage.asStateFlow()
 
@@ -239,23 +291,27 @@ class SnipeApiClient(context: Context) {
         loadCachedDataIfAvailable()
         if (_isConfigured.value && baseUrl.isNotEmpty()) {
             scope.launch { fetchCurrentUser() }
-            // Refresh primary lists after cache hydrate.
-            scope.launch { fetchPrimaryThenBackground() }
+            scope.launch { syncForCurrentAppMode() }
         }
     }
 
     // region Configuration & cache
 
-    /** Saves URL/token, then kicks off a background sync. */
-    suspend fun saveConfiguration(baseURL: String, apiToken: String) {
+    /** Save URL/token; optionally sync afterward. */
+    suspend fun saveConfiguration(
+        baseURL: String,
+        apiToken: String,
+        syncAfterSave: Boolean = true,
+    ) {
         val normalizedBaseUrl = normalizeBaseUrl(baseURL)
         val normalizedToken = normalizeApiToken(apiToken)
-        val isDifferentServer = normalizedBaseUrl != this.baseUrl
+        val previousUrl = this.baseUrl
+        val previousToken = this.apiToken
+        val credentialsChanged = normalizedBaseUrl != previousUrl || normalizedToken != previousToken
 
-        if (isDifferentServer) {
-            cacheSaveJob?.cancel()
-            LocalCacheStore.clearAll(appContext)
-            _currentUser.value = null
+        if (credentialsChanged) {
+            clearSessionData(resetAppMode = true, fullWipe = false)
+            appModeStore.clearForServerChange()
         }
 
         preferences.setBaseUrl(normalizedBaseUrl)
@@ -263,14 +319,74 @@ class SnipeApiClient(context: Context) {
         _isConfigured.value = true
         preferences.setIsConfigured(true)
 
-        scope.launch { fetchPrimaryThenBackground() }
+        if (syncAfterSave) {
+            scope.launch { syncForCurrentAppMode() }
+        }
+    }
+
+    /** Clear lists and on-disk cache. */
+    fun clearSessionData(
+        resetConfigured: Boolean = false,
+        resetAppMode: Boolean = true,
+        fullWipe: Boolean = resetConfigured,
+    ) {
+        cacheSaveJob?.cancel()
+        primaryFetchJob?.cancel()
+        primaryFetchJob = null
+        fetchAssetsJob?.cancel()
+        fetchAssetsGeneration.incrementAndGet()
+        assetsPendingDetailRefresh.clear()
+
+        isApplyingCache = true
+        try {
+            _assets.value = emptyList()
+            _users.value = emptyList()
+            _currentUser.value = null
+            _accessories.value = emptyList()
+            _licenses.value = emptyList()
+            _consumables.value = emptyList()
+            _components.value = emptyList()
+            _locations.value = emptyList()
+            _companies.value = emptyList()
+            _manufacturers.value = emptyList()
+            _suppliers.value = emptyList()
+            _statusLabels.value = emptyList()
+            _models.value = emptyList()
+            _categories.value = emptyList()
+            _maintenances.value = emptyList()
+            _maintenanceTypes.value = emptyList()
+            _maintenanceTypesMode.value = MaintenanceTypesMode.Unknown
+            _assetTagSettings.value = null
+            _fieldDefinitions.value = emptyList()
+            _fieldsets.value = null
+            _hasCompletedInitialLoad.value = false
+            _isLoading.value = false
+            _loadingProgress.value = null
+            _errorMessage.value = null
+            _lastApiMessage.value = null
+            _refreshErrorMessage.value = null
+            _pendingUnauthorizedSessionWipe.value = false
+            if (resetConfigured) {
+                _isConfigured.value = false
+            }
+        } finally {
+            isApplyingCache = false
+        }
+
+        LocalCacheStore.clearAll(appContext)
+        WidgetSnapshotBuilder.clear(appContext)
+
+        if (resetAppMode) {
+            if (fullWipe) appModeStore.clear()
+            else appModeStore.clearForServerChange()
+        }
     }
 
     suspend fun validateApiCredentials(): String? {
         if (baseUrl.isEmpty() || apiToken.isEmpty()) {
             return L10n.string("api_validate_missing")
         }
-        val url = "$baseUrl/api/v1/users?limit=1".toHttpUrlOrNull()
+        val url = "$baseUrl/api/v1/users/me".toHttpUrlOrNull()
             ?: return L10n.string("api_validate_invalid_url")
         if (url.scheme !in setOf("http", "https") || url.host.isEmpty()) {
             return L10n.string("api_validate_invalid_url")
@@ -348,27 +464,42 @@ class SnipeApiClient(context: Context) {
 
     // region Sync
 
-    suspend fun fetchPrimaryThenBackground() {
-        primaryFetchMutex.withLock {
-            if (primaryFetchJob?.isActive == true) {
-                primaryFetchJob?.join()
-                return
-            }
-            primaryFetchJob = scope.launch { performPrimaryThenBackground() }
-            primaryFetchJob?.join()
+    suspend fun fetchPrimaryThenBackground(clearRefreshError: Boolean = false) {
+        val jobToAwait = primaryFetchMutex.withLock {
+            primaryFetchJob?.takeIf { it.isActive }
+                ?: scope.launch { performPrimaryThenBackground(clearRefreshError) }
+                    .also { primaryFetchJob = it }
         }
+        jobToAwait.join()
     }
 
-    private suspend fun performPrimaryThenBackground() {
+    private suspend fun performPrimaryThenBackground(clearRefreshError: Boolean) {
         withContext(Dispatchers.Main) {
             _isLoading.value = true
             _errorMessage.value = null
-            _refreshErrorMessage.value = null
+            if (clearRefreshError) {
+                _refreshErrorMessage.value = null
+            }
         }
         fetchCurrentUser()
         fetchAssets()
+        // Stop after auth/connectivity failure.
+        if (_refreshErrorMessage.value != null || _pendingUnauthorizedSessionWipe.value) {
+            withContext(Dispatchers.Main) {
+                _isLoading.value = false
+                _hasCompletedInitialLoad.value = true
+            }
+            return
+        }
         fetchUsers()
         reconcileCurrentUserWithUsersList()
+        if (_refreshErrorMessage.value != null || _pendingUnauthorizedSessionWipe.value) {
+            withContext(Dispatchers.Main) {
+                _isLoading.value = false
+                _hasCompletedInitialLoad.value = true
+            }
+            return
+        }
         fetchAccessories()
         fetchLicenses()
         fetchConsumables()
@@ -379,6 +510,7 @@ class SnipeApiClient(context: Context) {
             _isLoading.value = false
             _hasCompletedInitialLoad.value = true
         }
+        if (_refreshErrorMessage.value != null || _pendingUnauthorizedSessionWipe.value) return
         scope.launch {
             fetchCompanies()
             fetchStatusLabels()
@@ -393,26 +525,262 @@ class SnipeApiClient(context: Context) {
     }
 
     fun syncAllInBackground() {
-        scope.launch { fetchPrimaryThenBackground() }
+        scope.launch { syncForCurrentAppMode() }
     }
 
-    suspend fun fetchCurrentUser() {
-        if (baseUrl.isEmpty() || apiToken.isEmpty()) return
+    // region App mode
+
+    /** Authenticated GET probe. */
+    suspend fun authorizedProbe(
+        path: String,
+        query: Map<String, String> = emptyMap(),
+    ): AuthorizedProbeResult? {
+        if (baseUrl.isEmpty() || apiToken.isEmpty()) return null
+        val builder = "$baseUrl$path".toHttpUrlOrNull()?.newBuilder() ?: return null
+        query.forEach { (key, value) -> builder.addQueryParameter(key, value) }
+        return try {
+            val response = executeGet(builder.build().toString(), reportConnectionError = false)
+            AuthorizedProbeResult(
+                statusCode = response.code,
+                data = response.body,
+                ok = response.code in 200..299,
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Detect admin vs user; reports progress via [onProgress]. */
+    suspend fun detectAppMode(
+        onProgress: (AppModeCheckProgress) -> Unit = {},
+    ): AppModeCheckProgress {
+        var progress = AppModeCheckProgress()
+
+        suspend fun publish() {
+            val snapshot = progress
+            withContext(Dispatchers.Main) { onProgress(snapshot) }
+        }
+
+        progress = progress.copy(connection = AppModeCheckProgress.StepState.Running)
+        publish()
+
+        val meProbe = authorizedProbe("/api/v1/users/me")
+        if (meProbe == null) {
+            progress = progress.copy(
+                connection = AppModeCheckProgress.StepState.Failure(
+                    L10n.string("api_validate_connect_failed"),
+                ),
+            )
+            publish()
+            return progress
+        }
+
+        val user = if (meProbe.ok) decodePayloadOrRoot<User>(meProbe.data) else null
+        if (user == null) {
+            progress = progress.copy(
+                connection = AppModeCheckProgress.StepState.Failure(
+                    localizedHttpFailureMessage(meProbe.statusCode),
+                ),
+            )
+            publish()
+            return progress
+        }
+
+        withContext(Dispatchers.Main) { _currentUser.value = user }
+        progress = progress.copy(connection = AppModeCheckProgress.StepState.Success)
+        publish()
+
+        progress = progress.copy(rights = AppModeCheckProgress.StepState.Running)
+        publish()
+
+        val permissionHintsIsAdmin = adminPermissionHints(meProbe.data)
+        val hardwareProbe = authorizedProbe("/api/v1/hardware", mapOf("limit" to "1"))
+        val isAdmin = permissionHintsIsAdmin || (hardwareProbe?.ok == true)
+        val mode = if (isAdmin) AppMode.Admin else AppMode.User
+
+        progress = progress.copy(
+            detectedMode = mode,
+            rights = AppModeCheckProgress.StepState.Success,
+        )
+        publish()
+
+        withContext(Dispatchers.Main) {
+            appModeStore.applyDetection(
+                detectedMode = mode,
+                canRequestAssets = appModeStore.canRequestAssets.value,
+            )
+        }
+
+        return progress
+    }
+
+    /** Sync for the active app mode. */
+    suspend fun syncForCurrentAppMode() {
+        when (appModeStore.current.value) {
+            AppMode.User -> {
+                fetchUserModeData()
+                WidgetSnapshotBuilder.publishAdminOnly(appContext, baseUrl, _isConfigured.value)
+            }
+            AppMode.Admin, null -> fetchPrimaryThenBackground()
+        }
+    }
+
+    /** Load current user and assigned items. */
+    suspend fun fetchUserModeData(clearRefreshError: Boolean = false) {
+        withContext(Dispatchers.Main) {
+            _isLoading.value = true
+            _errorMessage.value = null
+            if (clearRefreshError) {
+                _refreshErrorMessage.value = null
+            }
+        }
+
+        fetchCurrentUser(reportErrors = true)
+        if (_refreshErrorMessage.value != null || _pendingUnauthorizedSessionWipe.value) {
+            withContext(Dispatchers.Main) {
+                _isLoading.value = false
+                _hasCompletedInitialLoad.value = true
+            }
+            return
+        }
+
+        val userId = _currentUser.value?.id
+        if (userId != null) {
+            val myAssets = fetchUserAssets(userId)
+            val myAccessories = fetchUserAccessories(userId, allowAdminFallback = false)
+            val myLicenses = fetchUserLicenses(userId)
+            withContext(Dispatchers.Main) {
+                _assets.value = myAssets
+                _accessories.value = myAccessories
+                _licenses.value = myLicenses
+            }
+        } else if (_isConfigured.value) {
+            reportRefreshError(L10n.string("api_validate_connect_failed"))
+        }
+
+        withContext(Dispatchers.Main) {
+            _isLoading.value = false
+            _hasCompletedInitialLoad.value = true
+        }
+        scheduleCacheSave()
+    }
+
+    suspend fun fetchRequestableAssets(reportErrors: Boolean = false): List<Asset> {
+        if (baseUrl.isEmpty() || apiToken.isEmpty()) {
+            if (reportErrors) {
+                reportRefreshError(L10n.string("api_validate_missing"))
+            }
+            return emptyList()
+        }
+        return try {
+            fetchAllPaginated(
+                path = "/api/v1/account/requestable/hardware",
+                serializer = Asset.serializer(),
+                reportConnectionError = reportErrors,
+            ).orEmpty()
+        } catch (e: Exception) {
+            if (reportErrors) {
+                reportRefreshError(localizedConnectionFailureMessage(e))
+            }
+            emptyList()
+        }
+    }
+
+    /** Request an asset for the current user. */
+    suspend fun requestAsset(assetId: Int): String? =
+        postAccountRequestAction("/api/v1/account/request/$assetId")
+
+    suspend fun cancelAssetRequest(assetId: Int): String? =
+        postAccountRequestAction("/api/v1/account/request/$assetId/cancel")
+
+    private suspend fun postAccountRequestAction(path: String): String? {
+        if (baseUrl.isEmpty() || apiToken.isEmpty()) {
+            return L10n.string("api_validate_missing")
+        }
+        val url = "$baseUrl$path".toHttpUrlOrNull()?.toString()
+            ?: return L10n.string("api_validate_invalid_url")
+        return try {
+            val response = executeJsonPost(url, emptyMap())
+            if (response.code in 200..299 && !isSnipeApiErrorResponse(response.json)) {
+                null
+            } else {
+                parseSnipeErrorMessage(response.body)
+                    ?: localizedHttpFailureMessage(response.code)
+            }
+        } catch (e: Exception) {
+            localizedConnectionFailureMessage(e)
+        }
+    }
+
+    private fun adminPermissionHints(data: String): Boolean {
+        val json = parseJsonObject(data) ?: return false
+        val root = json["payload"]?.jsonObject ?: json
+        val permissions = root["permissions"]?.jsonObject ?: return false
+
+        fun isGranted(key: String): Boolean {
+            val value = permissions[key] ?: return false
+            if (value is JsonNull) return false
+            val primitive = runCatching { value.jsonPrimitive }.getOrNull() ?: return false
+            primitive.contentOrNull?.let { content ->
+                return content == "1" || content.equals("true", ignoreCase = true)
+            }
+            return (primitive.intOrNull ?: 0) != 0
+        }
+
+        return isGranted("superuser") || isGranted("admin")
+    }
+
+    private fun parseSnipeErrorMessage(body: String): String? {
+        val json = parseJsonObject(body) ?: return null
+        json["messages"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return it }
+        return extractApiErrorMessage(json)
+    }
+
+    // endregion
+
+    suspend fun fetchCurrentUser(reportErrors: Boolean = false) {
+        if (baseUrl.isEmpty() || apiToken.isEmpty()) {
+            if (reportErrors) {
+                reportRefreshError(L10n.string("api_validate_missing"))
+            }
+            return
+        }
         val url = "$baseUrl/api/v1/users/me"
-        runCatching {
-            val body = executeGet(url).body
-            decodePayloadOrRoot<User>(body)?.let { user ->
+        try {
+            val response = executeGet(url)
+            if (isUnauthorizedStatus(response.code)) {
+                withContext(Dispatchers.Main) {
+                    reportUnauthorizedSession()
+                }
+                return
+            }
+            if (response.code !in 200..299) {
+                if (reportErrors) {
+                    withContext(Dispatchers.Main) {
+                        reportHttpRefreshFailure(response.code)
+                    }
+                }
+                return
+            }
+            decodePayloadOrRoot<User>(response.body)?.let { user ->
                 withContext(Dispatchers.Main) {
                     _currentUser.value = user
                     reconcileCurrentUserWithUsersList()
                 }
+            } ?: run {
+                if (reportErrors) {
+                    reportRefreshError(L10n.string("api_validate_connect_failed"))
+                }
+            }
+        } catch (e: Exception) {
+            if (reportErrors) {
+                reportRefreshError(localizedConnectionFailureMessage(e))
             }
         }
     }
 
     private fun reconcileCurrentUserWithUsersList() {
-        val id = _currentUser.value?.id ?: return
-        _users.value.find { it.id == id }?.let { _currentUser.value = it }
+        // Keep `/users/me`; do not overwrite from the users list.
     }
 
     suspend fun fetchAssets() {
@@ -421,11 +789,10 @@ class SnipeApiClient(context: Context) {
         fetchAssetsJob = scope.launch {
             if (baseUrl.isEmpty() || apiToken.isEmpty()) {
                 withContext(Dispatchers.Main) {
-                    _errorMessage.value = "Configure the API settings first."
+                    _errorMessage.value = L10n.string("configure_api_short")
                 }
                 return@launch
             }
-            _refreshErrorMessage.value = null
             val rows = fetchAllPaginated(
                 path = "/api/v1/hardware",
                 serializer = Asset.serializer(),
@@ -451,10 +818,9 @@ class SnipeApiClient(context: Context) {
 
     suspend fun fetchUsers() {
         if (baseUrl.isEmpty() || apiToken.isEmpty()) {
-            withContext(Dispatchers.Main) { _errorMessage.value = "Configure the API settings first." }
+            withContext(Dispatchers.Main) { _errorMessage.value = L10n.string("configure_api_short") }
             return
         }
-        _refreshErrorMessage.value = null
         val rows = fetchAllPaginated(
             path = "/api/v1/users",
             serializer = User.serializer(),
@@ -783,14 +1149,21 @@ class SnipeApiClient(context: Context) {
             serializer = Asset.serializer(),
         ).orEmpty()
 
-    suspend fun fetchUserAccessories(userId: Int): List<Accessory> {
+    suspend fun fetchUserAccessories(
+        userId: Int,
+        allowAdminFallback: Boolean = true,
+    ): List<Accessory> {
         val fromEndpoint = fetchAllPaginated(
             path = "/api/v1/users/$userId/accessories",
             serializer = Accessory.serializer(),
-        ).orEmpty()
-        if (fromEndpoint.isNotEmpty()) return fromEndpoint
+        )
+        if (fromEndpoint != null) {
+            if (fromEndpoint.isNotEmpty() || !allowAdminFallback) return fromEndpoint
+        } else if (!allowAdminFallback) {
+            return emptyList()
+        }
 
-        // Endpoint can come back empty; scan checkouts instead.
+        // Empty endpoint → scan checkouts (admin only).
         if (_accessories.value.isEmpty()) fetchAccessories()
         val candidates = _accessories.value.filter { accessory ->
             val qty = accessory.qty ?: return@filter false
@@ -1018,7 +1391,6 @@ class SnipeApiClient(context: Context) {
         assign: suspend (List<T>) -> Unit,
     ) {
         if (baseUrl.isEmpty() || apiToken.isEmpty()) return
-        _refreshErrorMessage.value = null
         val rows = fetchAllPaginated(path, serializer, reportConnectionError = true) ?: return
         withContext(Dispatchers.Main) { assign(rows) }
         scheduleCacheSave()
@@ -2317,7 +2689,7 @@ class SnipeApiClient(context: Context) {
                 } catch (e: Exception) {
                     if (reportConnectionError) {
                         withContext(Dispatchers.Main) {
-                            _refreshErrorMessage.value = localizedConnectionFailureMessage(e)
+                            reportRefreshError(localizedConnectionFailureMessage(e))
                         }
                     }
                     throw e
@@ -2329,7 +2701,7 @@ class SnipeApiClient(context: Context) {
                 if (response.code !in 200..299) {
                     if (reportConnectionError) {
                         withContext(Dispatchers.Main) {
-                            _refreshErrorMessage.value = localizedHttpFailureMessage(response.code)
+                            reportHttpRefreshFailure(response.code)
                         }
                     }
                     return null
@@ -2603,7 +2975,10 @@ class SnipeApiClient(context: Context) {
             if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
                 trimmed = "https://$trimmed"
             }
+            // Prefer `/account/api` over bare `/api` (tokens page paste).
             val suffixes = listOf(
+                "/index.php/account/api",
+                "/account/api",
                 "/index.php/api/v1",
                 "/index.php/api",
                 "/api/v1",

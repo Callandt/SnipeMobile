@@ -53,6 +53,15 @@ class AppPreferences(private val context: Context) {
     val auditNotificationMinute: Flow<Int> =
         context.dataStore.data.map { it[Keys.AUDIT_NOTIFICATION_MINUTE] ?: 0 }
 
+    val appMode: Flow<String?> =
+        context.dataStore.data.map { it[Keys.APP_MODE] }
+    val apiIsAdminCapable: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.API_IS_ADMIN_CAPABLE] ?: false }
+    val canRequestAssets: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.CAN_REQUEST_ASSETS] ?: false }
+    val hasDetectedAppMode: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.HAS_DETECTED_APP_MODE] ?: false }
+
     suspend fun getBaseUrl(): String = context.dataStore.data.first()[Keys.BASE_URL].orEmpty()
 
     suspend fun getIsConfigured(): Boolean = context.dataStore.data.first()[Keys.IS_CONFIGURED] ?: false
@@ -63,6 +72,18 @@ class AppPreferences(private val context: Context) {
 
     fun getHasCompletedOnboardingBlocking(): Boolean =
         runBlocking { context.dataStore.data.first()[Keys.HAS_COMPLETED_ONBOARDING] ?: false }
+
+    fun getAppModeBlocking(): String? =
+        runBlocking { context.dataStore.data.first()[Keys.APP_MODE] }
+
+    fun getApiIsAdminCapableBlocking(): Boolean =
+        runBlocking { context.dataStore.data.first()[Keys.API_IS_ADMIN_CAPABLE] ?: false }
+
+    fun getCanRequestAssetsBlocking(): Boolean =
+        runBlocking { context.dataStore.data.first()[Keys.CAN_REQUEST_ASSETS] ?: false }
+
+    fun getHasDetectedAppModeBlocking(): Boolean =
+        runBlocking { context.dataStore.data.first()[Keys.HAS_DETECTED_APP_MODE] ?: false }
 
     suspend fun setBaseUrl(value: String) {
         context.dataStore.edit { it[Keys.BASE_URL] = value }
@@ -149,6 +170,24 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[Keys.AUDIT_NOTIFICATION_MINUTE] = value.coerceIn(0, 59) }
     }
 
+    suspend fun setAppMode(value: String?) {
+        context.dataStore.edit { prefs ->
+            if (value.isNullOrBlank()) prefs.remove(Keys.APP_MODE) else prefs[Keys.APP_MODE] = value
+        }
+    }
+
+    suspend fun setApiIsAdminCapable(value: Boolean) {
+        context.dataStore.edit { it[Keys.API_IS_ADMIN_CAPABLE] = value }
+    }
+
+    suspend fun setCanRequestAssets(value: Boolean) {
+        context.dataStore.edit { it[Keys.CAN_REQUEST_ASSETS] = value }
+    }
+
+    suspend fun setHasDetectedAppMode(value: Boolean) {
+        context.dataStore.edit { it[Keys.HAS_DETECTED_APP_MODE] = value }
+    }
+
     suspend fun wipeAll() {
         context.dataStore.edit { it.clear() }
     }
@@ -176,5 +215,9 @@ class AppPreferences(private val context: Context) {
         val STOCK_SELECTED_SUBMODULE = stringPreferencesKey("stockSelectedSubmodule")
         val DIRECTORY_SELECTED_SUBMODULE = stringPreferencesKey("directorySelectedSubmodule")
         val BIOMETRICS_JUST_CONFIRMED = booleanPreferencesKey("biometricsJustConfirmed")
+        val APP_MODE = stringPreferencesKey("appMode")
+        val API_IS_ADMIN_CAPABLE = booleanPreferencesKey("apiIsAdminCapable")
+        val CAN_REQUEST_ASSETS = booleanPreferencesKey("canRequestAssets")
+        val HAS_DETECTED_APP_MODE = booleanPreferencesKey("hasDetectedAppMode")
     }
 }

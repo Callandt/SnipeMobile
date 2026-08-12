@@ -102,7 +102,7 @@ fun AccessoriesTab(
         .filter { listFilter.matches(it, dimensions) }
         .filter { accessoryMatchesSearch(it, searchQuery) }
 
-    ErrorSnackbar(refreshError, snackbarHostState)
+    ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
     Scaffold(
         modifier = modifier,

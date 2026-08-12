@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 fun ApiSetupScreen(
     viewModel: AppViewModel,
     onContinue: () -> Unit,
+    onSkip: () -> Unit,
 ) {
     var url by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
@@ -131,7 +132,7 @@ fun ApiSetupScreen(
                     scope.launch {
                         validating = true
                         error = null
-                        viewModel.saveApiConfiguration(url.trim(), token.trim())
+                        viewModel.saveApiConfiguration(url.trim(), token.trim(), syncAfterSave = false)
                         val validationError = viewModel.validateApiCredentials()
                         validating = false
                         if (validationError == null) onContinue()
@@ -152,7 +153,7 @@ fun ApiSetupScreen(
                 TextButton(
                     onClick = {
                         showSkipConfirm = false
-                        onContinue()
+                        onSkip()
                     },
                 ) { Text(L10n.string("continue")) }
             },

@@ -15,6 +15,10 @@ private enum CloudKey: String, CaseIterable {
     case isConfigured
     case hasCompletedOnboarding
     case hasSeenModulesIntro
+    case appMode
+    case canRequestAssets
+    case hasDetectedAppMode
+    case apiIsAdminCapable
     case tabOrder
     case appTheme
     case useBiometrics
@@ -114,6 +118,46 @@ final class CloudSettingsStore {
         defaults.set(value, forKey: "hasSeenModulesIntro")
         if useCloudSync, isICloudAvailable {
             store.set(value, forKey: CloudKey.hasSeenModulesIntro.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
+    func setAppMode(_ value: AppMode?) {
+        if let value {
+            defaults.set(value.rawValue, forKey: "appMode")
+        } else {
+            defaults.removeObject(forKey: "appMode")
+        }
+        if useCloudSync, isICloudAvailable {
+            if let value {
+                store.set(value.rawValue, forKey: CloudKey.appMode.rawValue)
+            } else {
+                store.removeObject(forKey: CloudKey.appMode.rawValue)
+            }
+            _ = store.synchronize()
+        }
+    }
+
+    func setCanRequestAssets(_ value: Bool) {
+        defaults.set(value, forKey: "canRequestAssets")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.canRequestAssets.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
+    func setHasDetectedAppMode(_ value: Bool) {
+        defaults.set(value, forKey: "hasDetectedAppMode")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.hasDetectedAppMode.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
+    func setApiIsAdminCapable(_ value: Bool) {
+        defaults.set(value, forKey: "apiIsAdminCapable")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.apiIsAdminCapable.rawValue)
             _ = store.synchronize()
         }
     }
@@ -232,6 +276,18 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.hasSeenModulesIntro.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.hasSeenModulesIntro.rawValue), forKey: "hasSeenModulesIntro")
         }
+        if let v = store.string(forKey: CloudKey.appMode.rawValue) {
+            defaults.set(v, forKey: "appMode")
+        }
+        if store.object(forKey: CloudKey.canRequestAssets.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.canRequestAssets.rawValue), forKey: "canRequestAssets")
+        }
+        if store.object(forKey: CloudKey.hasDetectedAppMode.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.hasDetectedAppMode.rawValue), forKey: "hasDetectedAppMode")
+        }
+        if store.object(forKey: CloudKey.apiIsAdminCapable.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.apiIsAdminCapable.rawValue), forKey: "apiIsAdminCapable")
+        }
         if let v = store.string(forKey: CloudKey.tabOrder.rawValue) {
             defaults.set(v, forKey: "tabOrder")
         }
@@ -275,6 +331,12 @@ final class CloudSettingsStore {
         store.set(defaults.bool(forKey: "isConfigured"), forKey: CloudKey.isConfigured.rawValue)
         store.set(defaults.bool(forKey: "hasCompletedOnboarding"), forKey: CloudKey.hasCompletedOnboarding.rawValue)
         store.set(defaults.bool(forKey: "hasSeenModulesIntro"), forKey: CloudKey.hasSeenModulesIntro.rawValue)
+        if let v = defaults.string(forKey: "appMode") {
+            store.set(v, forKey: CloudKey.appMode.rawValue)
+        }
+        store.set(defaults.bool(forKey: "canRequestAssets"), forKey: CloudKey.canRequestAssets.rawValue)
+        store.set(defaults.bool(forKey: "hasDetectedAppMode"), forKey: CloudKey.hasDetectedAppMode.rawValue)
+        store.set(defaults.bool(forKey: "apiIsAdminCapable"), forKey: CloudKey.apiIsAdminCapable.rawValue)
         if let v = defaults.string(forKey: "tabOrder") {
             store.set(v, forKey: CloudKey.tabOrder.rawValue)
         }

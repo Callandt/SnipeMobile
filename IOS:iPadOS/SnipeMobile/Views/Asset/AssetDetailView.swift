@@ -5,6 +5,8 @@ struct AssetDetailView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedTab: Int
     @Binding var isDetailViewActive: Bool
+    /// Read-only in user mode.
+    var isReadOnly: Bool = false
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenLocation: ((Location) -> Void)? = nil
     var onOpenLicense: ((License) -> Void)? = nil
@@ -288,14 +290,14 @@ struct AssetDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AssetDetailTabBar(selection: $selectedTab, showMaintenance: showMaintenance)
+            AssetDetailTabBar(selection: $selectedTab, showMaintenance: showMaintenance && !isReadOnly)
                 .padding(.horizontal)
                 .padding(.top, 8)
                 .padding(.bottom, 2)
 
             if selectedTab == 0 {
                 detailsView
-            } else if selectedTab == 1, showMaintenance {
+            } else if selectedTab == 1, showMaintenance, !isReadOnly {
                 MaintenanceTab(assetId: currentAsset.id, apiClient: apiClient)
             } else if selectedTab == 2 {
                 AssetFilesTab(
@@ -306,46 +308,48 @@ struct AssetDetailView: View {
             } else {
                 HistoryView(itemType: "asset", itemId: currentAsset.id, apiClient: apiClient)
             }
-            Spacer(minLength: 0)
-            HStack(spacing: 12) {
-                Button(action: prepareAndShowEditSheet) {
-                    Label(L10n.string("edit"), systemImage: "pencil")
-                        .font(.headline)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !isReadOnly {
+                HStack(spacing: 12) {
+                    Button(action: prepareAndShowEditSheet) {
+                        Label(L10n.string("edit"), systemImage: "pencil")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    if isDeployed {
+                        Button(action: { showCheckinSheet = true }) {
+                            Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .controlSize(.large)
                         .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-                if isDeployed {
-                    Button(action: { showCheckinSheet = true }) {
-                        Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
+                    } else if canCheckOut {
+                        Button(action: { showCheckoutSheet = true }) {
+                            Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.accentColor)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                } else if canCheckOut {
-                    Button(action: { showCheckoutSheet = true }) {
-                        Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.accentColor)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
                 }
+                .detailBottomActionBar()
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .padding(.bottom, 8)
-            .background(.bar)
         }
         .onAppear { isDetailViewActive = true }
         .onDisappear { isDetailViewActive = false }
+        .hidesTabBarWhenPushed()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -358,7 +362,7 @@ struct AssetDetailView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
-                    if !currentAsset.decodedAssetTag.isEmpty {
+                    if !isReadOnly, !currentAsset.decodedAssetTag.isEmpty {
                         Button {
                             Task { await generateLabel() }
                         } label: {
@@ -367,14 +371,16 @@ struct AssetDetailView: View {
                         .disabled(isGeneratingLabel || isDeleting)
                         .accessibilityLabel(L10n.string("print_label"))
                     }
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
-                    } label: {
-                        Image(systemName: "trash")
-                            .foregroundStyle(.red)
+                    if !isReadOnly {
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.red)
+                        }
+                        .disabled(isDeleting)
+                        .accessibilityLabel(L10n.string("delete"))
                     }
-                    .disabled(isDeleting)
-                    .accessibilityLabel(L10n.string("delete"))
                     if let url = URL(string: "\(apiClient.baseURL)/hardware/\(currentAsset.id)") {
                         Link(destination: url) {
                             Image(systemName: "safari")

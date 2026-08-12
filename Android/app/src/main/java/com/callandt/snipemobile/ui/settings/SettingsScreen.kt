@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -34,11 +35,13 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -48,6 +51,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -73,6 +79,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.callandt.snipemobile.data.prefs.AppMode
+import com.callandt.snipemobile.data.prefs.AppModeCheckProgress
 import com.callandt.snipemobile.debug.AppLog
 import com.callandt.snipemobile.debug.DebugLogStore
 import com.callandt.snipemobile.ui.AppViewModel
@@ -84,6 +92,7 @@ import com.callandt.snipemobile.ui.components.SettingsToggleRow
 import com.callandt.snipemobile.ui.management.ManagementEntity
 import com.callandt.snipemobile.ui.management.ManagementHubScreen
 import com.callandt.snipemobile.ui.management.ManagementListScreen
+import com.callandt.snipemobile.ui.onboarding.RightsCheckProgressList
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.notifications.AuditNotificationScheduler
 import java.util.Locale
@@ -186,6 +195,9 @@ private fun SettingsRootScreen(
     val showComponents by viewModel.showComponentsTab.collectAsState()
     val showAudit by viewModel.showAuditSubtab.collectAsState()
     val showMaintenance by viewModel.showMaintenanceSubtab.collectAsState()
+    val appMode by viewModel.appMode.collectAsState()
+    val isAdminCapable by viewModel.isAdminCapable.collectAsState()
+    val isUserMode = appMode == AppMode.User
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -234,6 +246,43 @@ private fun SettingsRootScreen(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background),
         ) {
+            if (isAdminCapable) {
+                item {
+                    SettingsSectionHeader(L10n.string("app_mode_section"))
+                    SettingsGroupedCard {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                SegmentedButton(
+                                    selected = !isUserMode,
+                                    onClick = {
+                                        if (isUserMode) {
+                                            viewModel.setActiveMode(AppMode.Admin)
+                                            onBack()
+                                        }
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                ) {
+                                    Text(L10n.string("app_mode_admin"))
+                                }
+                                SegmentedButton(
+                                    selected = isUserMode,
+                                    onClick = {
+                                        if (!isUserMode) {
+                                            viewModel.setActiveMode(AppMode.User)
+                                            onBack()
+                                        }
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                ) {
+                                    Text(L10n.string("app_mode_user"))
+                                }
+                            }
+                        }
+                    }
+                    SettingsSectionFooter(L10n.string("app_mode_switch_footer"))
+                }
+            }
+
             item {
                 SettingsSectionHeader(L10n.string("settings_general"))
                 SettingsGroupedCard {
@@ -247,37 +296,39 @@ private fun SettingsRootScreen(
                 }
             }
 
-            item {
-                SettingsSectionHeader(L10n.string("settings_modules"))
-                SettingsGroupedCard {
-                    SettingsRow(
-                        icon = Icons.Default.GridView,
-                        iconColor = Color(0xFFFF9500),
-                        title = L10n.string("settings_modules"),
-                        value = L10n.string("settings_modules_count", enabledModuleCount),
-                        onClick = { onNavigate(SettingsRoutes.Modules) },
-                    )
+            if (!isUserMode) {
+                item {
+                    SettingsSectionHeader(L10n.string("settings_modules"))
+                    SettingsGroupedCard {
+                        SettingsRow(
+                            icon = Icons.Default.GridView,
+                            iconColor = Color(0xFFFF9500),
+                            title = L10n.string("settings_modules"),
+                            value = L10n.string("settings_modules_count", enabledModuleCount),
+                            onClick = { onNavigate(SettingsRoutes.Modules) },
+                        )
+                    }
                 }
-            }
 
-            item {
-                SettingsSectionHeader(L10n.string("settings_management"))
-                SettingsGroupedCard {
-                    SettingsRow(
-                        icon = Icons.Default.Tune,
-                        iconColor = Color(0xFFFF2D55),
-                        title = L10n.string("settings_management"),
-                        onClick = { onNavigate(SettingsRoutes.Management) },
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
-                    SettingsRow(
-                        icon = Icons.Default.History,
-                        iconColor = Color(0xFF8E6F4E),
-                        title = L10n.string("settings_activity_log"),
-                        onClick = { onNavigate(SettingsRoutes.ActivityLog) },
-                    )
+                item {
+                    SettingsSectionHeader(L10n.string("settings_management"))
+                    SettingsGroupedCard {
+                        SettingsRow(
+                            icon = Icons.Default.Tune,
+                            iconColor = Color(0xFFFF2D55),
+                            title = L10n.string("settings_management"),
+                            onClick = { onNavigate(SettingsRoutes.Management) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                        SettingsRow(
+                            icon = Icons.Default.History,
+                            iconColor = Color(0xFF8E6F4E),
+                            title = L10n.string("settings_activity_log"),
+                            onClick = { onNavigate(SettingsRoutes.ActivityLog) },
+                        )
+                    }
+                    SettingsSectionFooter(L10n.string("settings_management_footer"))
                 }
-                SettingsSectionFooter(L10n.string("settings_management_footer"))
             }
 
             item {
@@ -340,33 +391,35 @@ private fun SettingsRootScreen(
                 }
             }
 
-            item {
-                SettingsSectionHeader(L10n.string("settings_features"))
-                SettingsGroupedCard {
-                    SettingsRow(
-                        icon = Icons.Default.QrCode,
-                        iconColor = Color(0xFF007AFF),
-                        title = L10n.string("settings_assets"),
-                        onClick = { onNavigate(SettingsRoutes.Assets) },
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
-                    SettingsRow(
-                        icon = Icons.Default.Notifications,
-                        iconColor = Color(0xFFFF3B30),
-                        title = L10n.string("settings_audit_short"),
-                        value = auditStatusLabel,
-                        onClick = { onNavigate(SettingsRoutes.Audit) },
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
-                    SettingsToggleRow(
-                        icon = Icons.Default.Build,
-                        iconColor = Color(0xFF5AC8FA),
-                        title = L10n.string("settings_maintenance"),
-                        checked = showMaintenance,
-                        onCheckedChange = viewModel::setShowMaintenanceSubtab,
-                    )
+            if (!isUserMode) {
+                item {
+                    SettingsSectionHeader(L10n.string("settings_features"))
+                    SettingsGroupedCard {
+                        SettingsRow(
+                            icon = Icons.Default.QrCode,
+                            iconColor = Color(0xFF007AFF),
+                            title = L10n.string("settings_assets"),
+                            onClick = { onNavigate(SettingsRoutes.Assets) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                        SettingsRow(
+                            icon = Icons.Default.Notifications,
+                            iconColor = Color(0xFFFF3B30),
+                            title = L10n.string("settings_audit_short"),
+                            value = auditStatusLabel,
+                            onClick = { onNavigate(SettingsRoutes.Audit) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                        SettingsToggleRow(
+                            icon = Icons.Default.Build,
+                            iconColor = Color(0xFF5AC8FA),
+                            title = L10n.string("settings_maintenance"),
+                            checked = showMaintenance,
+                            onCheckedChange = viewModel::setShowMaintenanceSubtab,
+                        )
+                    }
+                    SettingsSectionFooter(L10n.string("settings_maintenance_footer"))
                 }
-                SettingsSectionFooter(L10n.string("settings_maintenance_footer"))
             }
 
             item {
@@ -379,13 +432,15 @@ private fun SettingsRootScreen(
                         value = apiStatusLabel,
                         onClick = { onNavigate(SettingsRoutes.Api) },
                     )
-                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
-                    SettingsRow(
-                        icon = Icons.Default.DesktopWindows,
-                        iconColor = Color(0xFF8E8E93),
-                        title = L10n.string("settings_dell"),
-                        onClick = { onNavigate(SettingsRoutes.Dell) },
-                    )
+                    if (!isUserMode) {
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                        SettingsRow(
+                            icon = Icons.Default.DesktopWindows,
+                            iconColor = Color(0xFF8E8E93),
+                            title = L10n.string("settings_dell"),
+                            onClick = { onNavigate(SettingsRoutes.Dell) },
+                        )
+                    }
                 }
                 SettingsSectionFooter(L10n.string("connection_section_footer"))
             }
@@ -755,10 +810,12 @@ private fun AssetCreationSettingsScreen(viewModel: AppViewModel, onBack: () -> U
 @Composable
 private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
     val baseUrl by viewModel.baseUrl.collectAsState()
+    val appMode by viewModel.appMode.collectAsState()
     var url by remember(baseUrl) { mutableStateOf(baseUrl) }
     var token by remember { mutableStateOf(viewModel.currentApiToken()) }
-    var testing by remember { mutableStateOf(false) }
-    var alertMessage by remember { mutableStateOf<String?>(null) }
+    var isChecking by remember { mutableStateOf(false) }
+    var showCheckProgress by remember { mutableStateOf(false) }
+    var checkProgress by remember { mutableStateOf(AppModeCheckProgress()) }
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -802,40 +859,87 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            TextButton(
+
+            Button(
                 onClick = {
                     scope.launch {
-                        testing = true
-                        viewModel.saveApiConfiguration(url.trim(), token.trim())
-                        alertMessage = viewModel.validateApiCredentials()
-                            ?: L10n.string("api_test_connection_ok")
-                        testing = false
+                        if (isChecking) return@launch
+                        isChecking = true
+                        showCheckProgress = true
+                        checkProgress = AppModeCheckProgress()
+                        viewModel.saveApiConfiguration(url.trim(), token.trim(), syncAfterSave = false)
+                        val result = viewModel.detectAppMode { updated ->
+                            checkProgress = updated
+                        }
+                        if (result.succeeded) {
+                            viewModel.syncForCurrentAppModeSuspending()
+                        }
+                        isChecking = false
                     }
                 },
-                enabled = !testing,
+                enabled = !isChecking && url.isNotBlank() && token.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                if (testing) {
-                    CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                if (isChecking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
                 }
-                Text(L10n.string("api_test_connection"))
-            }
-            TextButton(onClick = {
-                scope.launch {
-                    viewModel.saveApiConfiguration(url.trim(), token.trim())
-                    onBack()
-                }
-            }) {
                 Text(L10n.string("save"))
             }
-        }
-    }
 
-    alertMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = { alertMessage = null },
-            title = { Text(L10n.string("api_settings_short")) },
-            text = { Text(message) },
-            confirmButton = { TextButton(onClick = { alertMessage = null }) { Text(L10n.string("ok")) } },
-        )
+            if (showCheckProgress) {
+                RightsCheckProgressList(progress = checkProgress)
+                when {
+                    checkProgress.succeeded && checkProgress.detectedMode != null -> {
+                        Text(
+                            if (checkProgress.detectedMode == AppMode.Admin) {
+                                L10n.string("rights_check_result_admin")
+                            } else {
+                                L10n.string("rights_check_result_user")
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    checkProgress.connection is AppModeCheckProgress.StepState.Failure -> {
+                        Text(
+                            (checkProgress.connection as AppModeCheckProgress.StepState.Failure).message
+                                ?: L10n.string("rights_check_failed"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    checkProgress.rights is AppModeCheckProgress.StepState.Failure -> {
+                        Text(
+                            (checkProgress.rights as AppModeCheckProgress.StepState.Failure).message
+                                ?: L10n.string("rights_check_failed"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+
+            Text(
+                L10n.string("api_save_check_footer"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            SettingsGroupedCard {
+                SettingsRow(
+                    icon = Icons.Default.Person,
+                    iconColor = Color(0xFF5856D6),
+                    title = L10n.string("app_mode_label"),
+                    value = appMode?.localizedTitle ?: L10n.string("app_mode_unknown"),
+                    showChevron = false,
+                    onClick = null,
+                )
+            }
+        }
     }
 }

@@ -327,6 +327,30 @@ struct SnipeUnconfiguredView: View {
     }
 }
 
+struct SnipeAdminOnlyWidgetView: View {
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        VStack(spacing: family == .systemSmall ? 5 : 8) {
+            Image(systemName: "person.badge.key.fill")
+                .font(family == .systemSmall ? .title3 : .title2)
+                .foregroundStyle(WidgetConstants.brandColor)
+            Text(L10n.string("widget_admin_only_title"))
+                .font(.caption.weight(.semibold))
+                .multilineTextAlignment(.center)
+            if family != .systemSmall {
+                Text(L10n.string("widget_admin_only_desc"))
+                    .font(.caption2)
+                    .foregroundStyle(WidgetConstants.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+            }
+        }
+        .padding(family == .systemSmall ? 8 : 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 // MARK: - Main view
 
 struct SnipeConfigurableWidgetView: View {
@@ -340,6 +364,12 @@ struct SnipeConfigurableWidgetView: View {
         Group {
             if !snapshot.isConfigured {
                 SnipeUnconfiguredView()
+            } else if snapshot.isAdminOnly {
+                if family.isAccessory {
+                    accessoryAdminOnlyView
+                } else {
+                    SnipeAdminOnlyWidgetView()
+                }
             } else if family.isAccessory {
                 accessoryView
             } else {
@@ -349,6 +379,29 @@ struct SnipeConfigurableWidgetView: View {
             }
         }
         .widgetURL(deepLinkURL)
+    }
+
+    @ViewBuilder
+    private var accessoryAdminOnlyView: some View {
+        switch family {
+        case .accessoryInline:
+            Text(L10n.string("widget_admin_only_title"))
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: "person.badge.key.fill")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+        default:
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L10n.string("widget_admin_only_title"))
+                    .font(.caption2.weight(.semibold))
+                Text(L10n.string("widget_admin_only_short"))
+                    .font(.caption2)
+                    .foregroundStyle(WidgetConstants.secondaryText)
+                    .lineLimit(2)
+            }
+        }
     }
 
     private var deepLinkURL: URL {

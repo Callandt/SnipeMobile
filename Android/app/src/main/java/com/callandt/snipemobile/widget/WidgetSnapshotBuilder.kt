@@ -25,6 +25,17 @@ object WidgetSnapshotBuilder {
         SnipeWidgetUpdater.requestUpdate(context)
     }
 
+    /** User mode: clear inventory metrics, keep host/configured. */
+    fun publishAdminOnly(context: Context, baseUrl: String, isConfigured: Boolean) {
+        val snapshot = WidgetSnapshot(
+            isConfigured = isConfigured,
+            serverHost = hostFrom(baseUrl),
+            savedAtEpochMs = System.currentTimeMillis(),
+        )
+        WidgetSnapshotStore.save(context, snapshot)
+        SnipeWidgetUpdater.requestUpdate(context)
+    }
+
     private fun build(
         snapshot: SnipeDataCacheSnapshot,
         baseUrl: String,

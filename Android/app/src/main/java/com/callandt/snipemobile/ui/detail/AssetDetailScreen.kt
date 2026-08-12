@@ -62,7 +62,6 @@ import com.callandt.snipemobile.data.model.AssetAssignedComponent
 import com.callandt.snipemobile.data.model.AssetMaintenance
 import com.callandt.snipemobile.data.model.License
 import com.callandt.snipemobile.ui.AppViewModel
-import com.callandt.snipemobile.ui.asset.AssetAuditSheet
 import com.callandt.snipemobile.ui.asset.AssetCheckinSheet
 import com.callandt.snipemobile.ui.asset.AssetCheckoutSheet
 import com.callandt.snipemobile.ui.asset.AssetFilesTab
@@ -81,7 +80,6 @@ import com.callandt.snipemobile.ui.components.ItemHistoryTab
 import com.callandt.snipemobile.ui.components.LicenseCard
 import com.callandt.snipemobile.ui.components.LocationCard
 import com.callandt.snipemobile.ui.components.MaintenanceCard
-import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.components.UserCard
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
@@ -122,6 +120,7 @@ fun AssetDetailScreen(
     onOpenAccessory: ((Int) -> Unit)? = null,
     onOpenLicense: ((Int) -> Unit)? = null,
     onOpenComponent: ((Int) -> Unit)? = null,
+    isReadOnly: Boolean = false,
 ) {
     val context = LocalContext.current
     val assets by viewModel.assets.collectAsState()
@@ -134,7 +133,6 @@ fun AssetDetailScreen(
     var tabIndex by remember { mutableIntStateOf(0) }
     var showCheckout by remember { mutableStateOf(false) }
     var showCheckin by remember { mutableStateOf(false) }
-    var showAudit by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
     var showAddMaintenance by remember { mutableStateOf(false) }
     var maintenanceReloadToken by remember { mutableIntStateOf(0) }
@@ -163,7 +161,7 @@ fun AssetDetailScreen(
 
     val tabs = buildList {
         add(AssetDetailTab.Details)
-        if (showMaintenancePref) add(AssetDetailTab.Maintenance)
+        if (showMaintenancePref && !isReadOnly) add(AssetDetailTab.Maintenance)
         add(AssetDetailTab.Files)
         add(AssetDetailTab.History)
     }
@@ -193,7 +191,7 @@ fun AssetDetailScreen(
                     }
                 },
                 actions = {
-                    if (currentTab == AssetDetailTab.Maintenance) {
+                    if (!isReadOnly && currentTab == AssetDetailTab.Maintenance) {
                         IconButton(onClick = { showAddMaintenance = true }) {
                             Icon(
                                 imageVector = Icons.Default.Add,
@@ -201,7 +199,7 @@ fun AssetDetailScreen(
                             )
                         }
                     }
-                    if (!asset?.decodedAssetTag.isNullOrEmpty()) {
+                    if (!isReadOnly && !asset?.decodedAssetTag.isNullOrEmpty()) {
                         IconButton(
                             onClick = { scope.launch { generateLabel() } },
                             enabled = !isGeneratingLabel && !deleteState.isDeleting,
@@ -212,23 +210,29 @@ fun AssetDetailScreen(
                             )
                         }
                     }
-                    DetailEntityToolbarActions(
-                        baseUrl = viewModel.apiClient.baseUrl,
-                        webPath = "hardware/$assetId",
-                        onDeleteClick = { deleteState.requestDelete() },
-                        deleteEnabled = !deleteState.isDeleting,
-                    )
+                    if (isReadOnly) {
+                        DetailEntityToolbarActions(
+                            baseUrl = viewModel.apiClient.baseUrl,
+                            webPath = "hardware/$assetId",
+                        )
+                    } else {
+                        DetailEntityToolbarActions(
+                            baseUrl = viewModel.apiClient.baseUrl,
+                            webPath = "hardware/$assetId",
+                            onDeleteClick = { deleteState.requestDelete() },
+                            deleteEnabled = !deleteState.isDeleting,
+                        )
+                    }
                 },
             )
         },
         bottomBar = {
-            if (asset != null) {
+            if (!isReadOnly && asset != null) {
                 AssetDetailBottomBar(
                     asset = asset,
                     onEdit = { showEdit = true },
                     onCheckout = { showCheckout = true },
                     onCheckin = { showCheckin = true },
-                    onAudit = { showAudit = true },
                 )
             }
         },
@@ -318,16 +322,6 @@ fun AssetDetailScreen(
             asset = asset,
             viewModel = viewModel,
             onDismiss = { showCheckin = false },
-        )
-    }
-
-    if (showAudit && asset != null) {
-        AssetAuditSheet(
-            asset = asset,
-            locations = locations.map { PickerItem(it.id, it.decodedName) },
-            viewModel = viewModel,
-            onDismiss = { showAudit = false },
-            onSaved = { scope.launch { viewModel.apiClient.fetchAssets() } },
         )
     }
 
@@ -735,12 +729,10 @@ private fun AssetDetailBottomBar(
     onEdit: () -> Unit,
     onCheckout: () -> Unit,
     onCheckin: () -> Unit,
-    onAudit: () -> Unit,
 ) {
     val actions = asset.availableActions
     val showCheckin = actions?.checkin == true || isAssetDeployed(asset)
     val showCheckout = actions?.checkout == true || canAssetCheckOut(asset)
-    val showAudit = actions?.audit == true
 
     Column(
         modifier = Modifier
@@ -774,14 +766,6 @@ private fun AssetDetailBottomBar(
                     color = SnipeAccent,
                     modifier = Modifier.weight(1f),
                     onClick = onCheckout,
-                )
-            }
-            if (showAudit) {
-                DetailActionButton(
-                    label = L10n.string("audit"),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                    onClick = onAudit,
                 )
             }
         }

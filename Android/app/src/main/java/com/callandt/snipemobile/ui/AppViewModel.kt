@@ -11,6 +11,9 @@ import com.callandt.snipemobile.data.api.SnipeApiClient
 import com.callandt.snipemobile.data.cache.LocalCacheStore
 import com.callandt.snipemobile.notifications.AuditNotificationScheduler
 import com.callandt.snipemobile.widget.WidgetSnapshotBuilder
+import com.callandt.snipemobile.data.prefs.AppMode
+import com.callandt.snipemobile.data.prefs.AppModeCheckProgress
+import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.SecretKey
 import com.callandt.snipemobile.data.secure.SecureStore
@@ -42,6 +45,7 @@ class AppViewModel(
     val apiClient: SnipeApiClient,
     val preferences: AppPreferences,
     private val secureStore: SecureStore,
+    val appModeStore: AppModeStore,
 ) : AndroidViewModel(application) {
 
     val assets = apiClient.assets
@@ -58,8 +62,18 @@ class AppViewModel(
     val hasCompletedInitialLoad = apiClient.hasCompletedInitialLoad
     val errorMessage = apiClient.errorMessage
     val refreshErrorMessage = apiClient.refreshErrorMessage
+    val pendingUnauthorizedSessionWipe = apiClient.pendingUnauthorizedSessionWipe
     val lastApiMessage = apiClient.lastApiMessage
     val loadingProgress = apiClient.loadingProgress
+
+    val appMode: StateFlow<AppMode?> = appModeStore.current
+    val isAdminCapable: StateFlow<Boolean> = appModeStore.isAdminCapable
+    val hasDetectedAppMode: StateFlow<Boolean> = appModeStore.hasDetectedMode
+    val canRequestAssets: StateFlow<Boolean> = appModeStore.canRequestAssets
+
+    fun clearRefreshError() {
+        apiClient.clearRefreshError()
+    }
 
     // Seeded from DataStore so cold start skips a blank spinner frame.
     val hasCompletedOnboarding: StateFlow<Boolean> =
@@ -135,7 +149,10 @@ class AppViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            apiClient.fetchPrimaryThenBackground()
+            when (appModeStore.current.value) {
+                AppMode.User -> apiClient.fetchUserModeData(clearRefreshError = true)
+                else -> apiClient.fetchPrimaryThenBackground(clearRefreshError = true)
+            }
         }
     }
 
@@ -143,8 +160,29 @@ class AppViewModel(
         apiClient.syncAllInBackground()
     }
 
-    suspend fun saveApiConfiguration(url: String, token: String) {
-        apiClient.saveConfiguration(url, token)
+    fun setActiveMode(mode: AppMode) {
+        appModeStore.setActiveMode(mode)
+        viewModelScope.launch { apiClient.syncForCurrentAppMode() }
+    }
+
+    suspend fun detectAppMode(
+        onProgress: (AppModeCheckProgress) -> Unit = {},
+    ): AppModeCheckProgress = apiClient.detectAppMode(onProgress)
+
+    fun syncForCurrentAppMode() {
+        viewModelScope.launch { apiClient.syncForCurrentAppMode() }
+    }
+
+    suspend fun syncForCurrentAppModeSuspending() {
+        apiClient.syncForCurrentAppMode()
+    }
+
+    suspend fun saveApiConfiguration(
+        url: String,
+        token: String,
+        syncAfterSave: Boolean = true,
+    ) {
+        apiClient.saveConfiguration(url, token, syncAfterSave)
     }
 
     suspend fun validateApiCredentials(): String? = apiClient.validateApiCredentials()
@@ -310,13 +348,20 @@ class AppViewModel(
     }
 
     fun wipeAllData() {
+        apiClient.clearPendingUnauthorizedSessionWipe()
+        apiClient.clearSessionData(resetConfigured = true, resetAppMode = true, fullWipe = true)
+        appModeStore.clear()
+        secureStore.wipeAll()
+        LocalCacheStore.clearAll(getApplication())
+        WidgetSnapshotBuilder.clear(getApplication())
         viewModelScope.launch {
             preferences.wipeAll()
-            secureStore.wipeAll()
-            LocalCacheStore.clearAll(getApplication())
-            WidgetSnapshotBuilder.clear(getApplication())
             AuditNotificationScheduler.updateSchedule(getApplication(), false, 9, 0)
         }
+    }
+
+    fun acknowledgeUnauthorizedSessionWipe() {
+        apiClient.clearPendingUnauthorizedSessionWipe()
     }
 
     fun currentApiToken(): String = secureStore.getString(SecretKey.API_TOKEN)
@@ -325,7 +370,13 @@ class AppViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(AppViewModel::class.java)) {
-                return AppViewModel(app, app.apiClient, app.preferences, app.secureStore) as T
+                return AppViewModel(
+                    app,
+                    app.apiClient,
+                    app.preferences,
+                    app.secureStore,
+                    app.appModeStore,
+                ) as T
             }
             throw IllegalArgumentException("Onbekende ViewModel: ${modelClass.name}")
         }

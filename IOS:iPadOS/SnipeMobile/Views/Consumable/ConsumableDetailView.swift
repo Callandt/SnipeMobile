@@ -175,7 +175,9 @@ struct ConsumableDetailView: View {
             } else {
                 HistoryView(itemType: "consumable", itemId: consumable.id, apiClient: apiClient)
             }
-            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack(spacing: 12) {
                 Button(action: { showEditSheet = true }) {
                     Label(L10n.string("edit"), systemImage: "pencil")
@@ -195,14 +197,12 @@ struct ConsumableDetailView: View {
                 .controlSize(.large)
                 .disabled(!canCheckout)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .padding(.bottom, 8)
-            .background(.bar)
+            .detailBottomActionBar()
         }
         .background(Color(.systemBackground))
         .onAppear { isDetailViewActive = true }
         .onDisappear { isDetailViewActive = false }
+        .hidesTabBarWhenPushed()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -114,7 +114,7 @@ fun DirectoryTab(
         )
     }
 
-    ErrorSnackbar(refreshError, snackbarHostState)
+    ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
     Scaffold(
         modifier = modifier,

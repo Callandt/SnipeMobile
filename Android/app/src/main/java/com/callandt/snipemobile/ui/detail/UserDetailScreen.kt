@@ -1,5 +1,7 @@
 package com.callandt.snipemobile.ui.detail
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.data.model.Asset
@@ -74,9 +79,18 @@ fun UserDetailScreen(
     onOpenAccessory: ((Int) -> Unit)? = null,
     onOpenLicense: ((Int) -> Unit)? = null,
     onOpenConsumable: ((Int) -> Unit)? = null,
+    isReadOnly: Boolean = false,
+    showNavigationIcon: Boolean = true,
+    onOpenSettings: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     val users by viewModel.users.collectAsState()
-    val user = users.firstOrNull { it.id == userId }
+    val currentUser by viewModel.currentUser.collectAsState()
+    val user = if (isReadOnly) {
+        currentUser?.takeIf { it.id == userId } ?: users.firstOrNull { it.id == userId }
+    } else {
+        users.firstOrNull { it.id == userId }
+    }
     val scope = rememberCoroutineScope()
 
     var detailUser by remember { mutableStateOf<User?>(null) }
@@ -84,12 +98,16 @@ fun UserDetailScreen(
     var userAccessories by remember { mutableStateOf<List<Accessory>>(emptyList()) }
     var userLicenses by remember { mutableStateOf<List<License>>(emptyList()) }
     var userConsumables by remember { mutableStateOf<List<Consumable>>(emptyList()) }
-    var loadingAssigned by remember { mutableStateOf(true) }
+    var loadingAssigned by remember { mutableStateOf(!isReadOnly) }
     var showEdit by remember { mutableStateOf(false) }
     val deleteState = rememberEntityDeleteState()
     var tabIndex by remember { mutableIntStateOf(0) }
 
     fun reloadAssigned() {
+        if (isReadOnly) {
+            loadingAssigned = false
+            return
+        }
         scope.launch {
             loadingAssigned = true
             coroutineScope {
@@ -106,35 +124,72 @@ fun UserDetailScreen(
         }
     }
 
-    LaunchedEffect(userId) {
-        detailUser = viewModel.apiClient.fetchUserDetails(userId) ?: user
-        reloadAssigned()
+    LaunchedEffect(userId, isReadOnly, currentUser?.id) {
+        if (isReadOnly) {
+            detailUser = currentUser?.takeIf { it.id == userId } ?: user
+            loadingAssigned = false
+        } else {
+            detailUser = viewModel.apiClient.fetchUserDetails(userId) ?: user
+            reloadAssigned()
+        }
     }
 
     val displayUser = detailUser ?: user
-    val displayName = displayUser?.let { userCardTitle(it) } ?: L10n.string("user")
+    val displayName = if (isReadOnly) {
+        L10n.string("user_mode_my_profile")
+    } else {
+        displayUser?.let { userCardTitle(it) } ?: L10n.string("user")
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(displayName, maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
+                    if (showNavigationIcon) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
+                        }
                     }
                 },
                 actions = {
-                    DetailEntityToolbarActions(
-                        baseUrl = viewModel.apiClient.baseUrl,
-                        webPath = "users/$userId",
-                        onDeleteClick = { deleteState.requestDelete() },
-                        deleteEnabled = !deleteState.isDeleting,
-                    )
+                    if (isReadOnly) {
+                        if (onOpenSettings != null) {
+                            IconButton(onClick = onOpenSettings) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = L10n.string("settings"),
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                val url = "${viewModel.apiClient.baseUrl.trimEnd('/')}/users/$userId"
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(url)),
+                                    )
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Language,
+                                contentDescription = L10n.string("open_in_web"),
+                            )
+                        }
+                    } else {
+                        DetailEntityToolbarActions(
+                            baseUrl = viewModel.apiClient.baseUrl,
+                            webPath = "users/$userId",
+                            onDeleteClick = { deleteState.requestDelete() },
+                            deleteEnabled = !deleteState.isDeleting,
+                        )
+                    }
                 },
             )
         },
         bottomBar = {
-            if (displayUser != null) {
+            if (!isReadOnly && displayUser != null) {
                 DetailBottomBar(
                     actions = listOf(
                         DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true },
@@ -168,11 +223,12 @@ fun UserDetailScreen(
             onTabSelected = { tabIndex = it },
             userId = userId,
             viewModel = viewModel,
+            isReadOnly = isReadOnly,
             modifier = Modifier.padding(padding),
         )
     }
 
-    if (showEdit && displayUser != null) {
+    if (showEdit && displayUser != null && !isReadOnly) {
         EditUserSheet(
             user = displayUser,
             viewModel = viewModel,
@@ -186,19 +242,21 @@ fun UserDetailScreen(
         )
     }
 
-    EntityDeleteSupport(
-        state = deleteState,
-        confirmTitle = L10n.string("delete_item_confirm_title", displayName),
-        confirmMessage = L10n.string("delete_user_confirm_message", displayName),
-        onConfirmDelete = {
-            deleteState.confirmDelete(
-                scope = scope,
-                delete = { viewModel.apiClient.deleteUser(userId) },
-                errorFromApi = { viewModel.apiClient.lastApiMessage.value },
-                onSuccess = onBack,
-            )
-        },
-    )
+    if (!isReadOnly) {
+        EntityDeleteSupport(
+            state = deleteState,
+            confirmTitle = L10n.string("delete_item_confirm_title", displayName),
+            confirmMessage = L10n.string("delete_user_confirm_message", displayName),
+            onConfirmDelete = {
+                deleteState.confirmDelete(
+                    scope = scope,
+                    delete = { viewModel.apiClient.deleteUser(userId) },
+                    errorFromApi = { viewModel.apiClient.lastApiMessage.value },
+                    onSuccess = onBack,
+                )
+            },
+        )
+    }
 }
 
 @Composable
@@ -217,20 +275,23 @@ private fun UserDetailContent(
     onTabSelected: (Int) -> Unit,
     userId: Int,
     viewModel: AppViewModel,
+    isReadOnly: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = tabIndex) {
-            UserDetailTab.entries.forEachIndexed { index, tab ->
-                Tab(
-                    selected = tabIndex == index,
-                    onClick = { onTabSelected(index) },
-                    text = { Text(L10n.string(tab.key)) },
-                )
+        if (!isReadOnly) {
+            TabRow(selectedTabIndex = tabIndex) {
+                UserDetailTab.entries.forEachIndexed { index, tab ->
+                    Tab(
+                        selected = tabIndex == index,
+                        onClick = { onTabSelected(index) },
+                        text = { Text(L10n.string(tab.key)) },
+                    )
+                }
             }
         }
-        when (UserDetailTab.entries[tabIndex]) {
-            UserDetailTab.Details -> UserDetailsBody(
+        when {
+            isReadOnly || UserDetailTab.entries[tabIndex] == UserDetailTab.Details -> UserDetailsBody(
                 user = user,
                 userAssets = userAssets,
                 userAccessories = userAccessories,
@@ -241,8 +302,9 @@ private fun UserDetailContent(
                 onOpenAccessory = onOpenAccessory,
                 onOpenLicense = onOpenLicense,
                 onOpenConsumable = onOpenConsumable,
+                showAssignedSections = !isReadOnly,
             )
-            UserDetailTab.History -> ItemHistoryTab(
+            else -> ItemHistoryTab(
                 itemType = "user",
                 itemId = userId,
                 viewModel = viewModel,
@@ -263,6 +325,7 @@ private fun UserDetailsBody(
     onOpenAccessory: ((Int) -> Unit)?,
     onOpenLicense: ((Int) -> Unit)?,
     onOpenConsumable: ((Int) -> Unit)?,
+    showAssignedSections: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -277,6 +340,12 @@ private fun UserDetailsBody(
 
         DetailSectionCard(title = L10n.string("user_info")) {
             DetailRow(L10n.string("username"), user.decodedUsername)
+            if (user.decodedFirstName.isNotBlank()) {
+                DetailRow(L10n.string("first_name"), user.decodedFirstName)
+            }
+            if (user.decodedLastName.isNotBlank()) {
+                DetailRow(L10n.string("last_name"), user.decodedLastName)
+            }
             DetailRow(L10n.string("job_title"), user.decodedJobtitle)
             DetailRow(L10n.string("employee_number"), user.decodedEmployeeNumber)
             DetailRow(L10n.string("email"), user.decodedEmail)
@@ -296,52 +365,54 @@ private fun UserDetailsBody(
             DetailRow(L10n.string("notes"), user.decodedNotes)
         }
 
-        if (loadingAssigned) {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            if (userAssets.isNotEmpty()) {
-                DetailCardListSection(title = L10n.string("assigned_assets")) {
+        if (showAssignedSections) {
+            if (loadingAssigned) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                if (userAssets.isNotEmpty()) {
+                    DetailCardListSection(title = L10n.string("assigned_assets")) {
                         userAssets.forEach { asset ->
                             AssetCard(
                                 asset = asset,
                                 onClick = { onOpenAsset?.invoke(asset.id) },
                             )
                         }
+                    }
                 }
-            }
-            if (userAccessories.isNotEmpty()) {
-                DetailCardListSection(title = L10n.string("tab_accessories")) {
+                if (userAccessories.isNotEmpty()) {
+                    DetailCardListSection(title = L10n.string("tab_accessories")) {
                         userAccessories.forEach { accessory ->
                             AccessoryCard(
                                 accessory = accessory,
                                 onClick = { onOpenAccessory?.invoke(accessory.id) },
                             )
                         }
+                    }
                 }
-            }
-            if (userLicenses.isNotEmpty()) {
-                DetailCardListSection(title = L10n.string("tab_licenses")) {
+                if (userLicenses.isNotEmpty()) {
+                    DetailCardListSection(title = L10n.string("tab_licenses")) {
                         userLicenses.forEach { license ->
                             LicenseCard(
                                 license = license,
                                 onClick = { onOpenLicense?.invoke(license.id) },
                             )
                         }
+                    }
                 }
-            }
-            if (userConsumables.isNotEmpty()) {
-                DetailCardListSection(title = L10n.string("tab_consumables")) {
+                if (userConsumables.isNotEmpty()) {
+                    DetailCardListSection(title = L10n.string("tab_consumables")) {
                         userConsumables.forEach { consumable ->
                             ConsumableCard(
                                 consumable = consumable,
                                 onClick = { onOpenConsumable?.invoke(consumable.id) },
                             )
                         }
+                    }
                 }
             }
         }

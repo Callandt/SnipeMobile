@@ -82,6 +82,10 @@ fun AssetFilterMenuButton(
                         Text(
                             when (val sel = filter.statusSelection) {
                                 AssetStatusSelection.All -> L10n.string("status")
+                                AssetStatusSelection.ReadyToDeploy -> filterFieldLabel(
+                                    "status",
+                                    L10n.string("status_ready_to_deploy"),
+                                )
                                 AssetStatusSelection.Deployed -> filterFieldLabel(
                                     "status",
                                     L10n.string("status_deployed"),
@@ -192,6 +196,15 @@ private fun StatusFilterSubmenu(
                 onDismiss()
             },
         )
+        if (options.showReadyToDeploy) {
+            DropdownMenuItem(
+                text = { Text(L10n.string("status_ready_to_deploy")) },
+                onClick = {
+                    onFilterChange(filter.copy(statusSelection = AssetStatusSelection.ReadyToDeploy))
+                    onDismiss()
+                },
+            )
+        }
         if (options.showDeployed) {
             DropdownMenuItem(
                 text = { Text(L10n.string("status_deployed")) },

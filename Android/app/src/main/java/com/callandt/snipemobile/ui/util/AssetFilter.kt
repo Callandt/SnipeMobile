@@ -3,8 +3,10 @@ package com.callandt.snipemobile.ui.util
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.data.model.StatusLabel
 
+/** Deployed / ReadyToDeploy match web status filters. */
 sealed class AssetStatusSelection {
     data object All : AssetStatusSelection()
+    data object ReadyToDeploy : AssetStatusSelection()
     data object Deployed : AssetStatusSelection()
     data class Status(val id: Int) : AssetStatusSelection()
 }
@@ -34,6 +36,8 @@ data class AssetFilter(
     fun matches(asset: Asset, statusLabels: List<StatusLabel> = emptyList()): Boolean {
         when (val selection = statusSelection) {
             AssetStatusSelection.All -> Unit
+            AssetStatusSelection.ReadyToDeploy ->
+                if (!AssetStatusFilterSupport.matchesReadyToDeploy(asset)) return false
             AssetStatusSelection.Deployed -> if (asset.assignedTo == null) return false
             is AssetStatusSelection.Status -> {
                 if (asset.statusLabel.id != selection.id) return false
@@ -54,6 +58,7 @@ data class AssetFilter(
 
 data class AssetFilterOptions(
     val statusLabels: List<StatusLabel>,
+    val showReadyToDeploy: Boolean,
     val showDeployed: Boolean,
     val categories: List<String>,
     val models: List<String>,
@@ -61,17 +66,18 @@ data class AssetFilterOptions(
     val locations: List<String>,
 ) {
     val hasFilterOptions: Boolean
-        get() = showDeployed || statusLabels.isNotEmpty() || categories.isNotEmpty() ||
+        get() = showReadyToDeploy || showDeployed || statusLabels.isNotEmpty() || categories.isNotEmpty() ||
             models.isNotEmpty() || manufacturers.isNotEmpty() || locations.isNotEmpty()
 
     val hasStatusOptions: Boolean
-        get() = showDeployed || statusLabels.isNotEmpty()
+        get() = showReadyToDeploy || showDeployed || statusLabels.isNotEmpty()
 
     companion object {
         fun from(
             assets: List<Asset>,
             statusLabels: List<StatusLabel>,
         ): AssetFilterOptions {
+            val showReadyToDeploy = assets.any { AssetStatusFilterSupport.matchesReadyToDeploy(it) }
             val showDeployed = assets.any { it.assignedTo != null }
             val labels = if (statusLabels.isNotEmpty()) {
                 AssetStatusFilterSupport.sortedStatusLabels(statusLabels)
@@ -84,6 +90,7 @@ data class AssetFilterOptions(
             }
             return AssetFilterOptions(
                 statusLabels = labels,
+                showReadyToDeploy = showReadyToDeploy,
                 showDeployed = showDeployed,
                 categories = distinctFilterValues(assets.map { it.decodedCategoryName }),
                 models = distinctFilterValues(assets.map { it.decodedModelName }),
@@ -101,11 +108,15 @@ data class AssetFilterOptions(
 }
 
 object AssetStatusFilterSupport {
+    /** Unassigned + deployable (web status=RTD). */
+    fun matchesReadyToDeploy(asset: Asset): Boolean =
+        asset.assignedTo == null && isDeployable(asset)
+
     fun isReadyToDeployLabel(label: StatusLabel): Boolean =
         label.statusMeta?.trim()?.lowercase() == "ready_to_deploy"
 
     fun isDeployable(asset: Asset): Boolean =
-        (asset.statusLabel.type?.lowercase() ?: "deployable") == "deployable"
+        asset.statusLabel.isDeployableType
 
     fun displayName(label: StatusLabel): String {
         val meta = label.statusMeta?.trim().orEmpty()

@@ -174,8 +174,8 @@ struct ContentView: View {
     @State private var licensesPath = NavigationPath()
     @State private var stockPath = NavigationPath()
     @State private var directoryPath = NavigationPath()
-    /// Detail on stack. Tab bar stays visible.
     @State private var isDetailViewActive = false
+    /// True when a detail screen is pushed.
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
     @State private var showAddDellAssetPrompt = false
@@ -313,7 +313,7 @@ struct ContentView: View {
         .alert(
             L10n.string("refresh_failed_title"),
             isPresented: Binding(
-                get: { apiClient.refreshErrorMessage != nil },
+                get: { apiClient.refreshErrorMessage != nil && !apiClient.pendingUnauthorizedSessionWipe },
                 set: { newValue in
                     if !newValue {
                         // Defer out of the view-update cycle to avoid
@@ -1029,13 +1029,9 @@ struct HardwareTab: View {
             hardwareTabContent
                 .background(Color(.systemBackground).ignoresSafeArea())
         }
+        .syncTabBarWithNavigationPath(navigationPath)
         .onAppear {
-            if apiClient.isConfigured && apiClient.assets.isEmpty && !hasLoadedInitialAssets {
-                Task {
-                    await apiClient.fetchPrimaryThenBackground()
-                    hasLoadedInitialAssets = true
-                }
-            }
+            // Initial sync is owned by the parent.
             if apiClient.isConfigured,
                apiClient.statusLabels.isEmpty
                 || apiClient.manufacturers.isEmpty
@@ -1213,6 +1209,7 @@ struct HardwareTab: View {
         .refreshable {
             if apiClient.isConfigured {
                 isRefreshing = true
+                apiClient.clearRefreshError()
                 if isMaintenanceSubtabActive {
                     await loadAllMaintenances(force: true)
                 } else {
@@ -1745,6 +1742,7 @@ struct AccessoriesTab: View {
             .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
             .background(Color(.systemBackground).ignoresSafeArea())
         }
+        .syncTabBarWithNavigationPath(navigationPath)
     }
 
     private func tryPushPendingQRLink() {
@@ -1822,6 +1820,7 @@ struct LicensesTab: View {
                 )
             }
         }
+        .syncTabBarWithNavigationPath(navigationPath)
     }
 
     private func tryPushPendingQRLink() {
@@ -2157,6 +2156,7 @@ struct StockTab: View {
                 )
             }
         }
+        .syncTabBarWithNavigationPath(navigationPath)
     }
 
     private func tryPushPendingQRLink() {
@@ -2860,6 +2860,7 @@ struct DirectoryTab: View {
             .appNavigationDestinations(apiClient: apiClient, navigationPath: $navigationPath, isDetailViewActive: $isDetailViewActive)
             .background(Color(.systemBackground).ignoresSafeArea())
         }
+        .syncTabBarWithNavigationPath(navigationPath)
     }
 }
 
@@ -3136,23 +3137,12 @@ private struct LocationsContent: View {
 
 struct TabBarMinimizeBehaviorModifier: ViewModifier {
     let isDetailVisible: Bool
-    @State private var deferredDetailVisible = false
 
     func body(content: Content) -> some View {
-        Group {
-            if #available(iOS 26.0, *) {
-                content.tabBarMinimizeBehavior(deferredDetailVisible ? .never : .onScrollDown)
-            } else {
-                content
-            }
-        }
-        .onAppear {
-            deferredDetailVisible = isDetailVisible
-        }
-        .onChange(of: isDetailVisible) { _, visible in
-            DispatchQueue.main.async {
-                deferredDetailVisible = visible
-            }
+        if #available(iOS 26.0, *) {
+            content.tabBarMinimizeBehavior(isDetailVisible ? .never : .onScrollDown)
+        } else {
+            content
         }
     }
 }

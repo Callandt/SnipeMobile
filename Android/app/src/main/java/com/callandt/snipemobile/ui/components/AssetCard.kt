@@ -46,6 +46,7 @@ fun AssetCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showNextAuditDate: Boolean = false,
+    footer: (@Composable () -> Unit)? = null,
 ) {
     val title = assetCardTitle(asset)
     val showAssetName = asset.decodedName.isNotEmpty() && asset.decodedName != title
@@ -54,10 +55,7 @@ fun AssetCard(
     val status = assetResolvedStatus(asset)
 
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -67,89 +65,99 @@ fun AssetCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClick),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.Laptop,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                    modifier = Modifier.size(36.dp),
-                )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                    Icon(
+                        imageVector = Icons.Default.Laptop,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                        modifier = Modifier.size(36.dp),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                         Text(
-                            text = L10n.string("tag_label", asset.decodedAssetTag),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        if (asset.decodedSerial.isNotEmpty()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(
-                                text = "${L10n.string("sn_label")} ${asset.decodedSerial}",
+                                text = L10n.string("tag_label", asset.decodedAssetTag),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
                             )
+                            if (asset.decodedSerial.isNotEmpty()) {
+                                Text(
+                                    text = "${L10n.string("sn_label")} ${asset.decodedSerial}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                            }
                         }
-                    }
-                    if (!status.isNullOrBlank()) {
-                        Text(
-                            text = status,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (showNextAuditDate) {
-                        val next = asset.nextAuditDate?.formatted
-                            ?: asset.nextAuditDate?.localizedDisplay(includeTime = false)
-                        if (!next.isNullOrBlank()) {
+                        if (!status.isNullOrBlank()) {
                             Text(
-                                text = "${L10n.string("next_audit_date")}: $next",
+                                text = status,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        if (showNextAuditDate) {
+                            val next = asset.nextAuditDate?.formatted
+                                ?: asset.nextAuditDate?.localizedDisplay(includeTime = false)
+                            if (!next.isNullOrBlank()) {
+                                Text(
+                                    text = "${L10n.string("next_audit_date")}: $next",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
+                }
+
+                if (showAssetName || locationName != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (showAssetName) {
+                            MetaIconRow(
+                                icon = Icons.AutoMirrored.Outlined.Label,
+                                text = asset.decodedName,
+                            )
+                        }
+                        if (locationName != null) {
+                            MetaIconRow(
+                                icon = Icons.Outlined.Place,
+                                text = locationName,
+                            )
+                        }
+                    }
+                }
+
+                if (assignee != null) {
+                    AssetCheckedOutBanner(
+                        assigneeName = assignee,
+                        icon = assetCheckedOutIcon(asset),
+                    )
                 }
             }
 
-            if (showAssetName || locationName != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (showAssetName) {
-                        MetaIconRow(
-                            icon = Icons.AutoMirrored.Outlined.Label,
-                            text = asset.decodedName,
-                        )
-                    }
-                    if (locationName != null) {
-                        MetaIconRow(
-                            icon = Icons.Outlined.Place,
-                            text = locationName,
-                        )
-                    }
-                }
-            }
-
-            if (assignee != null) {
-                AssetCheckedOutBanner(
-                    assigneeName = assignee,
-                    icon = assetCheckedOutIcon(asset),
-                )
-            }
+            footer?.invoke()
         }
     }
 }

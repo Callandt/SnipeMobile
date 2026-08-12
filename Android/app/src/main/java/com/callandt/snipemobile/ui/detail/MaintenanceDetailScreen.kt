@@ -1,6 +1,7 @@
 package com.callandt.snipemobile.ui.detail
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +64,7 @@ import com.callandt.snipemobile.data.model.AssetMaintenance
 import com.callandt.snipemobile.data.model.DateInfo
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.MaintenanceLinkedAssetInfo
+import com.callandt.snipemobile.ui.components.copyDetailValue
 import com.callandt.snipemobile.ui.maintenance.EditMaintenanceSheet
 import com.callandt.snipemobile.ui.theme.SnipeAccent
 import com.callandt.snipemobile.ui.theme.SnipeGreen
@@ -553,8 +556,11 @@ private fun DetailCard(content: @Composable () -> Unit) {
 
 @Composable
 private fun StackedDetailRow(label: String, value: String) {
+    val context = LocalContext.current
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { copyDetailValue(context, value) },
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(

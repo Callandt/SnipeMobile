@@ -7,8 +7,18 @@ enum WidgetSnapshotBuilder {
     private static let dueSoonDays = 7
 
     static func update(from snapshot: SnipeDataCacheSnapshot, baseURL: String, isConfigured: Bool) {
+        if AppModeStore.isUserMode {
+            publishAdminOnly(baseURL: baseURL, isConfigured: isConfigured)
+            return
+        }
         let widgetSnapshot = build(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)
         WidgetSnapshotStore.save(widgetSnapshot)
+        reloadTimelines()
+    }
+
+    /// Empty snapshot in user mode.
+    static func publishAdminOnly(baseURL: String, isConfigured: Bool) {
+        WidgetSnapshotStore.save(.adminOnly(isConfigured: isConfigured, baseURL: baseURL))
         reloadTimelines()
     }
 

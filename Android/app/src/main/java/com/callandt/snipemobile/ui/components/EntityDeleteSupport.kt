@@ -74,7 +74,7 @@ fun rememberEntityDeleteState(): EntityDeleteState = remember { EntityDeleteStat
 fun DetailEntityToolbarActions(
     baseUrl: String,
     webPath: String,
-    onDeleteClick: () -> Unit,
+    onDeleteClick: (() -> Unit)? = null,
     deleteEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
@@ -83,12 +83,14 @@ fun DetailEntityToolbarActions(
     }
 
     Row {
-        IconButton(onClick = onDeleteClick, enabled = deleteEnabled) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = L10n.string("delete"),
-                tint = Color.Red,
-            )
+        if (onDeleteClick != null) {
+            IconButton(onClick = onDeleteClick, enabled = deleteEnabled) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = L10n.string("delete"),
+                    tint = Color.Red,
+                )
+            }
         }
         IconButton(
             onClick = {

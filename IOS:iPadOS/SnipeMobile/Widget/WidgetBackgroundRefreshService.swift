@@ -96,6 +96,10 @@ enum WidgetBackgroundRefreshService {
 
     private static func refreshWidgetFromDisk(baseURL: String, isConfigured: Bool) {
         guard isConfigured, !baseURL.isEmpty else { return }
+        if AppModeStore.isUserMode {
+            WidgetSnapshotBuilder.publishAdminOnly(baseURL: baseURL, isConfigured: isConfigured)
+            return
+        }
         let key = LocalCacheStore.key(forBaseURL: baseURL)
         guard let snapshot = LocalCacheStore.load(key: key) else { return }
         WidgetSnapshotBuilder.update(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)

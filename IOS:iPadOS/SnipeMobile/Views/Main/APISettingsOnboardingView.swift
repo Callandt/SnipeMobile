@@ -73,7 +73,11 @@ struct APISettingsOnboardingView: View {
                                 showSkipConfirm = true
                             } else {
                                 Task {
-                                    apiClient.saveConfiguration(baseURL: apiUrl, apiToken: apiKey)
+                                    apiClient.saveConfiguration(
+                                        baseURL: apiUrl,
+                                        apiToken: apiKey,
+                                        syncAfterSave: false
+                                    )
                                     if let error = await apiClient.validateApiCredentials() {
                                         alertMessage = error
                                         showAlert = true

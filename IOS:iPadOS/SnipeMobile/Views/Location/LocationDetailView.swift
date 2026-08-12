@@ -241,11 +241,12 @@ struct LocationDetailView: View {
                 }
             )
         }
+        .onAppear { isDetailViewActive = true }
+        .onDisappear { isDetailViewActive = false }
+        .hidesTabBarWhenPushed()
         .task(id: location.id) {
             selectedTab = 0
             hasLoadedAssignedItems = false
-            DispatchQueue.main.async { isDetailViewActive = true }
-            defer { isDetailViewActive = false }
             await reloadAssignedItems()
         }
     }

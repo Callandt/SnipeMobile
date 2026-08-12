@@ -1,8 +1,11 @@
 package com.callandt.snipemobile.ui.navigation
 
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -19,6 +22,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.callandt.snipemobile.data.api.DellQrLink
 import com.callandt.snipemobile.data.api.SnipeITQRLink
+import com.callandt.snipemobile.data.prefs.AppMode
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.DellAddPrefill
 import com.callandt.snipemobile.ui.detail.AccessoryDetailScreen
@@ -35,9 +39,11 @@ import com.callandt.snipemobile.ui.main.TabletDetailSelection
 import com.callandt.snipemobile.ui.main.TabletMainSplit
 import com.callandt.snipemobile.ui.onboarding.ApiSetupScreen
 import com.callandt.snipemobile.ui.onboarding.ModuleSelectionScreen
+import com.callandt.snipemobile.ui.onboarding.RightsCheckOnboardingScreen
 import com.callandt.snipemobile.ui.onboarding.WelcomeScreen
 import com.callandt.snipemobile.ui.scanner.QrScannerScreen
 import com.callandt.snipemobile.ui.settings.SettingsScreen
+import com.callandt.snipemobile.ui.usermode.UserModeScaffold
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.WindowAdaptive
 import kotlinx.coroutines.launch
@@ -45,6 +51,7 @@ import kotlinx.coroutines.launch
 object Routes {
     const val Welcome = "welcome"
     const val ApiSetup = "api_setup"
+    const val RightsCheck = "rights_check"
     const val ModuleSelection = "module_selection"
     const val Main = "main"
     const val Settings = "settings"
@@ -71,6 +78,10 @@ object Routes {
 @Composable
 fun AppNav(viewModel: AppViewModel) {
     val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsState()
+    val pendingUnauthorizedWipe by viewModel.pendingUnauthorizedSessionWipe.collectAsState()
+    val appMode by viewModel.appMode.collectAsState()
+    val isConfigured by viewModel.isConfigured.collectAsState()
+    val hasDetectedAppMode by viewModel.hasDetectedAppMode.collectAsState()
 
     val navController = rememberNavController()
     val enableDellQrScan by viewModel.enableDellQrScan.collectAsState()
@@ -82,6 +93,30 @@ fun AppNav(viewModel: AppViewModel) {
     val isTablet = WindowAdaptive.isTabletLayout()
     val pendingMainTab by viewModel.pendingMainTab.collectAsState()
 
+    fun returnToWelcomeAfterWipe() {
+        viewModel.acknowledgeUnauthorizedSessionWipe()
+        viewModel.wipeAllData()
+        selectedTab = MainTab.Hardware
+        tabletSelection = null
+        navController.navigate(Routes.Welcome) {
+            popUpTo(0) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+
+    if (pendingUnauthorizedWipe && hasCompletedOnboarding) {
+        AlertDialog(
+            onDismissRequest = { /* must confirm */ },
+            title = { Text(L10n.string("session_unauthorized_title")) },
+            text = { Text(L10n.string("session_unauthorized_message")) },
+            confirmButton = {
+                TextButton(onClick = { returnToWelcomeAfterWipe() }) {
+                    Text(L10n.string("ok"))
+                }
+            },
+        )
+    }
+
     LaunchedEffect(pendingMainTab) {
         val tab = viewModel.consumePendingMainTab() ?: return@LaunchedEffect
         selectedTab = tab
@@ -91,6 +126,17 @@ fun AppNav(viewModel: AppViewModel) {
                 popUpTo(navController.graph.startDestinationId) { inclusive = false }
                 launchSingleTop = true
             }
+        }
+    }
+
+    // Existing installs: detect mode in the background.
+    LaunchedEffect(hasCompletedOnboarding, isConfigured, hasDetectedAppMode) {
+        if (!hasCompletedOnboarding || !isConfigured || hasDetectedAppMode) return@LaunchedEffect
+        val result = viewModel.detectAppMode()
+        if (result.detectedMode == AppMode.User) {
+            viewModel.syncForCurrentAppModeSuspending()
+        } else if (result.detectedMode == null) {
+            viewModel.appModeStore.apply(mode = AppMode.Admin, canRequestAssets = false)
         }
     }
 
@@ -142,17 +188,52 @@ fun AppNav(viewModel: AppViewModel) {
             WelcomeScreen(onContinue = { navController.navigate(Routes.ApiSetup) })
         }
         composable(Routes.ApiSetup) {
-            ApiSetupScreen(viewModel = viewModel, onContinue = { navController.navigate(Routes.ModuleSelection) })
+            ApiSetupScreen(
+                viewModel = viewModel,
+                onContinue = { navController.navigate(Routes.RightsCheck) },
+                onSkip = {
+                    viewModel.appModeStore.apply(mode = AppMode.Admin, canRequestAssets = false)
+                    navController.navigate(Routes.ModuleSelection)
+                },
+            )
+        }
+        composable(Routes.RightsCheck) {
+            RightsCheckOnboardingScreen(
+                viewModel = viewModel,
+                onFinished = { mode ->
+                    if (mode == AppMode.Admin) {
+                        navController.navigate(Routes.ModuleSelection)
+                    } else {
+                        viewModel.completeOnboarding()
+                        scope.launch { viewModel.syncForCurrentAppModeSuspending() }
+                        navController.navigate(Routes.Main) {
+                            popUpTo(Routes.Welcome) { inclusive = true }
+                        }
+                    }
+                },
+                onFailed = {
+                    navController.popBackStack(Routes.ApiSetup, inclusive = false)
+                },
+            )
         }
         composable(Routes.ModuleSelection) {
             ModuleSelectionScreen(viewModel = viewModel, onFinish = {
+                scope.launch { viewModel.syncForCurrentAppModeSuspending() }
                 navController.navigate(Routes.Main) {
                     popUpTo(Routes.Welcome) { inclusive = true }
                 }
             })
         }
         composable(Routes.Main) {
-            if (isTablet) {
+            if (appMode == AppMode.User) {
+                UserModeScaffold(
+                    viewModel = viewModel,
+                    onOpenSettings = { navController.navigate(Routes.Settings) },
+                    onAssetClick = { navController.navigate(Routes.asset(it)) },
+                    onAccessoryClick = { navController.navigate(Routes.accessory(it)) },
+                    onLicenseClick = { navController.navigate(Routes.license(it)) },
+                )
+            } else if (isTablet) {
                 TabletMainSplit(
                     viewModel = viewModel,
                     selectedTab = selectedTab,
@@ -267,6 +348,7 @@ fun AppNav(viewModel: AppViewModel) {
                 onOpenAccessory = { navController.navigate(Routes.accessory(it)) },
                 onOpenLicense = { navController.navigate(Routes.license(it)) },
                 onOpenComponent = { navController.navigate(Routes.component(it)) },
+                isReadOnly = appMode == AppMode.User,
             )
         }
         detailRoute(Routes.AccessoryDetail, "id") { id ->

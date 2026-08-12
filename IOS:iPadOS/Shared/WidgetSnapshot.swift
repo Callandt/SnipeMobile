@@ -23,6 +23,8 @@ struct WidgetSnapshot: Codable {
     var isConfigured: Bool = false
     var serverHost: String?
     var savedAt: Date = .distantPast
+    /// User-mode placeholder (no inventory stats).
+    var requiresAdminMode: Bool? = nil
 
     var auditsOverdue: Int = 0
     var auditsDueToday: Int = 0
@@ -38,8 +40,10 @@ struct WidgetSnapshot: Codable {
 
     static let empty = WidgetSnapshot()
 
+    var isAdminOnly: Bool { requiresAdminMode == true }
+
     var hasData: Bool {
-        isConfigured && totalAssets > 0
+        isConfigured && !isAdminOnly && totalAssets > 0
     }
 
     var formattedSavedAt: String {
@@ -55,6 +59,15 @@ struct WidgetSnapshot: Codable {
 
     var hasActionItems: Bool {
         !topOverdueAudits.isEmpty || !topOpenMaintenance.isEmpty || !topLowStockItems.isEmpty
+    }
+
+    static func adminOnly(isConfigured: Bool, baseURL: String) -> WidgetSnapshot {
+        WidgetSnapshot(
+            isConfigured: isConfigured,
+            serverHost: URL(string: baseURL)?.host,
+            savedAt: Date(),
+            requiresAdminMode: true
+        )
     }
 }
 

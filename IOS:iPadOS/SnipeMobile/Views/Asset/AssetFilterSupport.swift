@@ -1,8 +1,9 @@
 import SwiftUI
 
-// status choice; "deployed" is synthetic (matched on assignment, not a label)
+// Status filter; Deployed / ReadyToDeploy match web filters.
 enum AssetStatusSelection: Hashable {
     case all
+    case readyToDeploy
     case deployed
     case status(Int)
 }
@@ -41,6 +42,8 @@ struct AssetFilter: Equatable {
         switch statusSelection {
         case .all:
             break
+        case .readyToDeploy:
+            if !AssetStatusFilterSupport.matchesReadyToDeploy(asset) { return false }
         case .deployed:
             if asset.assignedTo == nil { return false }
         case .status(let id):
@@ -59,9 +62,10 @@ struct AssetFilter: Equatable {
     }
 }
 
-// Filter options prefer Snipe-IT catalogs; fall back to values present on loaded assets.
+// Catalog options, else values from loaded assets.
 struct AssetFilterOptions {
     let statusLabels: [StatusLabel]
+    let showReadyToDeploy: Bool
     let showDeployed: Bool
     let categories: [String]
     let models: [String]
@@ -69,12 +73,12 @@ struct AssetFilterOptions {
     let locations: [String]
 
     var hasFilterOptions: Bool {
-        showDeployed || !statusLabels.isEmpty || !categories.isEmpty || !models.isEmpty
+        showReadyToDeploy || showDeployed || !statusLabels.isEmpty || !categories.isEmpty || !models.isEmpty
             || !manufacturers.isEmpty || !locations.isEmpty
     }
 
     var hasStatusOptions: Bool {
-        showDeployed || !statusLabels.isEmpty
+        showReadyToDeploy || showDeployed || !statusLabels.isEmpty
     }
 
     init(
@@ -85,6 +89,7 @@ struct AssetFilterOptions {
         manufacturerNames: [String] = [],
         locationNames: [String] = []
     ) {
+        showReadyToDeploy = assets.contains { AssetStatusFilterSupport.matchesReadyToDeploy($0) }
         showDeployed = assets.contains { $0.assignedTo != nil }
         categories = listFilterValues(catalog: categoryNames, itemValues: assets.map(\.decodedCategoryName))
         models = listFilterValues(catalog: modelNames, itemValues: assets.map(\.decodedModelName))
@@ -106,7 +111,7 @@ struct AssetFilterOptions {
     }
 }
 
-// header menu with a submenu per dimension, like the maintenance filter
+// Filter menu with a submenu per dimension.
 struct AssetFilterMenu: View {
     @Binding var filter: AssetFilter
     let options: AssetFilterOptions
@@ -159,6 +164,9 @@ struct AssetFilterMenu: View {
         Menu {
             Picker(L10n.string("status"), selection: $filter.statusSelection) {
                 Text(L10n.string("filter_all")).tag(AssetStatusSelection.all)
+                if options.showReadyToDeploy {
+                    Text(L10n.statusLabel("ready_to_deploy")).tag(AssetStatusSelection.readyToDeploy)
+                }
                 if options.showDeployed {
                     Text(L10n.statusLabel("deployed")).tag(AssetStatusSelection.deployed)
                 }
@@ -180,6 +188,8 @@ struct AssetFilterMenu: View {
         switch filter.statusSelection {
         case .all:
             return L10n.string("filter_all")
+        case .readyToDeploy:
+            return L10n.statusLabel("ready_to_deploy")
         case .deployed:
             return L10n.statusLabel("deployed")
         case .status(let id):
@@ -216,12 +226,17 @@ struct AssetFilterMenu: View {
 }
 
 enum AssetStatusFilterSupport {
+    /// Unassigned + deployable (web status=RTD).
+    static func matchesReadyToDeploy(_ asset: Asset) -> Bool {
+        asset.assignedTo == nil && isDeployable(asset)
+    }
+
     static func isReadyToDeployLabel(_ label: StatusLabel) -> Bool {
         label.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "ready_to_deploy"
     }
 
     static func isDeployable(_ asset: Asset) -> Bool {
-        (asset.statusLabel.type?.lowercased() ?? "deployable") == "deployable"
+        asset.statusLabel.isDeployableType
     }
 
     static func displayName(for label: StatusLabel) -> String {
