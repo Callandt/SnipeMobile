@@ -47,6 +47,7 @@ import com.callandt.snipemobile.ui.license.AddLicenseSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.licenseMatchesSearch
 import com.callandt.snipemobile.ui.util.listFilterOptions
 
@@ -108,6 +109,8 @@ fun LicensesTab(
 
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
+    val isTablet = WindowAdaptive.isTabletLayout()
+
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -118,16 +121,24 @@ fun LicensesTab(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = {
-                    IconButton(onClick = { showAddLicense = true }) {
-                        Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
+                    if (!isTablet) {
+                        IconButton(onClick = { showAddLicense = true }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenScanner) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                    if (isTablet) {
+                        IconButton(onClick = { showAddLicense = true }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
+                        }
+                    } else {
+                        IconButton(onClick = onOpenScanner) {
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
+                        }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                        }
                     }
                 },
             )

@@ -53,6 +53,7 @@ import com.callandt.snipemobile.ui.consumable.AddConsumableSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.componentMatchesSearch
 import com.callandt.snipemobile.ui.util.consumableMatchesSearch
 import com.callandt.snipemobile.ui.util.listFilterOptions
@@ -155,6 +156,8 @@ fun StockTab(
 
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
+    val isTablet = WindowAdaptive.isTabletLayout()
+
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -165,18 +168,28 @@ fun StockTab(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = {
-                    IconButton(onClick = {
-                        if (showConsumablesList) showAddConsumable = true else showAddComponent = true
-                    }) {
-                        Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                    if (!isTablet) {
+                        IconButton(onClick = {
+                            if (showConsumablesList) showAddConsumable = true else showAddComponent = true
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenScanner) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                    if (isTablet) {
+                        IconButton(onClick = {
+                            if (showConsumablesList) showAddConsumable = true else showAddComponent = true
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                        }
+                    } else {
+                        IconButton(onClick = onOpenScanner) {
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
+                        }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                        }
                     }
                 },
             )

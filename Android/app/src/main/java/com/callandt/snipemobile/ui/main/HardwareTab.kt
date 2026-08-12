@@ -88,6 +88,7 @@ import com.callandt.snipemobile.ui.theme.SnipeGreen
 import com.callandt.snipemobile.ui.util.AssetFilter
 import com.callandt.snipemobile.ui.util.AssetFilterOptions
 import com.callandt.snipemobile.ui.util.AuditDateHelper
+import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.AuditListFilter
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.assetMatchesSearch
@@ -266,6 +267,65 @@ fun HardwareTab(
 
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
+    val isTablet = WindowAdaptive.isTabletLayout()
+    val showAddActions = !(isMaintenanceSubtab && isSelectingMaintenances)
+
+    @Composable
+    fun HardwareAddActions() {
+        when (currentSubtab) {
+            HardwareSubtab.All, HardwareSubtab.Audit -> {
+                Box {
+                    IconButton(onClick = { showAddMenu = true }) {
+                        Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                    }
+                    DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(L10n.string("add_asset")) },
+                            leadingIcon = { Icon(Icons.Default.Laptop, contentDescription = null) },
+                            onClick = {
+                                showAddMenu = false
+                                showAddAsset = true
+                            },
+                        )
+                        if (showMaintenance) {
+                            DropdownMenuItem(
+                                text = { Text(L10n.string("add_maintenance")) },
+                                leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) },
+                                onClick = {
+                                    showAddMenu = false
+                                    showBulkMaintenance = true
+                                },
+                            )
+                        }
+                        if (showAudit) {
+                            DropdownMenuItem(
+                                text = { Text(L10n.string("add_audit")) },
+                                leadingIcon = { Icon(Icons.Default.Checklist, contentDescription = null) },
+                                onClick = {
+                                    showAddMenu = false
+                                    showBulkAudit = true
+                                },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text(L10n.string("generate_labels")) },
+                            leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null) },
+                            onClick = {
+                                showAddMenu = false
+                                showBulkLabels = true
+                            },
+                        )
+                    }
+                }
+            }
+            HardwareSubtab.Maintenance -> {
+                IconButton(onClick = { showBulkMaintenance = true }) {
+                    Icon(Icons.Default.Add, contentDescription = L10n.string("add_maintenance"))
+                }
+            }
+        }
+    }
+
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -276,60 +336,22 @@ fun HardwareTab(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = {
-                    when (currentSubtab) {
-                        HardwareSubtab.All, HardwareSubtab.Audit -> {
-                            Box {
-                                IconButton(onClick = { showAddMenu = true }) {
-                                    Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
-                                }
-                                DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(L10n.string("add_asset")) },
-                                        leadingIcon = { Icon(Icons.Default.Laptop, contentDescription = null) },
-                                        onClick = {
-                                            showAddMenu = false
-                                            showAddAsset = true
-                                        },
-                                    )
-                                    if (showMaintenance) {
-                                        DropdownMenuItem(
-                                            text = { Text(L10n.string("add_maintenance")) },
-                                            leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) },
-                                            onClick = {
-                                                showAddMenu = false
-                                                showBulkMaintenance = true
-                                            },
-                                        )
-                                    }
-                                    if (showAudit) {
-                                        DropdownMenuItem(
-                                            text = { Text(L10n.string("add_audit")) },
-                                            leadingIcon = { Icon(Icons.Default.Checklist, contentDescription = null) },
-                                            onClick = {
-                                                showAddMenu = false
-                                                showBulkAudit = true
-                                            },
-                                        )
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text(L10n.string("generate_labels")) },
-                                        leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null) },
-                                        onClick = {
-                                            showAddMenu = false
-                                            showBulkLabels = true
-                                        },
-                                    )
-                                }
+                    if (isTablet) {
+                        if (isMaintenanceSubtab && isSelectingMaintenances) {
+                            TextButton(onClick = { cancelMaintenanceSelection() }) {
+                                Text(L10n.string("cancel"))
                             }
                         }
-                        HardwareSubtab.Maintenance -> {
-                            if (isSelectingMaintenances) {
-                                TextButton(onClick = { cancelMaintenanceSelection() }) {
-                                    Text(L10n.string("cancel"))
-                                }
-                            } else {
-                                IconButton(onClick = { showBulkMaintenance = true }) {
-                                    Icon(Icons.Default.Add, contentDescription = L10n.string("add_maintenance"))
+                    } else {
+                        when (currentSubtab) {
+                            HardwareSubtab.All, HardwareSubtab.Audit -> HardwareAddActions()
+                            HardwareSubtab.Maintenance -> {
+                                if (isSelectingMaintenances) {
+                                    TextButton(onClick = { cancelMaintenanceSelection() }) {
+                                        Text(L10n.string("cancel"))
+                                    }
+                                } else {
+                                    HardwareAddActions()
                                 }
                             }
                         }
@@ -355,12 +377,16 @@ fun HardwareTab(
                         }
                         else -> Unit
                     }
-                    if (!(isMaintenanceSubtab && isSelectingMaintenances)) {
-                        IconButton(onClick = onOpenScanner) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
-                        }
-                        IconButton(onClick = onOpenSettings) {
-                            Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                    if (showAddActions) {
+                        if (isTablet) {
+                            HardwareAddActions()
+                        } else {
+                            IconButton(onClick = onOpenScanner) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
+                            }
+                            IconButton(onClick = onOpenSettings) {
+                                Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                            }
                         }
                     }
                 },

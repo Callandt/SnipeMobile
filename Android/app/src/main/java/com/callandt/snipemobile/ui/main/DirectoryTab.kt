@@ -53,6 +53,7 @@ import com.callandt.snipemobile.ui.user.AddUserSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.listFilterOptions
 import com.callandt.snipemobile.ui.util.locationMatchesSearch
 import com.callandt.snipemobile.ui.util.userMatchesSearch
@@ -116,6 +117,8 @@ fun DirectoryTab(
 
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
+    val isTablet = WindowAdaptive.isTabletLayout()
+
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -126,18 +129,28 @@ fun DirectoryTab(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = {
-                    IconButton(onClick = {
-                        if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
-                    }) {
-                        Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                    if (!isTablet) {
+                        IconButton(onClick = {
+                            if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenScanner) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                    if (isTablet) {
+                        IconButton(onClick = {
+                            if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                        }
+                    } else {
+                        IconButton(onClick = onOpenScanner) {
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
+                        }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = L10n.string("settings"))
+                        }
                     }
                 },
             )
