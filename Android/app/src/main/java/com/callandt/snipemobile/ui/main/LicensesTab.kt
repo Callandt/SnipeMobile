@@ -2,6 +2,7 @@ package com.callandt.snipemobile.ui.main
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,14 +36,19 @@ import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.LicenseCard
+import com.callandt.snipemobile.ui.components.ListCountHeader
+import com.callandt.snipemobile.ui.components.ListFilterMenuButton
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.license.AddLicenseSheet
+import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.ListFilter
 import com.callandt.snipemobile.ui.util.licenseMatchesSearch
+import com.callandt.snipemobile.ui.util.listFilterOptions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,10 +60,15 @@ fun LicensesTab(
     onOpenScanner: () -> Unit = {},
 ) {
     val items by viewModel.licenses.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+    val manufacturers by viewModel.manufacturers.collectAsState()
+    val suppliers by viewModel.suppliers.collectAsState()
+    val companies by viewModel.companies.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var listFilter by remember { mutableStateOf(ListFilter()) }
     var showAddLicense by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -67,9 +78,33 @@ fun LicensesTab(
         viewModel.refresh()
     }
 
-    val filtered = items.filter {
-        licenseMatchesSearch(it, searchQuery)
+    val categoryTitle = L10n.string("category")
+    val manufacturerTitle = L10n.string("manufacturer")
+    val supplierTitle = L10n.string("supplier")
+    val companyTitle = L10n.string("company")
+    val dimensions = remember(categoryTitle, manufacturerTitle, supplierTitle, companyTitle) {
+        listOf<FilterDimension<License>>(
+            FilterDimension(categoryTitle) { it.decodedCategoryName },
+            FilterDimension(manufacturerTitle) { it.decodedManufacturerName },
+            FilterDimension(supplierTitle) { it.decodedSupplierName },
+            FilterDimension(companyTitle) { it.decodedCompanyName },
+        )
     }
+    val filterOptions = remember(items, categories, manufacturers, suppliers, companies, dimensions) {
+        listFilterOptions(
+            dimensions = dimensions,
+            catalogByTitle = mapOf(
+                categoryTitle to viewModel.apiClient.categoriesFor("license").map { it.decodedName },
+                manufacturerTitle to manufacturers.map { it.decodedName },
+                supplierTitle to suppliers.map { it.decodedName },
+                companyTitle to companies.map { it.decodedName },
+            ),
+            items = items,
+        )
+    }
+    val filtered = items
+        .filter { listFilter.matches(it, dimensions) }
+        .filter { licenseMatchesSearch(it, searchQuery) }
 
     ErrorSnackbar(refreshError, snackbarHostState)
 
@@ -103,32 +138,48 @@ fun LicensesTab(
             onRefresh = onUserRefresh,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            when {
-                filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
-                    ListLoadingPlaceholder()
-                }
-                filtered.isEmpty() -> {
-                    EmptyState(
-                        title = L10n.string("no_licenses"),
-                        icon = Icons.Default.Description,
-                    )
-                }
-                else -> {
-                    LazyColumn(
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        items(filtered, key = { it.id }) { license ->
-                            SwipeToDeleteRow(
-                                onDeleteRequest = {
-                                    itemToDelete = license
-                                    deleteState.requestDelete()
-                                },
+            Column(modifier = Modifier.fillMaxSize()) {
+                ListCountHeader(
+                    count = filtered.size,
+                    icon = Icons.Default.Description,
+                    trailing = {
+                        ListFilterMenuButton(
+                            filter = listFilter,
+                            options = filterOptions,
+                            onFilterChange = { listFilter = it },
+                            showLabel = true,
+                        )
+                    },
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    when {
+                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                            ListLoadingPlaceholder()
+                        }
+                        filtered.isEmpty() -> {
+                            EmptyState(
+                                title = L10n.string("no_licenses"),
+                                icon = Icons.Default.Description,
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                LicenseCard(
-                                    license = license,
-                                    onClick = { onLicenseClick(license.id) },
-                                )
+                                items(filtered, key = { it.id }) { license ->
+                                    SwipeToDeleteRow(
+                                        onDeleteRequest = {
+                                            itemToDelete = license
+                                            deleteState.requestDelete()
+                                        },
+                                    ) {
+                                        LicenseCard(
+                                            license = license,
+                                            onClick = { onLicenseClick(license.id) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

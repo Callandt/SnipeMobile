@@ -1,6 +1,7 @@
 package com.callandt.snipemobile.ui.components
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.DropdownMenu
@@ -8,11 +9,14 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.ui.util.AssetFilter
 import com.callandt.snipemobile.ui.util.AssetFilterOptions
 import com.callandt.snipemobile.ui.util.AssetStatusFilterSupport
@@ -29,6 +33,7 @@ fun AssetFilterMenuButton(
     filter: AssetFilter,
     options: AssetFilterOptions,
     onFilterChange: (AssetFilter) -> Unit,
+    showLabel: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var statusExpanded by remember { mutableStateOf(false) }
@@ -37,21 +42,38 @@ fun AssetFilterMenuButton(
     var manufacturerExpanded by remember { mutableStateOf(false) }
     var locationExpanded by remember { mutableStateOf(false) }
 
+    val label = if (filter.isActive) {
+        L10n.string("filter_active_count", filter.activeCount)
+    } else {
+        L10n.string("filter")
+    }
+    val tint = if (filter.isActive) {
+        androidx.compose.material3.MaterialTheme.colorScheme.primary
+    } else if (showLabel) {
+        androidx.compose.material3.MaterialTheme.colorScheme.primary
+    } else {
+        androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+    }
+
     Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                Icons.Default.FilterList,
-                contentDescription = if (filter.isActive) {
-                    L10n.string("filter_active_count", filter.activeCount)
-                } else {
-                    L10n.string("filter")
-                },
-                tint = if (filter.isActive) {
-                    androidx.compose.material3.MaterialTheme.colorScheme.primary
-                } else {
-                    androidx.compose.material3.MaterialTheme.colorScheme.onSurface
-                },
-            )
+        if (showLabel) {
+            TextButton(onClick = { expanded = true }) {
+                Text(label, color = tint)
+                Icon(
+                    Icons.Default.FilterList,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.padding(start = 4.dp),
+                )
+            }
+        } else {
+            IconButton(onClick = { expanded = true }) {
+                Icon(
+                    Icons.Default.FilterList,
+                    contentDescription = label,
+                    tint = tint,
+                )
+            }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (options.hasStatusOptions) {

@@ -21,9 +21,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -41,18 +38,24 @@ import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.component.AddComponentSheet
 import com.callandt.snipemobile.ui.components.ComponentCard
 import com.callandt.snipemobile.ui.components.ConsumableCard
+import com.callandt.snipemobile.ui.components.CompactSubtabRow
 import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
+import com.callandt.snipemobile.ui.components.ListCountHeader
+import com.callandt.snipemobile.ui.components.ListFilterMenuButton
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.consumable.AddConsumableSheet
+import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.ListFilter
 import com.callandt.snipemobile.ui.util.componentMatchesSearch
 import com.callandt.snipemobile.ui.util.consumableMatchesSearch
+import com.callandt.snipemobile.ui.util.listFilterOptions
 
 private enum class StockSubtab { Consumables, Components }
 
@@ -68,6 +71,10 @@ fun StockTab(
 ) {
     val consumables by viewModel.consumables.collectAsState()
     val components by viewModel.components.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+    val manufacturers by viewModel.manufacturers.collectAsState()
+    val companies by viewModel.companies.collectAsState()
+    val locations by viewModel.locations.collectAsState()
     val showConsumables by viewModel.showConsumablesTab.collectAsState()
     val showComponents by viewModel.showComponentsTab.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
@@ -75,6 +82,8 @@ fun StockTab(
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
+    var consumableFilter by remember { mutableStateOf(ListFilter()) }
+    var componentFilter by remember { mutableStateOf(ListFilter()) }
     var subtab by remember { mutableIntStateOf(0) }
     var showAddConsumable by remember { mutableStateOf(false) }
     var showAddComponent by remember { mutableStateOf(false) }
@@ -94,6 +103,55 @@ fun StockTab(
     }
     val currentSubtab = tabs.getOrElse(subtab) { StockSubtab.Consumables }
     val showConsumablesList = currentSubtab == StockSubtab.Consumables
+
+    val categoryTitle = L10n.string("category")
+    val manufacturerTitle = L10n.string("manufacturer")
+    val companyTitle = L10n.string("company")
+    val locationTitle = L10n.string("location")
+    val consumableDimensions = remember(categoryTitle, manufacturerTitle, companyTitle, locationTitle) {
+        listOf<FilterDimension<Consumable>>(
+            FilterDimension(categoryTitle) { it.decodedCategoryName },
+            FilterDimension(manufacturerTitle) { it.decodedManufacturerName },
+            FilterDimension(companyTitle) { it.decodedCompanyName },
+            FilterDimension(locationTitle) { it.decodedLocationName },
+        )
+    }
+    val componentDimensions = remember(categoryTitle, manufacturerTitle, companyTitle, locationTitle) {
+        listOf<FilterDimension<Component>>(
+            FilterDimension(categoryTitle) { it.decodedCategoryName },
+            FilterDimension(manufacturerTitle) { it.decodedManufacturerName },
+            FilterDimension(companyTitle) { it.decodedCompanyName },
+            FilterDimension(locationTitle) { it.decodedLocationName },
+        )
+    }
+    val consumableFilterOptions = remember(
+        consumables, categories, manufacturers, companies, locations, consumableDimensions,
+    ) {
+        listFilterOptions(
+            dimensions = consumableDimensions,
+            catalogByTitle = mapOf(
+                categoryTitle to viewModel.apiClient.categoriesFor("consumable").map { it.decodedName },
+                manufacturerTitle to manufacturers.map { it.decodedName },
+                companyTitle to companies.map { it.decodedName },
+                locationTitle to locations.map { it.decodedName },
+            ),
+            items = consumables,
+        )
+    }
+    val componentFilterOptions = remember(
+        components, categories, manufacturers, companies, locations, componentDimensions,
+    ) {
+        listFilterOptions(
+            dimensions = componentDimensions,
+            catalogByTitle = mapOf(
+                categoryTitle to viewModel.apiClient.categoriesFor("component").map { it.decodedName },
+                manufacturerTitle to manufacturers.map { it.decodedName },
+                companyTitle to companies.map { it.decodedName },
+                locationTitle to locations.map { it.decodedName },
+            ),
+            items = components,
+        )
+    }
 
     ErrorSnackbar(refreshError, snackbarHostState)
 
@@ -131,88 +189,110 @@ fun StockTab(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 if (tabs.size > 1) {
-                    TabRow(selectedTabIndex = subtab.coerceIn(0, tabs.lastIndex)) {
-                        tabs.forEachIndexed { index, tab ->
-                            Tab(
-                                selected = subtab == index,
-                                onClick = { subtab = index },
-                                text = {
-                                    Text(
-                                        when (tab) {
-                                            StockSubtab.Consumables -> L10n.string("tab_consumables")
-                                            StockSubtab.Components -> L10n.string("tab_components")
-                                        },
-                                    )
-                                },
-                            )
-                        }
-                    }
+                    CompactSubtabRow(
+                        selectedIndex = subtab.coerceIn(0, tabs.lastIndex),
+                        titles = tabs.map { tab ->
+                            when (tab) {
+                                StockSubtab.Consumables -> L10n.string("tab_consumables")
+                                StockSubtab.Components -> L10n.string("tab_components")
+                            }
+                        },
+                        onSelect = { subtab = it },
+                    )
                 }
                 if (showConsumablesList) {
-                    val filtered = consumables.filter {
-                        consumableMatchesSearch(it, searchQuery)
-                    }
-                    when {
-                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
-                            ListLoadingPlaceholder()
-                        }
-                        filtered.isEmpty() -> {
-                            EmptyState(
-                                title = L10n.string("no_consumables"),
-                                icon = Icons.Outlined.Inventory2,
+                    val filtered = consumables
+                        .filter { consumableFilter.matches(it, consumableDimensions) }
+                        .filter { consumableMatchesSearch(it, searchQuery) }
+                    ListCountHeader(
+                        count = filtered.size,
+                        icon = Icons.Outlined.Inventory2,
+                        trailing = {
+                            ListFilterMenuButton(
+                                filter = consumableFilter,
+                                options = consumableFilterOptions,
+                                onFilterChange = { consumableFilter = it },
+                                showLabel = true,
                             )
-                        }
-                        else -> {
-                            LazyColumn(
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                items(filtered, key = { it.id }) { item ->
-                                    SwipeToDeleteRow(
-                                        onDeleteRequest = {
-                                            consumableToDelete = item
-                                            consumableDeleteState.requestDelete()
-                                        },
-                                    ) {
-                                        ConsumableCard(
-                                            consumable = item,
-                                            onClick = { onConsumableClick(item.id) },
-                                        )
+                        },
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        when {
+                            filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                                ListLoadingPlaceholder()
+                            }
+                            filtered.isEmpty() -> {
+                                EmptyState(
+                                    title = L10n.string("no_consumables"),
+                                    icon = Icons.Outlined.Inventory2,
+                                )
+                            }
+                            else -> {
+                                LazyColumn(
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    items(filtered, key = { it.id }) { item ->
+                                        SwipeToDeleteRow(
+                                            onDeleteRequest = {
+                                                consumableToDelete = item
+                                                consumableDeleteState.requestDelete()
+                                            },
+                                        ) {
+                                            ConsumableCard(
+                                                consumable = item,
+                                                onClick = { onConsumableClick(item.id) },
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 } else {
-                    val filtered = components.filter {
-                        componentMatchesSearch(it, searchQuery)
-                    }
-                    when {
-                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
-                            ListLoadingPlaceholder()
-                        }
-                        filtered.isEmpty() -> {
-                            EmptyState(
-                                title = L10n.string("no_components"),
-                                icon = Icons.Outlined.Memory,
+                    val filtered = components
+                        .filter { componentFilter.matches(it, componentDimensions) }
+                        .filter { componentMatchesSearch(it, searchQuery) }
+                    ListCountHeader(
+                        count = filtered.size,
+                        icon = Icons.Outlined.Memory,
+                        trailing = {
+                            ListFilterMenuButton(
+                                filter = componentFilter,
+                                options = componentFilterOptions,
+                                onFilterChange = { componentFilter = it },
+                                showLabel = true,
                             )
-                        }
-                        else -> {
-                            LazyColumn(
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                items(filtered, key = { it.id }) { item ->
-                                    SwipeToDeleteRow(
-                                        onDeleteRequest = {
-                                            componentToDelete = item
-                                            componentDeleteState.requestDelete()
-                                        },
-                                    ) {
-                                        ComponentCard(
-                                            component = item,
-                                            onClick = { onComponentClick(item.id) },
-                                        )
+                        },
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        when {
+                            filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                                ListLoadingPlaceholder()
+                            }
+                            filtered.isEmpty() -> {
+                                EmptyState(
+                                    title = L10n.string("no_components"),
+                                    icon = Icons.Outlined.Memory,
+                                )
+                            }
+                            else -> {
+                                LazyColumn(
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    items(filtered, key = { it.id }) { item ->
+                                        SwipeToDeleteRow(
+                                            onDeleteRequest = {
+                                                componentToDelete = item
+                                                componentDeleteState.requestDelete()
+                                            },
+                                        ) {
+                                            ComponentCard(
+                                                component = item,
+                                                onClick = { onComponentClick(item.id) },
+                                            )
+                                        }
                                     }
                                 }
                             }

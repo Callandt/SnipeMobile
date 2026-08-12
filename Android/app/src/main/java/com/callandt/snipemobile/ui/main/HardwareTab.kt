@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,8 +41,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -73,9 +72,11 @@ import com.callandt.snipemobile.ui.asset.BulkAuditSheet
 import com.callandt.snipemobile.ui.asset.BulkLabelSheet
 import com.callandt.snipemobile.ui.components.AssetCard
 import com.callandt.snipemobile.ui.components.AssetFilterMenuButton
+import com.callandt.snipemobile.ui.components.CompactSubtabRow
 import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
+import com.callandt.snipemobile.ui.components.ListCountHeader
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
 import com.callandt.snipemobile.ui.components.MaintenanceCard
 import com.callandt.snipemobile.ui.components.SearchTopBar
@@ -336,15 +337,6 @@ fun HardwareTab(
                 },
                 actions = {
                     when (currentSubtab) {
-                        HardwareSubtab.All -> {
-                            if (filterOptions.hasFilterOptions) {
-                                AssetFilterMenuButton(
-                                    filter = assetFilter,
-                                    options = filterOptions,
-                                    onFilterChange = { assetFilter = it },
-                                )
-                            }
-                        }
                         HardwareSubtab.Maintenance -> {
                             if (isSelectingMaintenances) {
                                 TextButton(
@@ -355,32 +347,9 @@ fun HardwareTab(
                                 ) {
                                     Text(L10n.string("select_all"))
                                 }
-                            } else {
-                                if (selectableMaintenances.isNotEmpty()) {
-                                    TextButton(onClick = { isSelectingMaintenances = true }) {
-                                        Text(L10n.string("select"))
-                                    }
-                                }
-                                if (maintenanceChoices.size > 1) {
-                                    Box {
-                                        IconButton(onClick = { showMaintenanceFilterMenu = true }) {
-                                            Icon(Icons.Default.FilterList, contentDescription = L10n.string("filter"))
-                                        }
-                                        DropdownMenu(
-                                            expanded = showMaintenanceFilterMenu,
-                                            onDismissRequest = { showMaintenanceFilterMenu = false },
-                                        ) {
-                                            maintenanceChoices.forEach { choice ->
-                                                DropdownMenuItem(
-                                                    text = { Text(choice.title()) },
-                                                    onClick = {
-                                                        maintenanceFilter = choice
-                                                        showMaintenanceFilterMenu = false
-                                                    },
-                                                )
-                                            }
-                                        }
-                                    }
+                            } else if (selectableMaintenances.isNotEmpty()) {
+                                TextButton(onClick = { isSelectingMaintenances = true }) {
+                                    Text(L10n.string("select"))
                                 }
                             }
                         }
@@ -427,23 +396,82 @@ fun HardwareTab(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (subtabs.size > 1) {
-                        TabRow(selectedTabIndex = subtabIndex.coerceIn(0, subtabs.lastIndex)) {
-                            subtabs.forEachIndexed { index, tab ->
-                                Tab(
-                                    selected = subtabIndex == index,
-                                    onClick = { subtabIndex = index },
-                                    text = {
-                                        Text(
-                                            when (tab) {
-                                                HardwareSubtab.All -> L10n.string("tab_assets")
-                                                HardwareSubtab.Audit -> L10n.string("audit")
-                                                HardwareSubtab.Maintenance -> L10n.string("maintenance")
-                                            },
-                                        )
-                                    },
-                                )
-                            }
-                        }
+                        CompactSubtabRow(
+                            selectedIndex = subtabIndex.coerceIn(0, subtabs.lastIndex),
+                            titles = subtabs.map { tab ->
+                                when (tab) {
+                                    HardwareSubtab.All -> L10n.string("tab_assets")
+                                    HardwareSubtab.Audit -> L10n.string("audit")
+                                    HardwareSubtab.Maintenance -> L10n.string("maintenance")
+                                }
+                            },
+                            onSelect = { subtabIndex = it },
+                        )
+                    }
+
+                    when (currentSubtab) {
+                        HardwareSubtab.All -> ListCountHeader(
+                            count = searchableAssets.size,
+                            icon = Icons.Default.Laptop,
+                            trailing = if (filterOptions.hasFilterOptions) {
+                                {
+                                    AssetFilterMenuButton(
+                                        filter = assetFilter,
+                                        options = filterOptions,
+                                        onFilterChange = { assetFilter = it },
+                                        showLabel = true,
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                        HardwareSubtab.Audit -> ListCountHeader(
+                            count = overdueAssets.size + dueTodayAssets.size + dueSoonAssets.size,
+                            icon = Icons.Default.Checklist,
+                        )
+                        HardwareSubtab.Maintenance -> ListCountHeader(
+                            count = displayedMaintenances.size,
+                            icon = Icons.Default.Build,
+                            trailing = if (!isSelectingMaintenances && maintenanceChoices.size > 1) {
+                                {
+                                    Box {
+                                        TextButton(onClick = { showMaintenanceFilterMenu = true }) {
+                                            Text(
+                                                if (maintenanceFilter == MaintenanceStatusFilter.All) {
+                                                    L10n.string("filter")
+                                                } else {
+                                                    maintenanceFilter.title()
+                                                },
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                            Icon(
+                                                Icons.Default.FilterList,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(start = 4.dp),
+                                            )
+                                        }
+                                        DropdownMenu(
+                                            expanded = showMaintenanceFilterMenu,
+                                            onDismissRequest = { showMaintenanceFilterMenu = false },
+                                        ) {
+                                            maintenanceChoices.forEach { choice ->
+                                                DropdownMenuItem(
+                                                    text = { Text(choice.title()) },
+                                                    onClick = {
+                                                        maintenanceFilter = choice
+                                                        showMaintenanceFilterMenu = false
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                null
+                            },
+                        )
                     }
 
                     Box(modifier = Modifier.weight(1f)) {
@@ -460,14 +488,6 @@ fun HardwareTab(
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                         verticalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
-                                        item {
-                                            Text(
-                                                text = "${displayedMaintenances.size} · ${maintenanceFilter.title()}",
-                                                style = MaterialTheme.typography.labelLarge,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            )
-                                        }
                                         items(displayedMaintenances, key = { it.id }) { item ->
                                             val linked = item.assetId?.let { id ->
                                                 assets.firstOrNull { it.id == id }

@@ -1,6 +1,7 @@
 package com.callandt.snipemobile.ui.main
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -20,9 +21,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -37,9 +35,12 @@ import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Location
 import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.CompactSubtabRow
 import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
+import com.callandt.snipemobile.ui.components.ListCountHeader
+import com.callandt.snipemobile.ui.components.ListFilterMenuButton
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
 import com.callandt.snipemobile.ui.components.LocationCard
 import com.callandt.snipemobile.ui.components.SearchTopBar
@@ -49,7 +50,10 @@ import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.location.AddLocationSheet
 import com.callandt.snipemobile.ui.user.AddUserSheet
+import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.listFilterOptions
 import com.callandt.snipemobile.ui.util.locationMatchesSearch
 import com.callandt.snipemobile.ui.util.userMatchesSearch
 
@@ -67,11 +71,13 @@ fun DirectoryTab(
 ) {
     val users by viewModel.users.collectAsState()
     val locations by viewModel.locations.collectAsState()
+    val companies by viewModel.companies.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
+    var userFilter by remember { mutableStateOf(ListFilter()) }
     var subtab by remember { mutableIntStateOf(0) }
     var showAddUser by remember { mutableStateOf(false) }
     var showAddLocation by remember { mutableStateOf(false) }
@@ -86,6 +92,27 @@ fun DirectoryTab(
     }
     val tabs = listOf(DirectorySubtab.Users, DirectorySubtab.Locations)
     val currentSubtab = tabs[subtab.coerceIn(tabs.indices)]
+
+    val companyTitle = L10n.string("company")
+    val locationTitle = L10n.string("location")
+    val jobTitle = L10n.string("job_title")
+    val userDimensions = remember(companyTitle, locationTitle, jobTitle) {
+        listOf<FilterDimension<User>>(
+            FilterDimension(companyTitle) { it.decodedCompanyName },
+            FilterDimension(locationTitle) { it.decodedLocationName },
+            FilterDimension(jobTitle) { it.decodedJobtitle },
+        )
+    }
+    val userFilterOptions = remember(users, companies, locations, userDimensions) {
+        listFilterOptions(
+            dimensions = userDimensions,
+            catalogByTitle = mapOf(
+                companyTitle to companies.map { it.decodedName },
+                locationTitle to locations.map { it.decodedName },
+            ),
+            items = users,
+        )
+    }
 
     ErrorSnackbar(refreshError, snackbarHostState)
 
@@ -122,52 +149,60 @@ fun DirectoryTab(
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                TabRow(selectedTabIndex = subtab) {
-                    tabs.forEachIndexed { index, tab ->
-                        Tab(
-                            selected = subtab == index,
-                            onClick = { subtab = index },
-                            text = {
-                                Text(
-                                    when (tab) {
-                                        DirectorySubtab.Users -> L10n.string("tab_users")
-                                        DirectorySubtab.Locations -> L10n.string("tab_locations")
-                                    },
-                                )
-                            },
-                        )
-                    }
-                }
+                CompactSubtabRow(
+                    selectedIndex = subtab,
+                    titles = tabs.map { tab ->
+                        when (tab) {
+                            DirectorySubtab.Users -> L10n.string("tab_users")
+                            DirectorySubtab.Locations -> L10n.string("tab_locations")
+                        }
+                    },
+                    onSelect = { subtab = it },
+                )
                 if (currentSubtab == DirectorySubtab.Users) {
-                    val filtered = users.filter {
-                        userMatchesSearch(it, searchQuery)
-                    }
-                    when {
-                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
-                            ListLoadingPlaceholder()
-                        }
-                        filtered.isEmpty() -> {
-                            EmptyState(
-                                title = L10n.string("no_users"),
-                                icon = Icons.Outlined.Groups,
+                    val filtered = users
+                        .filter { userFilter.matches(it, userDimensions) }
+                        .filter { userMatchesSearch(it, searchQuery) }
+                    ListCountHeader(
+                        count = filtered.size,
+                        icon = Icons.Outlined.Groups,
+                        trailing = {
+                            ListFilterMenuButton(
+                                filter = userFilter,
+                                options = userFilterOptions,
+                                onFilterChange = { userFilter = it },
+                                showLabel = true,
                             )
-                        }
-                        else -> {
-                            LazyColumn(
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                items(filtered, key = { it.id }) { user ->
-                                    SwipeToDeleteRow(
-                                        onDeleteRequest = {
-                                            userToDelete = user
-                                            userDeleteState.requestDelete()
-                                        },
-                                    ) {
-                                        UserCard(
-                                            user = user,
-                                            onClick = { onUserClick(user.id) },
-                                        )
+                        },
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        when {
+                            filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                                ListLoadingPlaceholder()
+                            }
+                            filtered.isEmpty() -> {
+                                EmptyState(
+                                    title = L10n.string("no_users"),
+                                    icon = Icons.Outlined.Groups,
+                                )
+                            }
+                            else -> {
+                                LazyColumn(
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    items(filtered, key = { it.id }) { user ->
+                                        SwipeToDeleteRow(
+                                            onDeleteRequest = {
+                                                userToDelete = user
+                                                userDeleteState.requestDelete()
+                                            },
+                                        ) {
+                                            UserCard(
+                                                user = user,
+                                                onClick = { onUserClick(user.id) },
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -177,32 +212,35 @@ fun DirectoryTab(
                     val filtered = locations.filter {
                         locationMatchesSearch(it, searchQuery)
                     }
-                    when {
-                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
-                            ListLoadingPlaceholder()
-                        }
-                        filtered.isEmpty() -> {
-                            EmptyState(
-                                title = L10n.string("no_locations"),
-                                icon = Icons.Outlined.Place,
-                            )
-                        }
-                        else -> {
-                            LazyColumn(
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                items(filtered, key = { it.id }) { location ->
-                                    SwipeToDeleteRow(
-                                        onDeleteRequest = {
-                                            locationToDelete = location
-                                            locationDeleteState.requestDelete()
-                                        },
-                                    ) {
-                                        LocationCard(
-                                            location = location,
-                                            onClick = { onLocationClick(location.id) },
-                                        )
+                    ListCountHeader(count = filtered.size, icon = Icons.Outlined.Place)
+                    Box(modifier = Modifier.weight(1f)) {
+                        when {
+                            filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                                ListLoadingPlaceholder()
+                            }
+                            filtered.isEmpty() -> {
+                                EmptyState(
+                                    title = L10n.string("no_locations"),
+                                    icon = Icons.Outlined.Place,
+                                )
+                            }
+                            else -> {
+                                LazyColumn(
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    items(filtered, key = { it.id }) { location ->
+                                        SwipeToDeleteRow(
+                                            onDeleteRequest = {
+                                                locationToDelete = location
+                                                locationDeleteState.requestDelete()
+                                            },
+                                        ) {
+                                            LocationCard(
+                                                location = location,
+                                                onClick = { onLocationClick(location.id) },
+                                            )
+                                        }
                                     }
                                 }
                             }
