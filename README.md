@@ -56,7 +56,7 @@ cd Android
 - **Widgets**: home-screen overview for audits, maintenance, assets, and stock (iOS & Android).
 - **Theme**: light/dark/system.
 - **Language**: Dutch, English, French, Spanish, German, Chinese, Portuguese, Japanese, Italian, Korean, Russian, and Arabic.
-- **Security**: optional biometrics on app open (Face ID / Touch ID / fingerprint).
+- **Security**: optional biometrics on app open (Face ID / Touch ID).
 - **iCloud** (iOS): settings (including API configuration) can sync via iCloud.
 
 ## License
