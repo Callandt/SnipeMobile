@@ -61,6 +61,7 @@ import com.callandt.snipemobile.ui.components.SettingsRow
 import com.callandt.snipemobile.ui.components.SettingsSectionFooter
 import com.callandt.snipemobile.ui.components.StringPickerField
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.usersForNamePicker
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -371,6 +372,7 @@ fun ManagementFormSheet(
     val companies by viewModel.companies.collectAsState()
     val locations by viewModel.locations.collectAsState()
     val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val fieldsets by viewModel.apiClient.fieldsets.collectAsState()
     val lastApiMessage by viewModel.lastApiMessage.collectAsState()
     val scope = rememberCoroutineScope()
@@ -547,6 +549,7 @@ fun ManagementFormSheet(
                             companies = companies,
                             locations = locations,
                             users = users,
+                            currentUser = currentUser,
                             fieldsets = fieldsets.orEmpty(),
                             existing = existing,
                         )
@@ -609,6 +612,7 @@ private fun pickerOptionsForField(
     companies: List<com.callandt.snipemobile.data.model.Company>,
     locations: List<com.callandt.snipemobile.data.model.Location>,
     users: List<com.callandt.snipemobile.data.model.User>,
+    currentUser: com.callandt.snipemobile.data.model.User?,
     fieldsets: List<com.callandt.snipemobile.data.model.Fieldset>,
     existing: ManagementItem?,
 ): PickerOptionsResult {
@@ -634,7 +638,7 @@ private fun pickerOptionsForField(
             emptyList(),
         )
         ManagementPickerSource.Users -> PickerOptionsResult(
-            users.map { PickerItem(it.id, it.decodedName) },
+            usersForNamePicker(users, currentUser).map { PickerItem(it.id, it.decodedName) },
             emptyList(),
         )
         ManagementPickerSource.Fieldsets -> PickerOptionsResult(

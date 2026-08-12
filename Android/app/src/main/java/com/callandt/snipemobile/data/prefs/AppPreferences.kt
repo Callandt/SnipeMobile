@@ -61,6 +61,9 @@ class AppPreferences(private val context: Context) {
 
     fun getIsConfiguredBlocking(): Boolean = runBlocking { getIsConfigured() }
 
+    fun getHasCompletedOnboardingBlocking(): Boolean =
+        runBlocking { context.dataStore.data.first()[Keys.HAS_COMPLETED_ONBOARDING] ?: false }
+
     suspend fun setBaseUrl(value: String) {
         context.dataStore.edit { it[Keys.BASE_URL] = value }
     }

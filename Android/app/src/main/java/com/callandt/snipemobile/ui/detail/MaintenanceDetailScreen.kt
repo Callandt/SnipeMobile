@@ -83,6 +83,7 @@ fun MaintenanceDetailScreen(maintenanceId: Int, viewModel: AppViewModel, onBack:
     var currentRecord by remember(maintenanceId) {
         mutableStateOf(items.firstOrNull { it.id == maintenanceId })
     }
+    var activeMaintenanceId by remember(maintenanceId) { mutableIntStateOf(maintenanceId) }
     var imageRefreshToken by remember(maintenanceId) { mutableIntStateOf(0) }
     var showEdit by remember { mutableStateOf(false) }
     var showComplete by remember { mutableStateOf(false) }
@@ -92,15 +93,16 @@ fun MaintenanceDetailScreen(maintenanceId: Int, viewModel: AppViewModel, onBack:
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(maintenanceId) {
+        activeMaintenanceId = maintenanceId
         viewModel.apiClient.fetchMaintenance(maintenanceId)?.let {
             currentRecord = it
             imageRefreshToken += 1
         }
     }
 
-    LaunchedEffect(items, maintenanceId) {
+    LaunchedEffect(items, activeMaintenanceId) {
         if (currentRecord == null) {
-            currentRecord = items.firstOrNull { it.id == maintenanceId }
+            currentRecord = items.firstOrNull { it.id == activeMaintenanceId }
         }
     }
 
@@ -122,6 +124,7 @@ fun MaintenanceDetailScreen(maintenanceId: Int, viewModel: AppViewModel, onBack:
 
     fun refreshAfterMutation(id: Int) {
         scope.launch {
+            activeMaintenanceId = id
             viewModel.apiClient.fetchMaintenance(id)?.let {
                 currentRecord = it
                 imageRefreshToken += 1
@@ -204,9 +207,9 @@ fun MaintenanceDetailScreen(maintenanceId: Int, viewModel: AppViewModel, onBack:
             record = record,
             viewModel = viewModel,
             onDismiss = { showEdit = false },
-            onSaved = {
+            onSaved = { savedId ->
                 showEdit = false
-                refreshAfterMutation(record.id)
+                refreshAfterMutation(savedId)
             },
         )
     }

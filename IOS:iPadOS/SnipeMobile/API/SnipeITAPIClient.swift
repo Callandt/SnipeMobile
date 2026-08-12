@@ -244,11 +244,18 @@ class SnipeITAPIClient: ObservableObject {
         return collected
     }
 
+    /// Identifies the app to Snipe-IT (avoids generic/system UAs some hosts block).
+    static var userAgent: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        return "SnipeMobile/\(version) (iOS)"
+    }
+
     let urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 1
         config.timeoutIntervalForRequest = 60
         config.waitsForConnectivity = false
+        config.httpAdditionalHeaders = ["User-Agent": SnipeITAPIClient.userAgent]
         return URLSession(configuration: config)
     }()
 
@@ -1574,16 +1581,41 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Accessories checked out to a user (`GET /api/v1/users/{id}/accessories`).
+    /// Accessories checked out to a user.
+    /// Prefers `GET /api/v1/users/{id}/accessories`; falls back to scanning
+    /// accessory checkouts when that endpoint returns empty (some Snipe-IT
+    /// versions mishandle assigned_type / transform on the user relation).
     func fetchUserAccessories(userId: Int) async -> [Accessory] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         do {
-            return try await fetchAllPaginated(
+            let fromEndpoint = try await fetchAllPaginated(
                 path: "/api/v1/users/\(userId)/accessories",
                 as: Accessory.self
             ) ?? []
+            if !fromEndpoint.isEmpty { return fromEndpoint }
         } catch {
-            return []
+            // Fall through to checkout scan.
+        }
+
+        if accessories.isEmpty {
+            await fetchAccessories()
+        }
+        let candidates = accessories.filter { accessory in
+            guard let qty = accessory.qty else { return false }
+            if let remaining = accessory.remaining { return remaining < qty }
+            if let checkouts = accessory.checkoutsCount { return checkouts > 0 }
+            return false
+        }
+
+        var results: [Accessory] = []
+        for accessory in candidates {
+            let rows = await fetchAccessoryCheckedOutList(accessoryId: accessory.id)
+            if rows.contains(where: { $0.assignedTo?.matchesUser(userId) == true }) {
+                results.append(accessory)
+            }
+        }
+        return results.sorted {
+            $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
         }
     }
 
@@ -3603,7 +3635,8 @@ class SnipeITAPIClient: ObservableObject {
         locationId: Int? = nil,
         updateLocation: Bool = false,
         nextAuditDate: String? = nil,
-        note: String? = nil
+        note: String? = nil,
+        image: UIImage? = nil
     ) async -> Bool {
         let trimmedTag = assetTag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !baseURL.isEmpty, !apiToken.isEmpty, !trimmedTag.isEmpty else { return false }
@@ -3620,20 +3653,60 @@ class SnipeITAPIClient: ObservableObject {
             if !trimmedNote.isEmpty { body["note"] = trimmedNote }
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, response) = try await urlSession.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return false }
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let imagePayload = prepareMaintenanceImagePayload(image)
+            var responseData: Data
+            var http: HTTPURLResponse
+
+            if let jpeg = imagePayload.jpeg {
+                let result = try await sendHardwareMultipart(
+                    url: url,
+                    method: "POST",
+                    fields: hardwareFormFields(from: body),
+                    imageData: jpeg
+                )
+                let json = (try? JSONSerialization.jsonObject(with: result.0)) as? [String: Any]
+                let multipartResult = Self.evaluateWriteResponse(
+                    json: json,
+                    httpStatus: result.1.statusCode,
+                    defaultSuccessMessage: "Asset audited.",
+                    defaultFailureMessage: "Audit failed."
+                )
+                if multipartResult.success {
+                    responseData = result.0
+                    http = result.1
+                } else if let imageSource = imagePayload.imageSource {
+                    // Same fallback as maintenance/asset image uploads.
+                    body["image_source"] = imageSource
+                    var request = makeMaintenanceJSONRequest(
+                        url: url,
+                        method: "POST",
+                        bodyData: try JSONSerialization.data(withJSONObject: body)
+                    )
+                    let pair = try await urlSession.data(for: request)
+                    guard let httpResponse = pair.1 as? HTTPURLResponse else { return false }
+                    responseData = pair.0
+                    http = httpResponse
+                } else {
+                    await MainActor.run { self.lastApiMessage = multipartResult.message }
+                    return false
+                }
+            } else {
+                var request = makeMaintenanceJSONRequest(
+                    url: url,
+                    method: "POST",
+                    bodyData: try JSONSerialization.data(withJSONObject: body)
+                )
+                let pair = try await urlSession.data(for: request)
+                guard let httpResponse = pair.1 as? HTTPURLResponse else { return false }
+                responseData = pair.0
+                http = httpResponse
+            }
+
+            let json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
 
             #if DEBUG
-            let responseStr = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
+            let responseStr = String(data: responseData, encoding: .utf8) ?? "<non-UTF8>"
             print("[SnipeMobile] POST /hardware/audit (\(trimmedTag)) status: \(http.statusCode) response: \(responseStr.prefix(300))")
             #endif
 
@@ -4541,9 +4614,24 @@ class SnipeITAPIClient: ObservableObject {
         var decodedModel: String { HTMLDecoder.decode(model ?? "") }
         var decodedAssetTag: String { HTMLDecoder.decode(assetTag ?? "") }
 
-        var isUser: Bool { type?.lowercased() == "user" }
-        var isLocation: Bool { type?.lowercased() == "location" }
-        var isAsset: Bool { type?.lowercased() == "asset" }
+        private var normalizedType: String {
+            let raw = (type ?? "").lowercased()
+            if raw == "user" || raw.hasSuffix("\\user") { return "user" }
+            if raw == "location" || raw.hasSuffix("\\location") { return "location" }
+            if raw == "asset" || raw.hasSuffix("\\asset") { return "asset" }
+            return raw
+        }
+
+        var isUser: Bool { normalizedType == "user" }
+        var isLocation: Bool { normalizedType == "location" }
+        var isAsset: Bool { normalizedType == "asset" }
+
+        /// True when this checkout row belongs to `userId`.
+        func matchesUser(_ userId: Int) -> Bool {
+            guard id == userId else { return false }
+            let raw = (type ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return raw.isEmpty || isUser
+        }
     }
 
     struct CreatedByCheckedOut: Codable, Hashable {

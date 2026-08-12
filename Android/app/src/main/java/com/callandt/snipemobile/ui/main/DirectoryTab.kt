@@ -1,8 +1,9 @@
 package com.callandt.snipemobile.ui.main
 
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,15 +30,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.model.Location
+import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.EmptyState
+import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
+import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
 import com.callandt.snipemobile.ui.components.LocationCard
 import com.callandt.snipemobile.ui.components.SearchTopBar
+import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.UserCard
+import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.location.AddLocationSheet
 import com.callandt.snipemobile.ui.user.AddUserSheet
 import com.callandt.snipemobile.ui.util.L10n
@@ -60,12 +69,21 @@ fun DirectoryTab(
     val locations by viewModel.locations.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var subtab by remember { mutableIntStateOf(0) }
     var showAddUser by remember { mutableStateOf(false) }
     var showAddLocation by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var userToDelete by remember { mutableStateOf<User?>(null) }
+    var locationToDelete by remember { mutableStateOf<Location?>(null) }
+    val userDeleteState = rememberEntityDeleteState()
+    val locationDeleteState = rememberEntityDeleteState()
+    val (isUserRefreshing, onUserRefresh) = rememberUserPullRefreshing(isLoading) {
+        viewModel.refresh()
+    }
     val tabs = listOf(DirectorySubtab.Users, DirectorySubtab.Locations)
     val currentSubtab = tabs[subtab.coerceIn(tabs.indices)]
 
@@ -99,11 +117,11 @@ fun DirectoryTab(
         },
     ) { padding ->
         PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh = { viewModel.refresh() },
+            isRefreshing = isUserRefreshing,
+            onRefresh = onUserRefresh,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            androidx.compose.foundation.layout.Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
                 TabRow(selectedTabIndex = subtab) {
                     tabs.forEachIndexed { index, tab ->
                         Tab(
@@ -124,21 +142,34 @@ fun DirectoryTab(
                     val filtered = users.filter {
                         userMatchesSearch(it, searchQuery)
                     }
-                    if (filtered.isEmpty()) {
-                        EmptyState(
-                            title = L10n.string("no_users"),
-                            icon = Icons.Outlined.Groups,
-                        )
-                    } else {
-                        LazyColumn(
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(filtered, key = { it.id }) { user ->
-                                UserCard(
-                                    user = user,
-                                    onClick = { onUserClick(user.id) },
-                                )
+                    when {
+                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                            ListLoadingPlaceholder()
+                        }
+                        filtered.isEmpty() -> {
+                            EmptyState(
+                                title = L10n.string("no_users"),
+                                icon = Icons.Outlined.Groups,
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(filtered, key = { it.id }) { user ->
+                                    SwipeToDeleteRow(
+                                        onDeleteRequest = {
+                                            userToDelete = user
+                                            userDeleteState.requestDelete()
+                                        },
+                                    ) {
+                                        UserCard(
+                                            user = user,
+                                            onClick = { onUserClick(user.id) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -146,21 +177,34 @@ fun DirectoryTab(
                     val filtered = locations.filter {
                         locationMatchesSearch(it, searchQuery)
                     }
-                    if (filtered.isEmpty()) {
-                        EmptyState(
-                            title = L10n.string("no_locations"),
-                            icon = Icons.Outlined.Place,
-                        )
-                    } else {
-                        LazyColumn(
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(filtered, key = { it.id }) { location ->
-                                LocationCard(
-                                    location = location,
-                                    onClick = { onLocationClick(location.id) },
-                                )
+                    when {
+                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                            ListLoadingPlaceholder()
+                        }
+                        filtered.isEmpty() -> {
+                            EmptyState(
+                                title = L10n.string("no_locations"),
+                                icon = Icons.Outlined.Place,
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(filtered, key = { it.id }) { location ->
+                                    SwipeToDeleteRow(
+                                        onDeleteRequest = {
+                                            locationToDelete = location
+                                            locationDeleteState.requestDelete()
+                                        },
+                                    ) {
+                                        LocationCard(
+                                            location = location,
+                                            onClick = { onLocationClick(location.id) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -184,4 +228,38 @@ fun DirectoryTab(
             onCreated = { _, _ -> viewModel.syncInBackground() },
         )
     }
+
+    val pendingUser = userToDelete
+    val userName = pendingUser?.decodedName ?: pendingUser?.username ?: ""
+    EntityDeleteSupport(
+        state = userDeleteState,
+        confirmTitle = L10n.string("delete_item_confirm_title", userName),
+        confirmMessage = L10n.string("delete_user_confirm_message", userName),
+        onConfirmDelete = {
+            val id = pendingUser?.id ?: return@EntityDeleteSupport
+            userDeleteState.confirmDelete(
+                scope = scope,
+                delete = { viewModel.apiClient.deleteUser(id) },
+                errorFromApi = { viewModel.apiClient.lastApiMessage.value },
+                onSuccess = { userToDelete = null },
+            )
+        },
+    )
+
+    val pendingLocation = locationToDelete
+    val locationName = pendingLocation?.decodedName ?: ""
+    EntityDeleteSupport(
+        state = locationDeleteState,
+        confirmTitle = L10n.string("delete_item_confirm_title", locationName),
+        confirmMessage = L10n.string("delete_location_confirm_message", locationName),
+        onConfirmDelete = {
+            val id = pendingLocation?.id ?: return@EntityDeleteSupport
+            locationDeleteState.confirmDelete(
+                scope = scope,
+                delete = { viewModel.apiClient.deleteLocation(id) },
+                errorFromApi = { viewModel.apiClient.lastApiMessage.value },
+                onSuccess = { locationToDelete = null },
+            )
+        },
+    )
 }

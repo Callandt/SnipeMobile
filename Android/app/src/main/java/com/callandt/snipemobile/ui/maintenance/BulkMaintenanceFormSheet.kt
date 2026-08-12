@@ -30,19 +30,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.data.model.MaintenanceTypesMode
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
 import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.asset.AssetMultiSelectScreen
+import com.callandt.snipemobile.ui.asset.AssetPhotoSection
 import com.callandt.snipemobile.ui.asset.BulkAssetScannerScreen
+import com.callandt.snipemobile.ui.asset.FormDateField
 import com.callandt.snipemobile.ui.asset.FormSectionTitle
-import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
+import com.callandt.snipemobile.ui.asset.PendingAssetImage
 import com.callandt.snipemobile.ui.asset.formatApiDate
 import com.callandt.snipemobile.ui.asset.normalizeDecimalForApi
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.components.StringPickerField
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.usersForNamePicker
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -56,11 +61,13 @@ fun BulkMaintenanceFormSheet(
 ) {
     val assets by viewModel.assets.collectAsState()
     val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val maintenanceTypes by viewModel.apiClient.maintenanceTypes.collectAsState()
     val typesMode by viewModel.apiClient.maintenanceTypesMode.collectAsState()
     val lastApiMessage by viewModel.lastApiMessage.collectAsState()
     val scope = rememberCoroutineScope()
+    val pickerUsers = remember(users, currentUser) { usersForNamePicker(users, currentUser) }
 
     var selectedAssetIds by remember { mutableStateOf(preselectedAssetIds) }
     var showAssetPicker by remember { mutableStateOf(false) }
@@ -78,6 +85,7 @@ fun BulkMaintenanceFormSheet(
     var startDateText by remember { mutableStateOf(formatApiDate(Date())) }
     var hasCompletionDate by remember { mutableStateOf(false) }
     var completionDateText by remember { mutableStateOf(formatApiDate(Date())) }
+    var pendingImage by remember { mutableStateOf<PendingAssetImage?>(null) }
 
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -152,12 +160,13 @@ fun BulkMaintenanceFormSheet(
             return
         }
 
+        val imageUpload = pendingImage?.let { UploadFile("maintenance.jpg", it.mimeType, it.bytes) }
         var failedCount = 0
         var lastError: String? = null
         for (assetId in selectedAssetIds) {
             val body = sharedBody.toMutableMap()
             body["asset_id"] = assetId
-            val ok = viewModel.apiClient.createMaintenance(body)
+            val ok = viewModel.apiClient.createMaintenance(body, imageUpload)
             if (!ok) {
                 failedCount += 1
                 lastError = viewModel.lastApiMessage.value
@@ -268,9 +277,11 @@ fun BulkMaintenanceFormSheet(
             if (users.isNotEmpty()) {
                 SearchablePickerField(
                     label = L10n.string("responsible_party"),
-                    items = users.map { PickerItem(it.id, it.decodedName, it.decodedEmail) },
+                    items = pickerUsers.map { PickerItem(it.id, it.decodedName, it.decodedEmail) },
                     selectedId = selectedUserId.takeIf { it > 0 },
                     placeholder = L10n.string("none"),
+                    allowClear = selectedUserId > 0,
+                    onClear = { selectedUserId = 0 },
                     onSelected = { selectedUserId = it.id },
                 )
             } else {
@@ -278,11 +289,10 @@ fun BulkMaintenanceFormSheet(
             }
 
             FormSectionTitle(L10n.string("dates"))
-            OutlinedTextField(
-                value = startDateText,
-                onValueChange = { startDateText = it },
-                label = { Text(L10n.string("start_date")) },
-                modifier = Modifier.fillMaxWidth(),
+            FormDateField(
+                label = L10n.string("start_date"),
+                dateText = startDateText,
+                onDateTextChange = { startDateText = it },
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -292,11 +302,10 @@ fun BulkMaintenanceFormSheet(
                 Switch(checked = hasCompletionDate, onCheckedChange = { hasCompletionDate = it })
             }
             if (hasCompletionDate) {
-                OutlinedTextField(
-                    value = completionDateText,
-                    onValueChange = { completionDateText = it },
-                    label = { Text(L10n.string("completion_date")) },
-                    modifier = Modifier.fillMaxWidth(),
+                FormDateField(
+                    label = L10n.string("completion_date"),
+                    dateText = completionDateText,
+                    onDateTextChange = { completionDateText = it },
                 )
             }
 
@@ -313,6 +322,8 @@ fun BulkMaintenanceFormSheet(
                     items = suppliers.map { PickerItem(it.id, it.decodedName) },
                     selectedId = selectedSupplierId.takeIf { it > 0 },
                     placeholder = L10n.string("none"),
+                    allowClear = selectedSupplierId > 0,
+                    onClear = { selectedSupplierId = 0 },
                     onSelected = { selectedSupplierId = it.id },
                 )
             }
@@ -332,6 +343,11 @@ fun BulkMaintenanceFormSheet(
                 label = { Text(L10n.string("url")) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+            )
+
+            AssetPhotoSection(
+                pendingImage = pendingImage,
+                onPendingImageChange = { pendingImage = it },
             )
 
             FormSectionTitle(L10n.string("notes"))

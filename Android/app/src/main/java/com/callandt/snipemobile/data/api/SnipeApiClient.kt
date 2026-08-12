@@ -1,6 +1,7 @@
 package com.callandt.snipemobile.data.api
 
 import android.content.Context
+import com.callandt.snipemobile.BuildConfig
 import com.callandt.snipemobile.data.cache.LocalCacheStore
 import com.callandt.snipemobile.widget.WidgetSnapshotBuilder
 import com.callandt.snipemobile.data.model.Accessory
@@ -96,7 +97,12 @@ data class AssetTagGenerationSettings(
 data class AccessoryCheckoutRef(val accessoryId: Int, val checkoutId: Int)
 
 /** A file staged for upload via `uploadAssetFiles`. */
-data class UploadFile(val filename: String, val mimeType: String, val data: ByteArray)
+data class UploadFile(val filename: String, val mimeType: String, val data: ByteArray) {
+    fun toBase64ImageSource(): String {
+        val encoded = android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP)
+        return "data:$mimeType;base64,$encoded"
+    }
+}
 
 private data class AssignedAccessoriesResult(
     val accessories: List<Accessory>,
@@ -117,6 +123,12 @@ class SnipeApiClient(context: Context) {
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", USER_AGENT)
+                .build()
+            chain.proceed(request)
+        }
         .build()
 
     private val jsonMediaType = "application/json".toMediaType()
@@ -771,11 +783,34 @@ class SnipeApiClient(context: Context) {
             serializer = Asset.serializer(),
         ).orEmpty()
 
-    suspend fun fetchUserAccessories(userId: Int): List<Accessory> =
-        fetchAllPaginated(
+    suspend fun fetchUserAccessories(userId: Int): List<Accessory> {
+        val fromEndpoint = fetchAllPaginated(
             path = "/api/v1/users/$userId/accessories",
             serializer = Accessory.serializer(),
         ).orEmpty()
+        if (fromEndpoint.isNotEmpty()) return fromEndpoint
+
+        // Endpoint can come back empty; scan checkouts instead.
+        if (_accessories.value.isEmpty()) fetchAccessories()
+        val candidates = _accessories.value.filter { accessory ->
+            val qty = accessory.qty ?: return@filter false
+            val remaining = accessory.remaining
+            val checkouts = accessory.checkoutsCount
+            when {
+                remaining != null -> remaining < qty
+                checkouts != null -> checkouts > 0
+                else -> false
+            }
+        }
+        val results = mutableListOf<Accessory>()
+        for (accessory in candidates) {
+            val rows = fetchAccessoryCheckedOutList(accessory.id)
+            if (rows.any { row -> row.assignedTo?.matchesUser(userId) == true }) {
+                results.add(accessory)
+            }
+        }
+        return results.sortedBy { it.decodedName.lowercase() }
+    }
 
     suspend fun fetchUserLicenses(userId: Int): List<License> =
         fetchAllPaginated(
@@ -1180,15 +1215,31 @@ class SnipeApiClient(context: Context) {
         updateLocation: Boolean = false,
         nextAuditDate: String? = null,
         note: String? = null,
+        image: UploadFile? = null,
     ): Boolean {
         val trimmedTag = assetTag.trim()
         if (baseUrl.isEmpty() || apiToken.isEmpty() || trimmedTag.isEmpty()) return false
+        val url = "$baseUrl/api/v1/hardware/audit"
         val body = mutableMapOf<String, Any?>("asset_tag" to trimmedTag)
         if (locationId != null && locationId != 0) body["location_id"] = locationId
         if (updateLocation) body["update_location"] = true
         nextAuditDate?.trim()?.takeIf { it.isNotEmpty() }?.let { body["next_audit_date"] = it }
         note?.trim()?.takeIf { it.isNotEmpty() }?.let { body["note"] = it }
-        val response = executeJsonPost("$baseUrl/api/v1/hardware/audit", body)
+
+        val response = if (image != null) {
+            val multipart = sendHardwareMultipart(url, "POST", body, image)
+            val multipartOk = isSnipeApiHttpSuccess(multipart.code) && !isSnipeApiErrorResponse(multipart.json)
+            if (multipartOk) {
+                multipart
+            } else {
+                // Same fallback as maintenance/asset image uploads.
+                body["image_source"] = image.toBase64ImageSource()
+                executeJsonPost(url, body)
+            }
+        } else {
+            executeJsonPost(url, body)
+        }
+
         if (!isSnipeApiHttpSuccess(response.code) || isSnipeApiErrorResponse(response.json)) {
             withContext(Dispatchers.Main) {
                 _lastApiMessage.value = extractApiErrorMessage(response.json) ?: "Audit failed."
@@ -1293,20 +1344,103 @@ class SnipeApiClient(context: Context) {
     suspend fun updateComponent(componentId: Int, body: Map<String, Any?>): Boolean =
         patchEntity("$baseUrl/api/v1/components/$componentId", body) { refreshComponentInCache(componentId) }
 
-    suspend fun createMaintenance(body: Map<String, Any?>): Boolean {
-        val response = executeJsonPost("$baseUrl/api/v1/maintenances", body)
+    suspend fun createMaintenance(body: Map<String, Any?>, image: UploadFile? = null): Boolean =
+        createMaintenanceReturningId(body, image) != null
+
+    /** New maintenance id, or null on failure. */
+    suspend fun createMaintenanceReturningId(body: Map<String, Any?>, image: UploadFile? = null): Int? {
+        if (baseUrl.isEmpty() || apiToken.isEmpty()) return null
+        val url = "$baseUrl/api/v1/maintenances"
+        val mutableBody = withMirroredMaintenanceCompletion(body).toMutableMap()
+
+        if (image != null) {
+            val multipart = sendHardwareMultipart(url, "POST", mutableBody, image)
+            val multipartResult = evaluateWriteResponse(
+                multipart.json,
+                multipart.code,
+                "Maintenance created.",
+                "Create failed.",
+            )
+            if (multipartResult.success) {
+                withContext(Dispatchers.Main) { _lastApiMessage.value = multipartResult.message }
+                scope.launch { fetchAllMaintenances() }
+                return idFromPayload(multipart.json) ?: decodePayloadOrRoot<AssetMaintenance>(multipart.body)?.id
+            }
+            // Multipart image failed — retry via image_source.
+            mutableBody["image_source"] = image.toBase64ImageSource()
+        }
+
+        val response = executeJsonPost(url, mutableBody)
         val result = evaluateWriteResponse(response.json, response.code, "Maintenance created.", "Create failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
-        if (result.success) scope.launch { fetchAllMaintenances() }
-        return result.success
+        if (!result.success) return null
+        scope.launch { fetchAllMaintenances() }
+        return idFromPayload(response.json) ?: decodePayloadOrRoot<AssetMaintenance>(response.body)?.id
     }
 
-    suspend fun updateMaintenance(id: Int, body: Map<String, Any?>): Boolean {
-        val response = executeJsonPut("$baseUrl/api/v1/maintenances/$id", body)
+    /**
+     * Update maintenance. May return a new id when the image changes
+     * (API has no in-place image update).
+     */
+    suspend fun updateMaintenance(
+        id: Int,
+        assetId: Int,
+        body: Map<String, Any?>,
+        image: UploadFile? = null,
+        imageDelete: Boolean = false,
+        wasCompleted: Boolean = false,
+    ): Int? {
+        val wantsImageChange = image != null || imageDelete
+        if (wantsImageChange) {
+            return updateMaintenanceRecreatingForImage(
+                id = id,
+                assetId = assetId,
+                body = body,
+                image = if (imageDelete && image == null) null else image,
+                wasCompleted = wasCompleted,
+            )
+        }
+        val response = executeJsonPut(
+            "$baseUrl/api/v1/maintenances/$id",
+            withMirroredMaintenanceCompletion(body),
+        )
         val result = evaluateWriteResponse(response.json, response.code, "Changes saved.", "Update failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
-        if (result.success) scope.launch { fetchAllMaintenances() }
-        return result.success
+        if (!result.success) return null
+        scope.launch { fetchAllMaintenances() }
+        return id
+    }
+
+    /** Boolean wrapper for callers that ignore the returned id. */
+    suspend fun updateMaintenance(id: Int, body: Map<String, Any?>): Boolean {
+        val assetId = body["asset_id"] as? Int
+            ?: _maintenances.value.firstOrNull { it.id == id }?.assetId
+            ?: return false
+        return updateMaintenance(id = id, assetId = assetId, body = body) != null
+    }
+
+    private suspend fun updateMaintenanceRecreatingForImage(
+        id: Int,
+        assetId: Int,
+        body: Map<String, Any?>,
+        image: UploadFile?,
+        wasCompleted: Boolean,
+    ): Int? {
+        val name = (body["name"] as? String)?.trim().orEmpty()
+        val startDate = (body["start_date"] as? String)?.trim().orEmpty()
+        if (name.isEmpty() || startDate.isEmpty() || assetId <= 0) {
+            withContext(Dispatchers.Main) { _lastApiMessage.value = L10n.string("error") }
+            return null
+        }
+        val createBody = body.toMutableMap()
+        createBody["asset_id"] = assetId
+        createBody.remove("image_delete")
+        val newId = createMaintenanceReturningId(createBody, image) ?: return null
+        if (wasCompleted) {
+            completeMaintenance(newId)
+        }
+        if (!deleteMaintenance(id)) return null
+        return newId
     }
 
     suspend fun deleteMaintenance(id: Int): Boolean {
@@ -2363,6 +2497,25 @@ class SnipeApiClient(context: Context) {
             .url(url)
             .header("Authorization", "Bearer $apiToken")
             .header("Accept", "application/json")
+            .header("User-Agent", USER_AGENT)
+
+    /**
+     * Snipe-IT 8.7+ prefers `expected_completion_date`; older servers only know
+     * `completion_date`. Mirror whichever key the caller set so both work.
+     */
+    private fun withMirroredMaintenanceCompletion(body: Map<String, Any?>): Map<String, Any?> {
+        if (!body.containsKey("completion_date") && !body.containsKey("expected_completion_date")) {
+            return body
+        }
+        val mutable = body.toMutableMap()
+        when {
+            mutable.containsKey("completion_date") ->
+                mutable["expected_completion_date"] = mutable["completion_date"]
+            else ->
+                mutable["completion_date"] = mutable["expected_completion_date"]
+        }
+        return mutable
+    }
 
     // endregion
 
@@ -2437,6 +2590,10 @@ class SnipeApiClient(context: Context) {
         private const val PAGE_DELAY_MS = 60L
         private const val RATE_LIMIT_RETRY_MS = 1500L
         private const val CACHE_SAVE_DEBOUNCE_MS = 700L
+
+        /** Identifies the app to Snipe-IT (avoids default `okhttp/` UA blocked in 8.7+). */
+        private val USER_AGENT: String =
+            "SnipeMobile/${BuildConfig.VERSION_NAME} (Android)"
 
         fun normalizeBaseUrl(value: String): String {
             var trimmed = value.trim()

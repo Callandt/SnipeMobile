@@ -32,6 +32,7 @@ import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.assetPickerSearchText
 import com.callandt.snipemobile.ui.util.locationPickerSearchText
 import com.callandt.snipemobile.ui.util.userPickerSearchText
+import com.callandt.snipemobile.ui.util.usersForNamePicker
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -50,10 +51,12 @@ fun AssetCheckoutSheet(
     onSuccess: () -> Unit = {},
 ) {
     val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val locations by viewModel.locations.collectAsState()
     val assets by viewModel.assets.collectAsState()
     val lastApiMessage by viewModel.lastApiMessage.collectAsState()
     val scope = rememberCoroutineScope()
+    val pickerUsers = remember(users, currentUser) { usersForNamePicker(users, currentUser) }
 
     var tabIndex by remember { mutableIntStateOf(0) }
     var selectedUserId by remember { mutableIntStateOf(0) }
@@ -158,7 +161,7 @@ fun AssetCheckoutSheet(
             when (target) {
                 AssetCheckoutTarget.User -> SearchablePickerField(
                     label = L10n.string("select_user_short"),
-                    items = users.map {
+                    items = pickerUsers.map {
                         PickerItem(
                             it.id,
                             it.decodedName,

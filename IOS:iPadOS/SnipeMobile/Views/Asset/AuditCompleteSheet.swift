@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Shared audit/maintenance completion sheet.
 struct CompletionActionSheet: View {
@@ -10,6 +11,9 @@ struct CompletionActionSheet: View {
     var includeDate: Binding<Bool>? = nil
     var includeDateLabel: String? = nil
     @Binding var note: String
+    /// Optional audit photo (same picker as maintenance/assets).
+    var selectedImage: Binding<UIImage?>? = nil
+    var showCamera: Binding<Bool>? = nil
     let confirmTitle: String
     var isSaving: Bool
     var onSave: () -> Void
@@ -17,12 +21,14 @@ struct CompletionActionSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     private var showsDateSection: Bool { date != nil && dateLabel != nil }
+    private var showsPhotoSection: Bool { selectedImage != nil && showCamera != nil }
     private var isDateExpanded: Bool {
         guard showsDateSection else { return false }
         guard let includeDate else { return true }
         return includeDate.wrappedValue
     }
     private var sheetHeight: CGFloat {
+        if showsPhotoSection { return 560 }
         if !showsDateSection { return 316 }
         return isDateExpanded ? 396 : 336
     }
@@ -74,7 +80,15 @@ struct CompletionActionSheet: View {
                         .padding(.vertical, 12)
                 }
                 .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedCornerShape(cornerRadius: 12, style: .continuous))
+
+                if let selectedImage, let showCamera {
+                    Form {
+                        AssetPhotoSection(selectedImage: selectedImage, showCamera: showCamera)
+                    }
+                    .scrollContentBackground(.hidden)
+                    .frame(maxHeight: 220)
+                }
 
                 Spacer(minLength: 0)
 
@@ -105,7 +119,21 @@ struct CompletionActionSheet: View {
                 }
             }
         }
-        .presentationDetents([.height(sheetHeight)])
+        .modifier(CompletionSheetCameraCover(showCamera: showCamera, selectedImage: selectedImage))
+        .presentationDetents(showsPhotoSection ? [.medium, .large] : [.height(sheetHeight)])
         .presentationDragIndicator(.visible)
+    }
+}
+
+private struct CompletionSheetCameraCover: ViewModifier {
+    var showCamera: Binding<Bool>?
+    var selectedImage: Binding<UIImage?>?
+
+    func body(content: Content) -> some View {
+        if let showCamera, let selectedImage {
+            content.assetCameraCover(isPresented: showCamera, image: selectedImage)
+        } else {
+            content
+        }
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
@@ -61,6 +62,7 @@ import com.callandt.snipemobile.data.model.AssetAssignedComponent
 import com.callandt.snipemobile.data.model.AssetMaintenance
 import com.callandt.snipemobile.data.model.License
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.asset.AssetAuditSheet
 import com.callandt.snipemobile.ui.asset.AssetCheckinSheet
 import com.callandt.snipemobile.ui.asset.AssetCheckoutSheet
 import com.callandt.snipemobile.ui.asset.AssetFilesTab
@@ -76,13 +78,14 @@ import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemHistoryTab
-import com.callandt.snipemobile.ui.components.ItemCard
 import com.callandt.snipemobile.ui.components.LicenseCard
 import com.callandt.snipemobile.ui.components.LocationCard
+import com.callandt.snipemobile.ui.components.MaintenanceCard
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.components.UserCard
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.maintenance.AddMaintenanceSheet
 import com.callandt.snipemobile.ui.theme.SnipeGreen
 import com.callandt.snipemobile.ui.theme.SnipeAccent
 import com.callandt.snipemobile.ui.theme.SnipeOrange
@@ -133,6 +136,8 @@ fun AssetDetailScreen(
     var showCheckin by remember { mutableStateOf(false) }
     var showAudit by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
+    var showAddMaintenance by remember { mutableStateOf(false) }
+    var maintenanceReloadToken by remember { mutableIntStateOf(0) }
     var isGeneratingLabel by remember { mutableStateOf(false) }
     var labelErrorMessage by remember { mutableStateOf<String?>(null) }
     val deleteState = rememberEntityDeleteState()
@@ -188,6 +193,14 @@ fun AssetDetailScreen(
                     }
                 },
                 actions = {
+                    if (currentTab == AssetDetailTab.Maintenance) {
+                        IconButton(onClick = { showAddMaintenance = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = L10n.string("add_maintenance"),
+                            )
+                        }
+                    }
                     if (!asset?.decodedAssetTag.isNullOrEmpty()) {
                         IconButton(
                             onClick = { scope.launch { generateLabel() } },
@@ -259,7 +272,9 @@ fun AssetDetailScreen(
                 AssetDetailTab.Maintenance -> AssetMaintenanceTab(
                     assetId = asset.id,
                     viewModel = viewModel,
+                    reloadToken = maintenanceReloadToken,
                     onOpenMaintenance = onOpenMaintenance,
+                    onAddMaintenance = { showAddMaintenance = true },
                 )
                 AssetDetailTab.Files -> AssetFilesTab(assetId = asset.id, viewModel = viewModel)
                 AssetDetailTab.History -> ItemHistoryTab(
@@ -276,6 +291,16 @@ fun AssetDetailScreen(
             asset = asset,
             viewModel = viewModel,
             onDismiss = { showEdit = false },
+        )
+    }
+
+    if (showAddMaintenance && asset != null) {
+        AddMaintenanceSheet(
+            viewModel = viewModel,
+            initialAssetId = asset.id,
+            lockAssetSelection = true,
+            onDismiss = { showAddMaintenance = false },
+            onSaved = { _ -> maintenanceReloadToken += 1 },
         )
     }
 
@@ -297,23 +322,12 @@ fun AssetDetailScreen(
     }
 
     if (showAudit && asset != null) {
-        AssetAuditDialog(
+        AssetAuditSheet(
             asset = asset,
             locations = locations.map { PickerItem(it.id, it.decodedName) },
+            viewModel = viewModel,
             onDismiss = { showAudit = false },
-            onConfirm = { locationId, updateLocation, nextAuditDate, note ->
-                scope.launch {
-                    viewModel.apiClient.auditAsset(
-                        assetTag = asset.assetTag,
-                        assetId = asset.id,
-                        locationId = locationId,
-                        updateLocation = updateLocation,
-                        nextAuditDate = nextAuditDate,
-                        note = note,
-                    )
-                    showAudit = false
-                }
-            },
+            onSaved = { scope.launch { viewModel.apiClient.fetchAssets() } },
         )
     }
 
@@ -650,14 +664,17 @@ private fun WarrantyStatusCapsule(
 private fun AssetMaintenanceTab(
     assetId: Int,
     viewModel: AppViewModel,
+    reloadToken: Int,
     onOpenMaintenance: ((Int) -> Unit)? = null,
+    onAddMaintenance: () -> Unit,
 ) {
     var items by remember { mutableStateOf<List<AssetMaintenance>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(assetId) {
+    LaunchedEffect(assetId, reloadToken) {
         loading = true
         items = viewModel.apiClient.fetchMaintenances(assetId).orEmpty()
+            .sortedByDescending { it.startDate?.date.orEmpty() }
         loading = false
     }
 
@@ -668,8 +685,30 @@ private fun AssetMaintenanceTab(
             }
         }
         items.isEmpty() -> {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(L10n.string("no_maintenance"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = L10n.string("no_maintenance"),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = L10n.string("no_maintenance_desc"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                TextButton(
+                    onClick = onAddMaintenance,
+                    modifier = Modifier.padding(top = 16.dp),
+                ) {
+                    Text(L10n.string("add_maintenance"))
+                }
             }
         }
         else -> {
@@ -679,18 +718,10 @@ private fun AssetMaintenanceTab(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(items, key = { it.id }) { maintenance ->
-                    ItemCard(
-                        title = maintenance.decodedTitle,
-                        subtitle = maintenance.displayType,
-                        metaLines = listOfNotNull(maintenance.startDate?.localizedDisplay()),
-                        statusLabel = if (maintenance.isCompleted) {
-                            L10n.string("status_completed")
-                        } else {
-                            L10n.string("widget_open_short")
-                        },
-                        onClick = onOpenMaintenance?.let { callback ->
-                            { callback(maintenance.id) }
-                        },
+                    MaintenanceCard(
+                        record = maintenance,
+                        showAssetHeader = false,
+                        onClick = { onOpenMaintenance?.invoke(maintenance.id) },
                     )
                 }
             }
@@ -786,58 +817,6 @@ private fun canAssetCheckOut(asset: Asset): Boolean {
     if (asset.availableActions?.checkout == true) return true
     val meta = asset.statusLabel.statusMeta?.trim()?.lowercase().orEmpty()
     return meta == "deployable" || meta == "ready_to_deploy" || asset.statusLabel.isDeployableType
-}
-
-@Composable
-private fun AssetAuditDialog(
-    asset: Asset,
-    locations: List<PickerItem>,
-    onDismiss: () -> Unit,
-    onConfirm: (Int?, Boolean, String?, String) -> Unit,
-) {
-    var locationId by remember { mutableIntStateOf(0) }
-    var updateLocation by remember { mutableStateOf(false) }
-    var nextAuditDate by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(L10n.string("audit")) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(asset.decodedAssetTag, style = MaterialTheme.typography.labelLarge)
-                SearchablePickerField(
-                    label = L10n.string("location_optional"),
-                    items = locations,
-                    selectedId = locationId.takeIf { it > 0 },
-                    onSelected = { locationId = it.id },
-                )
-                OutlinedTextField(
-                    value = nextAuditDate,
-                    onValueChange = { nextAuditDate = it },
-                    label = { Text(L10n.string("set_next_audit")) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text(L10n.string("note")) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onConfirm(
-                    locationId.takeIf { it > 0 },
-                    updateLocation,
-                    nextAuditDate.trim().takeIf { it.isNotEmpty() },
-                    note,
-                )
-            }) { Text(L10n.string("complete_audit")) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L10n.string("cancel")) } },
-    )
 }
 
 @Composable

@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -62,11 +61,14 @@ class AppViewModel(
     val lastApiMessage = apiClient.lastApiMessage
     val loadingProgress = apiClient.loadingProgress
 
-    // null until DataStore emits (avoids Welcome flash on cold start).
-    val hasCompletedOnboarding: StateFlow<Boolean?> =
+    // Seeded from DataStore so cold start skips a blank spinner frame.
+    val hasCompletedOnboarding: StateFlow<Boolean> =
         preferences.hasCompletedOnboarding
-            .map { it }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                preferences.getHasCompletedOnboardingBlocking(),
+            )
 
     val appTheme: StateFlow<String> =
         preferences.appTheme.stateIn(viewModelScope, SharingStarted.Eagerly, "system")

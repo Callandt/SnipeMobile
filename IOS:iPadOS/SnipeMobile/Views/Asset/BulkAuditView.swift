@@ -23,6 +23,8 @@ struct BulkAuditView: View {
     @State private var setNextAuditDate: Bool = false
     @State private var nextAuditDate: Date = Date()
     @State private var notes: String = ""
+    @State private var selectedImage: UIImage? = nil
+    @State private var showCamera = false
 
     @State private var isSaving: Bool = false
     @State private var showResultAlert: Bool = false
@@ -75,6 +77,8 @@ struct BulkAuditView: View {
                             .lineLimit(1...3)
                     }
                 }
+
+                AssetPhotoSection(selectedImage: $selectedImage, showCamera: $showCamera)
             }
             .assetBulkSelectionDestinations(
                 apiClient: apiClient,
@@ -99,6 +103,7 @@ struct BulkAuditView: View {
                 }
             }
         }
+        .assetCameraCover(isPresented: $showCamera, image: $selectedImage)
         .onAppear {
             if apiClient.locations.isEmpty {
                 Task { await apiClient.fetchLocations() }
@@ -147,7 +152,8 @@ struct BulkAuditView: View {
                 locationId: locationIdOpt,
                 updateLocation: updateLocation,
                 nextAuditDate: nextStr,
-                note: noteOpt
+                note: noteOpt,
+                image: selectedImage
             )
             if ok { successCount += 1 } else { failedCount += 1 }
         }

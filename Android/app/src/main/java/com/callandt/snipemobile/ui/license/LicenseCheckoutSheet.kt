@@ -25,6 +25,7 @@ import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.assetPickerSearchText
 import com.callandt.snipemobile.ui.util.userPickerSearchText
+import com.callandt.snipemobile.ui.util.usersForNamePicker
 import kotlinx.coroutines.launch
 
 private enum class LicenseCheckoutTarget(val labelKey: String) {
@@ -41,8 +42,10 @@ fun LicenseCheckoutSheet(
     onSuccess: () -> Unit = {},
 ) {
     val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val assets by viewModel.assets.collectAsState()
     val scope = rememberCoroutineScope()
+    val pickerUsers = remember(users, currentUser) { usersForNamePicker(users, currentUser) }
 
     var tabIndex by remember { mutableIntStateOf(0) }
     var selectedUserId by remember { mutableIntStateOf(0) }
@@ -118,7 +121,7 @@ fun LicenseCheckoutSheet(
             when (tabIndex) {
                 0 -> SearchablePickerField(
                     label = L10n.string("user"),
-                    items = users.map {
+                    items = pickerUsers.map {
                         PickerItem(it.id, it.decodedName, searchText = userPickerSearchText(it))
                     },
                     selectedId = selectedUserId.takeIf { it > 0 },

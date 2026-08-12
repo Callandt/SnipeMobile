@@ -1,16 +1,21 @@
 package com.callandt.snipemobile.ui.asset
 
-import android.view.WindowManager
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,8 +27,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
@@ -32,6 +42,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import android.view.WindowManager
 import com.callandt.snipemobile.data.model.CustomField
 import com.callandt.snipemobile.data.model.FieldDefinition
 import com.callandt.snipemobile.data.model.StatusLabel
@@ -62,6 +73,51 @@ internal fun parseApiDate(raw: String?): Date? {
         timeZone = TimeZone.getTimeZone("UTC")
         isLenient = false
     }.parse(trimmed.take(10))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FormDateField(
+    label: String,
+    dateText: String,
+    onDateTextChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val parsed = parseApiDate(dateText) ?: Date()
+
+    Box(modifier = modifier.fillMaxWidth().clickable { showPicker = true }) {
+        OutlinedTextField(
+            value = dateText,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = false,
+        )
+    }
+
+    if (showPicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = parsed.time)
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            onDateTextChange(formatApiDate(Date(millis)))
+                        }
+                        showPicker = false
+                    },
+                ) { Text(L10n.string("ok")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPicker = false }) { Text(L10n.string("cancel")) }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }
 
 internal fun statusDisplayName(label: StatusLabel): String =
@@ -112,6 +168,8 @@ internal fun AssetFormSheetScaffold(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
@@ -139,6 +197,7 @@ internal fun AssetFullScreenSheet(
         SideEffect {
             val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             // Full-screen dialog needs MATCH_PARENT on the window.
             window.setLayout(
                 WindowManager.LayoutParams.MATCH_PARENT,

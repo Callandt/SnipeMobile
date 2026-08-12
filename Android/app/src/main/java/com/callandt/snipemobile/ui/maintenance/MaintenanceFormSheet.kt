@@ -18,19 +18,24 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.data.model.AssetMaintenance
 import com.callandt.snipemobile.data.model.MaintenanceTypesMode
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
 import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
+import com.callandt.snipemobile.ui.asset.AssetPhotoSection
+import com.callandt.snipemobile.ui.asset.FormDateField
 import com.callandt.snipemobile.ui.asset.FormSectionTitle
+import com.callandt.snipemobile.ui.asset.PendingAssetImage
 import com.callandt.snipemobile.ui.asset.formatApiDate
 import com.callandt.snipemobile.ui.asset.normalizeDecimalForApi
-import com.callandt.snipemobile.ui.asset.parseApiDate
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.components.StringPickerField
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.resolveSnipeImageUrl
+import com.callandt.snipemobile.ui.util.usersForNamePicker
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -47,8 +52,9 @@ internal val legacyMaintenanceTypes = listOf(
 fun AddMaintenanceSheet(
     viewModel: AppViewModel,
     initialAssetId: Int? = null,
+    lockAssetSelection: Boolean = false,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit = {},
+    onSaved: (Int) -> Unit = {},
 ) {
     MaintenanceFormSheet(
         viewModel = viewModel,
@@ -56,6 +62,7 @@ fun AddMaintenanceSheet(
         saveLabel = L10n.string("save"),
         existing = null,
         initialAssetId = initialAssetId,
+        lockAssetSelection = lockAssetSelection,
         onDismiss = onDismiss,
         onSaved = onSaved,
     )
@@ -66,7 +73,7 @@ fun EditMaintenanceSheet(
     record: AssetMaintenance,
     viewModel: AppViewModel,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit = {},
+    onSaved: (Int) -> Unit = {},
 ) {
     MaintenanceFormSheet(
         viewModel = viewModel,
@@ -74,6 +81,7 @@ fun EditMaintenanceSheet(
         saveLabel = L10n.string("save"),
         existing = record,
         initialAssetId = record.assetId,
+        lockAssetSelection = true,
         onDismiss = onDismiss,
         onSaved = onSaved,
     )
@@ -86,15 +94,19 @@ private fun MaintenanceFormSheet(
     saveLabel: String,
     existing: AssetMaintenance?,
     initialAssetId: Int?,
+    lockAssetSelection: Boolean,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+    onSaved: (Int) -> Unit,
 ) {
     val assets by viewModel.assets.collectAsState()
+    val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val maintenanceTypes by viewModel.apiClient.maintenanceTypes.collectAsState()
     val typesMode by viewModel.apiClient.maintenanceTypesMode.collectAsState()
     val lastApiMessage by viewModel.lastApiMessage.collectAsState()
     val scope = rememberCoroutineScope()
+    val pickerUsers = remember(users, currentUser) { usersForNamePicker(users, currentUser) }
 
     var selectedAssetId by remember(existing?.id) { mutableIntStateOf(initialAssetId ?: 0) }
     var maintenanceTitle by remember(existing?.id) { mutableStateOf(existing?.decodedTitle.orEmpty()) }
@@ -103,7 +115,10 @@ private fun MaintenanceFormSheet(
     }
     var selectedTypeId by remember(existing?.id) { mutableIntStateOf(0) }
     var selectedSupplierId by remember(existing?.id) { mutableIntStateOf(existing?.supplier?.id ?: 0) }
+    var selectedUserId by remember(existing?.id) { mutableIntStateOf(existing?.responsibleParty?.id ?: 0) }
+    var responsibleWasCleared by remember(existing?.id) { mutableStateOf(false) }
     var cost by remember(existing?.id) { mutableStateOf(existing?.cost.orEmpty()) }
+    var url by remember(existing?.id) { mutableStateOf(existing?.url.orEmpty()) }
     var notes by remember(existing?.id) { mutableStateOf(existing?.decodedNotes.orEmpty()) }
     var isWarranty by remember(existing?.id) { mutableStateOf(existing?.isWarranty ?: false) }
     var startDateText by remember(existing?.id) {
@@ -115,6 +130,8 @@ private fun MaintenanceFormSheet(
     var completionDateText by remember(existing?.id) {
         mutableStateOf(existing?.completionDate?.date ?: formatApiDate(Date()))
     }
+    var pendingImage by remember(existing?.id) { mutableStateOf<PendingAssetImage?>(null) }
+    var removeExistingImage by remember(existing?.id) { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -123,9 +140,17 @@ private fun MaintenanceFormSheet(
     val legacyOptions = remember(selectedLegacyType, existing?.displayType) {
         buildLegacyTypeOptions(selectedLegacyType, existing?.displayType)
     }
+    val existingImageUrl = remember(existing?.image, existing?.updatedAt, viewModel.apiClient.baseUrl) {
+        resolveSnipeImageUrl(
+            viewModel.apiClient.baseUrl,
+            existing?.image,
+            existing?.updatedAt?.datetime ?: existing?.updatedAt?.date,
+        )
+    }
 
     LaunchedEffect(Unit) {
         if (suppliers.isEmpty()) viewModel.apiClient.fetchSuppliers()
+        if (users.isEmpty()) viewModel.apiClient.fetchUsers()
         viewModel.apiClient.fetchMaintenanceTypes()
     }
 
@@ -134,6 +159,14 @@ private fun MaintenanceFormSheet(
             applyTypeIdSelection(selectedTypeId = { selectedTypeId = it }, types = maintenanceTypes, record = existing)
         } else if (!usesTypeIds) {
             normalizeLegacyTypeSelection(selectedLegacyType) { selectedLegacyType = it }
+        }
+    }
+
+    LaunchedEffect(users, existing?.id, responsibleWasCleared) {
+        if (responsibleWasCleared) return@LaunchedEffect
+        val preferredId = existing?.responsibleParty?.id ?: return@LaunchedEffect
+        if (selectedUserId <= 0 && users.any { it.id == preferredId }) {
+            selectedUserId = preferredId
         }
     }
 
@@ -164,13 +197,23 @@ private fun MaintenanceFormSheet(
         typeFields.second?.let { body["asset_maintenance_type"] = it }
         normalizeDecimalForApi(cost)?.let { body["cost"] = it }
         notes.trim().takeIf { it.isNotEmpty() }?.let { body["notes"] = it }
-        if (selectedSupplierId > 0) body["supplier_id"] = selectedSupplierId
+        url.trim().takeIf { it.isNotEmpty() }?.let { body["url"] = it }
+        if (selectedSupplierId > 0) {
+            body["supplier_id"] = selectedSupplierId
+        } else if (isEditing) {
+            body["supplier_id"] = null
+        }
+        when {
+            selectedUserId > 0 -> body["responsible_party_id"] = selectedUserId
+            responsibleWasCleared && isEditing -> body["responsible_party_id"] = null
+        }
         if (hasCompletionDate) {
             body["completion_date"] = completionDateText.trim().take(10)
         } else if (isEditing) {
             body["completion_date"] = null
         }
         if (!isEditing) body["asset_id"] = selectedAssetId
+        if (removeExistingImage && pendingImage == null) body["image_delete"] = 1
         return body
     }
 
@@ -191,25 +234,35 @@ private fun MaintenanceFormSheet(
                         isSaving = false
                         return@launch
                     }
-                    val success = if (isEditing) {
-                        viewModel.apiClient.updateMaintenance(existing!!.id, body).also { ok ->
-                            if (!ok) errorMessage = lastApiMessage ?: L10n.string("mgmt_save_failed")
+                    val imageUpload = pendingImage?.let { UploadFile("maintenance.jpg", it.mimeType, it.bytes) }
+                    val savedId = if (isEditing) {
+                        val record = existing!!
+                        val assetId = record.assetId ?: selectedAssetId
+                        viewModel.apiClient.updateMaintenance(
+                            id = record.id,
+                            assetId = assetId,
+                            body = body,
+                            image = imageUpload,
+                            imageDelete = removeExistingImage && imageUpload == null,
+                            wasCompleted = record.isCompleted,
+                        ).also { id ->
+                            if (id == null) errorMessage = lastApiMessage ?: L10n.string("mgmt_save_failed")
                         }
                     } else {
-                        viewModel.apiClient.createMaintenance(body).also { ok ->
-                            if (!ok) errorMessage = lastApiMessage ?: L10n.string("create_failed")
+                        viewModel.apiClient.createMaintenanceReturningId(body, imageUpload).also { id ->
+                            if (id == null) errorMessage = lastApiMessage ?: L10n.string("create_failed")
                         }
                     }
                     isSaving = false
-                    if (success) {
+                    if (savedId != null) {
                         viewModel.syncInBackground()
-                        onSaved()
+                        onSaved(savedId)
                         onDismiss()
                     }
                 }
             },
         ) {
-            if (!isEditing) {
+            if (!isEditing && !lockAssetSelection) {
                 FormSectionTitle(L10n.string("asset"))
                 SearchablePickerField(
                     label = L10n.fieldLabel("asset", required = true),
@@ -256,12 +309,32 @@ private fun MaintenanceFormSheet(
                 }
             }
 
+            FormSectionTitle(L10n.string("responsible_party"))
+            if (users.isNotEmpty()) {
+                SearchablePickerField(
+                    label = L10n.string("responsible_party"),
+                    items = pickerUsers.map { PickerItem(it.id, it.decodedName, it.decodedEmail) },
+                    selectedId = selectedUserId.takeIf { it > 0 },
+                    placeholder = L10n.string("none"),
+                    allowClear = selectedUserId > 0,
+                    onClear = {
+                        selectedUserId = 0
+                        responsibleWasCleared = true
+                    },
+                    onSelected = {
+                        selectedUserId = it.id
+                        responsibleWasCleared = false
+                    },
+                )
+            } else {
+                Text(L10n.string("loading"), modifier = Modifier.fillMaxWidth())
+            }
+
             FormSectionTitle(L10n.string("dates"))
-            OutlinedTextField(
-                value = startDateText,
-                onValueChange = { startDateText = it },
-                label = { Text(L10n.string("start_date")) },
-                modifier = Modifier.fillMaxWidth(),
+            FormDateField(
+                label = L10n.string("start_date"),
+                dateText = startDateText,
+                onDateTextChange = { startDateText = it },
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -271,11 +344,10 @@ private fun MaintenanceFormSheet(
                 Switch(checked = hasCompletionDate, onCheckedChange = { hasCompletionDate = it })
             }
             if (hasCompletionDate) {
-                OutlinedTextField(
-                    value = completionDateText,
-                    onValueChange = { completionDateText = it },
-                    label = { Text(L10n.string("completion_date")) },
-                    modifier = Modifier.fillMaxWidth(),
+                FormDateField(
+                    label = L10n.string("completion_date"),
+                    dateText = completionDateText,
+                    onDateTextChange = { completionDateText = it },
                 )
             }
 
@@ -288,9 +360,12 @@ private fun MaintenanceFormSheet(
             )
             if (suppliers.isNotEmpty()) {
                 SearchablePickerField(
-                    label = L10n.string("supplier"),
+                    label = L10n.string("supplier_optional"),
                     items = suppliers.map { PickerItem(it.id, it.decodedName) },
                     selectedId = selectedSupplierId.takeIf { it > 0 },
+                    placeholder = L10n.string("none"),
+                    allowClear = selectedSupplierId > 0,
+                    onClear = { selectedSupplierId = 0 },
                     onSelected = { selectedSupplierId = it.id },
                 )
             }
@@ -302,6 +377,23 @@ private fun MaintenanceFormSheet(
                 Text(L10n.string("is_warranty"), modifier = Modifier.weight(1f))
                 Switch(checked = isWarranty, onCheckedChange = { isWarranty = it })
             }
+
+            FormSectionTitle(L10n.string("url"))
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text(L10n.string("url")) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            AssetPhotoSection(
+                pendingImage = pendingImage,
+                onPendingImageChange = { pendingImage = it },
+                existingImageUrl = existingImageUrl,
+                removeExistingImage = removeExistingImage,
+                onRemoveExistingImageChange = { removeExistingImage = it },
+            )
 
             FormSectionTitle(L10n.string("notes"))
             OutlinedTextField(

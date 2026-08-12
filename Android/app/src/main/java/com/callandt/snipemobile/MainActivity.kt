@@ -127,7 +127,7 @@ class MainActivity : FragmentActivity() {
 
     /**
      * Fires before the system takes the Recents thumbnail — unlike onPause.
-     * Android has no iOS-style blur; we show a solid privacy cover instead.
+     * Solid privacy cover while the app is in the background.
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)

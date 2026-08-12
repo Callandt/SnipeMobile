@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import Foundation
+import UIKit
 
 // MARK: - Tab
 enum MainTab: String, CaseIterable {
@@ -936,6 +937,8 @@ struct HardwareTab: View {
     @State private var auditCompletionNextAuditDate: Date = Date()
     @State private var auditCompletionSetDate = true
     @State private var auditCompletionNote = ""
+    @State private var auditCompletionImage: UIImage? = nil
+    @State private var auditCompletionShowCamera = false
     @State private var isSavingAuditCompletion = false
     @State private var showAuditCompletionErrorAlert = false
     @State private var auditCompletionErrorMessage = ""
@@ -1057,6 +1060,8 @@ struct HardwareTab: View {
                 includeDate: $auditCompletionSetDate,
                 includeDateLabel: L10n.string("audit_set_next_audit_date"),
                 note: $auditCompletionNote,
+                selectedImage: $auditCompletionImage,
+                showCamera: $auditCompletionShowCamera,
                 confirmTitle: L10n.string("complete_audit"),
                 isSaving: isSavingAuditCompletion,
                 onSave: { Task { await saveAuditCompletionFromList() } }
@@ -1093,12 +1098,14 @@ struct HardwareTab: View {
             assetTag: tag,
             assetId: asset.id,
             nextAuditDate: nextAuditStr,
-            note: noteOpt
+            note: noteOpt,
+            image: auditCompletionImage
         )
         if ok {
             showAuditCompletionSheet = false
             auditCompletionAsset = nil
             auditCompletionNote = ""
+            auditCompletionImage = nil
             await apiClient.fetchPrimaryThenBackground()
             if auditNotificationsEnabled {
                 await AuditNotificationManager.shared.updateSchedule(
@@ -1652,6 +1659,7 @@ struct HardwareTab: View {
                     auditCompletionNextAuditDate = AuditDateClassifier.nextAuditDateGMT(asset) ?? Date()
                     auditCompletionSetDate = true
                     auditCompletionNote = ""
+                    auditCompletionImage = nil
                     showAuditCompletionSheet = true
                 } label: {
                     Label(L10n.string("mark_complete"), systemImage: "checkmark.seal")

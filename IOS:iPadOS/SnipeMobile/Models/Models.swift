@@ -1809,6 +1809,7 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         case maintenanceType = "maintenance_type"
         case startDate = "start_date"
         case completionDate = "completion_date"
+        case expectedCompletionDate = "expected_completion_date"
         case isWarranty = "is_warranty"
         case maintenanceTime = "asset_maintenance_time"
         case createdBy = "created_by"
@@ -1836,7 +1837,9 @@ struct AssetMaintenance: Identifiable, Codable, Hashable {
         cost = try? c.decodeIfPresent(String.self, forKey: .cost)
         notes = try? c.decodeIfPresent(String.self, forKey: .notes)
         startDate = try? c.decodeIfPresent(DateInfo.self, forKey: .startDate)
-        completionDate = try? c.decodeIfPresent(DateInfo.self, forKey: .completionDate)
+        // 8.7+ uses expected_completion_date; older servers still send completion_date.
+        completionDate = (try? c.decodeIfPresent(DateInfo.self, forKey: .expectedCompletionDate))
+            ?? (try? c.decodeIfPresent(DateInfo.self, forKey: .completionDate))
         isWarranty = (try? c.decodeIfPresent(Bool.self, forKey: .isWarranty)) ?? false
         url = try? c.decodeIfPresent(String.self, forKey: .url)
         image = try? c.decodeIfPresent(String.self, forKey: .image)
@@ -1919,6 +1922,7 @@ struct MaintenanceCreateRequest: Encodable {
         case responsible_party_id
         case start_date
         case completion_date
+        case expected_completion_date
         case is_warranty
     }
 
@@ -1934,7 +1938,9 @@ struct MaintenanceCreateRequest: Encodable {
         try c.encodeIfPresent(url, forKey: .url)
         try c.encodeIfPresent(responsible_party_id, forKey: .responsible_party_id)
         try c.encode(start_date, forKey: .start_date)
+        // Legacy + 8.7+ (expected_completion_date); older servers ignore the new key.
         try c.encodeIfPresent(completion_date, forKey: .completion_date)
+        try c.encodeIfPresent(completion_date, forKey: .expected_completion_date)
         try c.encode(is_warranty, forKey: .is_warranty)
     }
 }
@@ -1963,6 +1969,7 @@ struct MaintenanceUpdateRequest: Encodable {
         case responsible_party_id
         case start_date
         case completion_date
+        case expected_completion_date
         case is_warranty
         case image_delete
     }
@@ -1983,6 +1990,7 @@ struct MaintenanceUpdateRequest: Encodable {
         }
         try c.encodeIfPresent(start_date, forKey: .start_date)
         try c.encodeIfPresent(completion_date, forKey: .completion_date)
+        try c.encodeIfPresent(completion_date, forKey: .expected_completion_date)
         try c.encodeIfPresent(is_warranty, forKey: .is_warranty)
         try c.encodeIfPresent(image_delete, forKey: .image_delete)
     }

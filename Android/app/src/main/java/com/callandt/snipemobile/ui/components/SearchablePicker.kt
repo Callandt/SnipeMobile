@@ -43,6 +43,8 @@ fun SearchablePickerField(
     placeholder: String = L10n.string("select") + "…",
     addNewLabel: String? = null,
     onAddNew: (() -> Unit)? = null,
+    allowClear: Boolean = false,
+    onClear: (() -> Unit)? = null,
     onSelected: (PickerItem) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
@@ -71,6 +73,11 @@ fun SearchablePickerField(
                     add()
                 }
             },
+            allowClear = allowClear && selectedId != null,
+            onClear = {
+                showDialog = false
+                onClear?.invoke()
+            },
             onDismiss = { showDialog = false },
             onSelected = { item ->
                 onSelected(item)
@@ -88,6 +95,8 @@ fun SearchablePickerDialog(
     onSelected: (PickerItem) -> Unit,
     addNewLabel: String? = null,
     onAddNew: (() -> Unit)? = null,
+    allowClear: Boolean = false,
+    onClear: (() -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
     val filtered = remember(items, query) {
@@ -117,6 +126,14 @@ fun SearchablePickerDialog(
                                 modifier = Modifier.padding(start = 6.dp),
                             )
                         }
+                    }
+                }
+                if (allowClear && onClear != null) {
+                    TextButton(
+                        onClick = onClear,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(L10n.string("clear_selection"))
                     }
                 }
                 LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {

@@ -255,6 +255,20 @@ fun userPickerSearchText(user: User): String =
         user.decodedNotes,
     ).filter { it.isNotBlank() }.joinToString(" ")
 
+/** Logged-in API user first, then A–Z. */
+fun usersForNamePicker(users: List<User>, currentUser: User?): List<User> {
+    val pinned = currentUser?.let { me ->
+        users.firstOrNull { it.id == me.id } ?: me
+    }
+    val pinnedId = pinned?.id
+    val rest = users
+        .asSequence()
+        .filter { pinnedId == null || it.id != pinnedId }
+        .sortedBy { it.decodedName.lowercase(Locale.getDefault()) }
+        .toList()
+    return if (pinned != null) listOf(pinned) + rest else rest
+}
+
 fun locationPickerSearchText(location: Location): String =
     listOf(
         location.address,

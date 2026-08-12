@@ -60,6 +60,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.callandt.snipemobile.data.api.SnipeITQRLink
+import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.PickerItem
@@ -94,6 +95,7 @@ fun BulkAuditSheet(
     var setNextAuditDate by remember { mutableStateOf(false) }
     var nextAuditDateText by remember { mutableStateOf(formatApiDate(Date())) }
     var notes by remember { mutableStateOf("") }
+    var pendingImage by remember { mutableStateOf<PendingAssetImage?>(null) }
 
     var isSaving by remember { mutableStateOf(false) }
     var resultMessage by remember { mutableStateOf<String?>(null) }
@@ -115,6 +117,7 @@ fun BulkAuditSheet(
         val nextStr = if (setNextAuditDate) parseApiDate(nextAuditDateText)?.let { formatApiDate(it) } else null
         val locationIdOpt = selectedLocationId.takeIf { it > 0 }
         val noteOpt = notes.trim().takeIf { it.isNotEmpty() }
+        val imageUpload = pendingImage?.let { UploadFile("audit.jpg", it.mimeType, it.bytes) }
 
         var successCount = 0
         var failedCount = 0
@@ -132,6 +135,7 @@ fun BulkAuditSheet(
                 updateLocation = updateLocation,
                 nextAuditDate = nextStr,
                 note = noteOpt,
+                image = imageUpload,
             )
             if (ok) successCount += 1 else failedCount += 1
         }
@@ -252,6 +256,11 @@ fun BulkAuditSheet(
                 label = { Text(L10n.string("notes")) },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
+            )
+
+            AssetPhotoSection(
+                pendingImage = pendingImage,
+                onPendingImageChange = { pendingImage = it },
             )
         }
     }

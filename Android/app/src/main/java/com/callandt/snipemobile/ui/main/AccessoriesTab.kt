@@ -1,17 +1,17 @@
 package com.callandt.snipemobile.ui.main
 
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,15 +24,22 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.accessory.AddAccessorySheet
 import com.callandt.snipemobile.ui.components.AccessoryCard
 import com.callandt.snipemobile.ui.components.EmptyState
+import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
+import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
 import com.callandt.snipemobile.ui.components.SearchTopBar
+import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
+import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.accessoryMatchesSearch
 
@@ -48,9 +55,16 @@ fun AccessoriesTab(
     val items by viewModel.accessories.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showAddAccessory by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var itemToDelete by remember { mutableStateOf<Accessory?>(null) }
+    val deleteState = rememberEntityDeleteState()
+    val (isUserRefreshing, onUserRefresh) = rememberUserPullRefreshing(isLoading) {
+        viewModel.refresh()
+    }
 
     val filtered = items.filter {
         accessoryMatchesSearch(it, searchQuery)
@@ -84,25 +98,38 @@ fun AccessoriesTab(
         },
     ) { padding ->
         PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh = { viewModel.refresh() },
+            isRefreshing = isUserRefreshing,
+            onRefresh = onUserRefresh,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            if (filtered.isEmpty()) {
-                EmptyState(
-                    title = L10n.string("no_accessories"),
-                    icon = Icons.Default.Usb,
-                )
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(filtered, key = { it.id }) { item ->
-                        AccessoryCard(
-                            accessory = item,
-                            onClick = { onAccessoryClick(item.id) },
-                        )
+            when {
+                filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                    ListLoadingPlaceholder()
+                }
+                filtered.isEmpty() -> {
+                    EmptyState(
+                        title = L10n.string("no_accessories"),
+                        icon = Icons.Default.Usb,
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(filtered, key = { it.id }) { item ->
+                            SwipeToDeleteRow(
+                                onDeleteRequest = {
+                                    itemToDelete = item
+                                    deleteState.requestDelete()
+                                },
+                            ) {
+                                AccessoryCard(
+                                    accessory = item,
+                                    onClick = { onAccessoryClick(item.id) },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -116,4 +143,27 @@ fun AccessoriesTab(
             onCreated = { viewModel.syncInBackground() },
         )
     }
+
+    val pending = itemToDelete
+    val name = pending?.decodedName ?: ""
+    val needsCheckin = (pending?.checkoutsCount ?: 0) > 0 ||
+        pending?.statusLabel?.statusMeta?.equals("deployed", ignoreCase = true) == true
+    EntityDeleteSupport(
+        state = deleteState,
+        confirmTitle = L10n.string("delete_item_confirm_title", name),
+        confirmMessage = if (needsCheckin) {
+            L10n.string("delete_item_confirm_message_with_checkin", name)
+        } else {
+            L10n.string("delete_item_confirm_message", name)
+        },
+        onConfirmDelete = {
+            val id = pending?.id ?: return@EntityDeleteSupport
+            deleteState.confirmDelete(
+                scope = scope,
+                delete = { viewModel.apiClient.deleteAccessory(id) },
+                errorFromApi = { viewModel.apiClient.lastApiMessage.value },
+                onSuccess = { itemToDelete = null },
+            )
+        },
+    )
 }

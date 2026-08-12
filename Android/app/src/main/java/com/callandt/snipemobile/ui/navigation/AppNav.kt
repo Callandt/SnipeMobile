@@ -1,8 +1,5 @@
 package com.callandt.snipemobile.ui.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -14,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -76,14 +72,6 @@ object Routes {
 fun AppNav(viewModel: AppViewModel) {
     val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsState()
 
-    // Wait for onboarding preference.
-    if (hasCompletedOnboarding == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
     val navController = rememberNavController()
     val enableDellQrScan by viewModel.enableDellQrScan.collectAsState()
     val pendingDellAdd by viewModel.pendingDellAdd.collectAsState()
@@ -107,7 +95,7 @@ fun AppNav(viewModel: AppViewModel) {
     }
 
     val startDestination = remember(hasCompletedOnboarding) {
-        if (hasCompletedOnboarding == true) Routes.Main else Routes.Welcome
+        if (hasCompletedOnboarding) Routes.Main else Routes.Welcome
     }
     fun openPhoneDetail(route: String) {
         navController.navigate(route)

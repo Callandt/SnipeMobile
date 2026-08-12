@@ -54,17 +54,32 @@ val SnipeJson: Json = Json {
 internal object SnipeDecoders {
     fun flexibleInt(element: JsonElement?): Int? {
         if (element == null || element is JsonNull) return null
-        element.jsonPrimitive.intOrNull?.let { return it }
-        element.jsonPrimitive.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()?.let { return it }
-        element.jsonPrimitive.doubleOrNull?.let { return it.toInt() }
+        if (element !is JsonPrimitive) return null
+        element.intOrNull?.let { return it }
+        element.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()?.let { return it }
+        element.doubleOrNull?.let { return it.toInt() }
         return null
+    }
+
+    /** Nested object, or null/`false`. */
+    fun <T> decodeOptionalObject(element: JsonElement?, serializer: kotlinx.serialization.DeserializationStrategy<T>): T? {
+        if (element == null || element is JsonNull) return null
+        if (element is JsonPrimitive) {
+            val asBool = element.booleanOrNull
+            if (asBool != null) return null
+            val text = element.contentOrNull?.trim().orEmpty()
+            if (text.isEmpty() || text.equals("false", ignoreCase = true)) return null
+            return null
+        }
+        return runCatching { SnipeJson.decodeFromJsonElement(serializer, element) }.getOrNull()
     }
 
     fun flexibleStringOrNumber(element: JsonElement?): String? {
         if (element == null || element is JsonNull) return null
-        element.jsonPrimitive.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-        element.jsonPrimitive.doubleOrNull?.let { return it.toString() }
-        element.jsonPrimitive.intOrNull?.let { return it.toString() }
+        if (element !is JsonPrimitive) return null
+        element.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        element.doubleOrNull?.let { return it.toString() }
+        element.intOrNull?.let { return it.toString() }
         return null
     }
 
@@ -820,38 +835,24 @@ object AccessorySerializer : KSerializer<Accessory> {
     override fun deserialize(decoder: Decoder): Accessory {
         val obj = (decoder as JsonDecoder).decodeJsonElement().jsonObject
         return Accessory(
-            id = obj["id"]?.jsonPrimitive?.intOrNull ?: 0,
-            name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
-            statusLabel = obj["status_label"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
-            assignedTo = obj["assigned_to"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
-            location = obj["location"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
-            manufacturer = obj["manufacturer"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
-            category = obj["category"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
-            company = obj["company"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
-            supplier = obj["supplier"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
+            id = SnipeDecoders.flexibleInt(obj["id"]) ?: 0,
+            name = SnipeDecoders.flexibleStringOrNumber(obj["name"]) ?: "",
+            statusLabel = SnipeDecoders.decodeOptionalObject(obj["status_label"], StatusLabel.serializer()),
+            assignedTo = SnipeDecoders.decodeOptionalObject(obj["assigned_to"], AssignedTo.serializer()),
+            location = SnipeDecoders.decodeOptionalObject(obj["location"], Location.serializer()),
+            manufacturer = SnipeDecoders.decodeOptionalObject(obj["manufacturer"], NamedId.serializer()),
+            category = SnipeDecoders.decodeOptionalObject(obj["category"], NamedId.serializer()),
+            company = SnipeDecoders.decodeOptionalObject(obj["company"], NamedId.serializer()),
+            supplier = SnipeDecoders.decodeOptionalObject(obj["supplier"], NamedId.serializer()),
             qty = SnipeDecoders.flexibleInt(obj["qty"]),
             minAmt = SnipeDecoders.flexibleInt(obj["min_amt"]),
             remaining = SnipeDecoders.flexibleInt(obj["remaining"]),
             checkoutsCount = SnipeDecoders.flexibleInt(obj["checkouts_count"]),
-            orderNumber = obj["order_number"]?.jsonPrimitive?.contentOrNull,
+            orderNumber = SnipeDecoders.flexibleStringOrNumber(obj["order_number"]),
             purchaseCost = SnipeDecoders.flexibleStringOrNumber(obj["purchase_cost"]),
             purchaseDate = SnipeDecoders.purchaseDateString(obj["purchase_date"]),
-            modelNumber = obj["model_number"]?.jsonPrimitive?.contentOrNull,
-            image = obj["image"]?.jsonPrimitive?.contentOrNull,
+            modelNumber = SnipeDecoders.flexibleStringOrNumber(obj["model_number"]),
+            image = SnipeDecoders.flexibleStringOrNumber(obj["image"]),
         )
     }
 
@@ -1439,9 +1440,10 @@ object AssetMaintenanceSerializer : KSerializer<AssetMaintenance> {
             startDate = obj["start_date"]?.takeUnless { it is JsonNull }?.let {
                 SnipeJson.decodeFromJsonElement(it)
             },
-            completionDate = obj["completion_date"]?.takeUnless { it is JsonNull }?.let {
-                SnipeJson.decodeFromJsonElement(it)
-            },
+            // 8.7+ uses expected_completion_date; older servers still send completion_date.
+            completionDate = (obj["expected_completion_date"] ?: obj["completion_date"])
+                ?.takeUnless { it is JsonNull }
+                ?.let { SnipeJson.decodeFromJsonElement(it) },
             isWarranty = obj["is_warranty"]?.jsonPrimitive?.booleanOrNull ?: false,
             url = obj["url"]?.jsonPrimitive?.contentOrNull,
             image = obj["image"]?.jsonPrimitive?.contentOrNull,
@@ -1578,7 +1580,11 @@ object MaintenanceUpdateRequestSerializer : KSerializer<MaintenanceUpdateRequest
                 value.responsiblePartyId != null -> put("responsible_party_id", JsonPrimitive(value.responsiblePartyId))
             }
             value.startDate?.let { put("start_date", JsonPrimitive(it)) }
-            value.completionDate?.let { put("completion_date", JsonPrimitive(it)) }
+            value.completionDate?.let {
+                // Send both keys: legacy servers + Snipe-IT 8.7+ expected_completion_date.
+                put("completion_date", JsonPrimitive(it))
+                put("expected_completion_date", JsonPrimitive(it))
+            }
             value.isWarranty?.let { put("is_warranty", JsonPrimitive(it)) }
             value.imageDelete?.let { put("image_delete", JsonPrimitive(it)) }
         }
@@ -1610,9 +1616,26 @@ data class AssignedToCheckedOut(
     val decodedModel: String get() = HtmlDecoder.decode(model ?: "")
     val decodedAssetTag: String get() = HtmlDecoder.decode(assetTag ?: "")
 
-    val isUser: Boolean get() = type?.lowercase(Locale.US) == "user"
-    val isLocation: Boolean get() = type?.lowercase(Locale.US) == "location"
-    val isAsset: Boolean get() = type?.lowercase(Locale.US) == "asset"
+    private val normalizedType: String
+        get() {
+            val raw = (type ?: "").lowercase(Locale.US)
+            return when {
+                raw == "user" || raw.endsWith("\\user") -> "user"
+                raw == "location" || raw.endsWith("\\location") -> "location"
+                raw == "asset" || raw.endsWith("\\asset") -> "asset"
+                else -> raw
+            }
+        }
+
+    val isUser: Boolean get() = normalizedType == "user"
+    val isLocation: Boolean get() = normalizedType == "location"
+    val isAsset: Boolean get() = normalizedType == "asset"
+
+    fun matchesUser(userId: Int): Boolean {
+        if (id != userId) return false
+        val raw = (type ?: "").trim()
+        return raw.isEmpty() || isUser
+    }
 }
 
 @Serializable

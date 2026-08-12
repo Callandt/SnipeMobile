@@ -13,6 +13,8 @@ struct AuditDetailSheet: View {
     @State private var completeNote = ""
     @State private var nextAuditDate = Date()
     @State private var setNextAuditDate = true
+    @State private var selectedImage: UIImage? = nil
+    @State private var showCamera = false
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
 
@@ -87,6 +89,7 @@ struct AuditDetailSheet: View {
                     completeNote = ""
                     nextAuditDate = AuditDateClassifier.nextAuditDateGMT(asset) ?? Date()
                     setNextAuditDate = true
+                    selectedImage = nil
                     showCompleteSheet = true
                 } label: {
                     Label(L10n.string("complete_audit"), systemImage: "checkmark.seal")
@@ -118,6 +121,8 @@ struct AuditDetailSheet: View {
                 includeDate: $setNextAuditDate,
                 includeDateLabel: L10n.string("audit_set_next_audit_date"),
                 note: $completeNote,
+                selectedImage: $selectedImage,
+                showCamera: $showCamera,
                 confirmTitle: L10n.string("complete_audit"),
                 isSaving: isCompleting,
                 onSave: { Task { await completeAudit() } }
@@ -201,7 +206,8 @@ struct AuditDetailSheet: View {
             assetTag: tag,
             assetId: asset.id,
             nextAuditDate: nextStr,
-            note: noteOpt
+            note: noteOpt,
+            image: selectedImage
         )
 
         if ok {

@@ -1,8 +1,10 @@
 package com.callandt.snipemobile.ui.main
 
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,16 +31,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.model.Component
+import com.callandt.snipemobile.data.model.Consumable
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.component.AddComponentSheet
 import com.callandt.snipemobile.ui.components.ComponentCard
 import com.callandt.snipemobile.ui.components.ConsumableCard
 import com.callandt.snipemobile.ui.components.EmptyState
+import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
+import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
 import com.callandt.snipemobile.ui.components.SearchTopBar
+import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
+import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.consumable.AddConsumableSheet
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.componentMatchesSearch
@@ -62,12 +72,21 @@ fun StockTab(
     val showComponents by viewModel.showComponentsTab.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var subtab by remember { mutableIntStateOf(0) }
     var showAddConsumable by remember { mutableStateOf(false) }
     var showAddComponent by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var consumableToDelete by remember { mutableStateOf<Consumable?>(null) }
+    var componentToDelete by remember { mutableStateOf<Component?>(null) }
+    val consumableDeleteState = rememberEntityDeleteState()
+    val componentDeleteState = rememberEntityDeleteState()
+    val (isUserRefreshing, onUserRefresh) = rememberUserPullRefreshing(isLoading) {
+        viewModel.refresh()
+    }
 
     val tabs = buildList {
         if (showConsumables) add(StockSubtab.Consumables)
@@ -106,11 +125,11 @@ fun StockTab(
         },
     ) { padding ->
         PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh = { viewModel.refresh() },
+            isRefreshing = isUserRefreshing,
+            onRefresh = onUserRefresh,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            androidx.compose.foundation.layout.Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
                 if (tabs.size > 1) {
                     TabRow(selectedTabIndex = subtab.coerceIn(0, tabs.lastIndex)) {
                         tabs.forEachIndexed { index, tab ->
@@ -133,21 +152,34 @@ fun StockTab(
                     val filtered = consumables.filter {
                         consumableMatchesSearch(it, searchQuery)
                     }
-                    if (filtered.isEmpty()) {
-                        EmptyState(
-                            title = L10n.string("no_consumables"),
-                            icon = Icons.Outlined.Inventory2,
-                        )
-                    } else {
-                        LazyColumn(
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(filtered, key = { it.id }) { item ->
-                                ConsumableCard(
-                                    consumable = item,
-                                    onClick = { onConsumableClick(item.id) },
-                                )
+                    when {
+                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                            ListLoadingPlaceholder()
+                        }
+                        filtered.isEmpty() -> {
+                            EmptyState(
+                                title = L10n.string("no_consumables"),
+                                icon = Icons.Outlined.Inventory2,
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(filtered, key = { it.id }) { item ->
+                                    SwipeToDeleteRow(
+                                        onDeleteRequest = {
+                                            consumableToDelete = item
+                                            consumableDeleteState.requestDelete()
+                                        },
+                                    ) {
+                                        ConsumableCard(
+                                            consumable = item,
+                                            onClick = { onConsumableClick(item.id) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -155,21 +187,34 @@ fun StockTab(
                     val filtered = components.filter {
                         componentMatchesSearch(it, searchQuery)
                     }
-                    if (filtered.isEmpty()) {
-                        EmptyState(
-                            title = L10n.string("no_components"),
-                            icon = Icons.Outlined.Memory,
-                        )
-                    } else {
-                        LazyColumn(
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(filtered, key = { it.id }) { item ->
-                                ComponentCard(
-                                    component = item,
-                                    onClick = { onComponentClick(item.id) },
-                                )
+                    when {
+                        filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
+                            ListLoadingPlaceholder()
+                        }
+                        filtered.isEmpty() -> {
+                            EmptyState(
+                                title = L10n.string("no_components"),
+                                icon = Icons.Outlined.Memory,
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(filtered, key = { it.id }) { item ->
+                                    SwipeToDeleteRow(
+                                        onDeleteRequest = {
+                                            componentToDelete = item
+                                            componentDeleteState.requestDelete()
+                                        },
+                                    ) {
+                                        ComponentCard(
+                                            component = item,
+                                            onClick = { onComponentClick(item.id) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -193,4 +238,45 @@ fun StockTab(
             onCreated = { viewModel.syncInBackground() },
         )
     }
+
+    val pendingConsumable = consumableToDelete
+    val consumableName = pendingConsumable?.decodedName ?: ""
+    EntityDeleteSupport(
+        state = consumableDeleteState,
+        confirmTitle = L10n.string("delete_item_confirm_title", consumableName),
+        confirmMessage = L10n.string("delete_consumable_confirm_message", consumableName),
+        onConfirmDelete = {
+            val id = pendingConsumable?.id ?: return@EntityDeleteSupport
+            consumableDeleteState.confirmDelete(
+                scope = scope,
+                delete = { viewModel.apiClient.deleteConsumable(id) },
+                errorFromApi = { viewModel.apiClient.lastApiMessage.value },
+                onSuccess = { consumableToDelete = null },
+            )
+        },
+    )
+
+    val pendingComponent = componentToDelete
+    val componentName = pendingComponent?.decodedName ?: ""
+    val qty = pendingComponent?.qty ?: 0
+    val remaining = pendingComponent?.remaining ?: qty
+    val hasCheckedOut = qty > remaining
+    EntityDeleteSupport(
+        state = componentDeleteState,
+        confirmTitle = L10n.string("delete_item_confirm_title", componentName),
+        confirmMessage = if (hasCheckedOut) {
+            L10n.string("delete_component_confirm_message_with_checkin", componentName)
+        } else {
+            L10n.string("delete_item_confirm_message", componentName)
+        },
+        onConfirmDelete = {
+            val id = pendingComponent?.id ?: return@EntityDeleteSupport
+            componentDeleteState.confirmDelete(
+                scope = scope,
+                delete = { viewModel.apiClient.deleteComponent(id) },
+                errorFromApi = { viewModel.apiClient.lastApiMessage.value },
+                onSuccess = { componentToDelete = null },
+            )
+        },
+    )
 }

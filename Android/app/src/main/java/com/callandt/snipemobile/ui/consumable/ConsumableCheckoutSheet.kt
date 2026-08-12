@@ -20,6 +20,7 @@ import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.userPickerSearchText
+import com.callandt.snipemobile.ui.util.usersForNamePicker
 import kotlinx.coroutines.launch
 
 @Composable
@@ -30,8 +31,10 @@ fun ConsumableCheckoutSheet(
     onSuccess: () -> Unit = {},
 ) {
     val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val lastApiMessage by viewModel.lastApiMessage.collectAsState()
     val scope = rememberCoroutineScope()
+    val pickerUsers = remember(users, currentUser) { usersForNamePicker(users, currentUser) }
 
     var selectedUserId by remember { mutableIntStateOf(0) }
     var note by remember { mutableStateOf("") }
@@ -67,7 +70,7 @@ fun ConsumableCheckoutSheet(
         ) {
             SearchablePickerField(
                 label = L10n.string("select_user_short"),
-                items = users.map {
+                items = pickerUsers.map {
                     PickerItem(it.id, it.decodedName, searchText = userPickerSearchText(it))
                 },
                 selectedId = selectedUserId.takeIf { it > 0 },
