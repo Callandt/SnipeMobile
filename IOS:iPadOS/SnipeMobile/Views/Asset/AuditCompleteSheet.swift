@@ -80,7 +80,7 @@ struct CompletionActionSheet: View {
                         .padding(.vertical, 12)
                 }
                 .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedCornerShape(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 if let selectedImage, let showCamera {
                     Form {

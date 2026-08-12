@@ -3678,7 +3678,7 @@ class SnipeITAPIClient: ObservableObject {
                 } else if let imageSource = imagePayload.imageSource {
                     // Same fallback as maintenance/asset image uploads.
                     body["image_source"] = imageSource
-                    var request = makeMaintenanceJSONRequest(
+                    let request = makeMaintenanceJSONRequest(
                         url: url,
                         method: "POST",
                         bodyData: try JSONSerialization.data(withJSONObject: body)
@@ -3692,7 +3692,7 @@ class SnipeITAPIClient: ObservableObject {
                     return false
                 }
             } else {
-                var request = makeMaintenanceJSONRequest(
+                let request = makeMaintenanceJSONRequest(
                     url: url,
                     method: "POST",
                     bodyData: try JSONSerialization.data(withJSONObject: body)
