@@ -57,6 +57,7 @@ import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.listFilterOptions
 import com.callandt.snipemobile.ui.util.locationMatchesSearch
 import com.callandt.snipemobile.ui.util.userMatchesSearch
+import com.callandt.snipemobile.ui.util.usersSortedWithCurrentFirst
 
 private enum class DirectorySubtab { Users, Locations }
 
@@ -71,6 +72,7 @@ fun DirectoryTab(
     onOpenScanner: () -> Unit = {},
 ) {
     val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val locations by viewModel.locations.collectAsState()
     val companies by viewModel.companies.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
@@ -173,9 +175,12 @@ fun DirectoryTab(
                     onSelect = { subtab = it },
                 )
                 if (currentSubtab == DirectorySubtab.Users) {
-                    val filtered = users
-                        .filter { userFilter.matches(it, userDimensions) }
-                        .filter { userMatchesSearch(it, searchQuery) }
+                    val filtered = usersSortedWithCurrentFirst(
+                        users
+                            .filter { userFilter.matches(it, userDimensions) }
+                            .filter { userMatchesSearch(it, searchQuery) },
+                        currentUser,
+                    )
                     ListCountHeader(
                         count = filtered.size,
                         icon = Icons.Outlined.Groups,

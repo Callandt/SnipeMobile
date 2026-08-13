@@ -318,9 +318,10 @@ struct AddAssetSheet: View {
                 .pickerStyle(.segmented)
 
                 if checkoutTargetType == .user {
-                    let sortedUsers = apiClient.users.sorted {
-                        $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
-                    }
+                    let sortedUsers = apiClient.sortedUsersPinningCurrent(
+                        apiClient.users,
+                        includeCurrentIfMissing: true
+                    )
                     AdaptivePickerRow(
                         title: L10n.string("select_user_short"),
                         items: sortedUsers.map { (value: $0.id, label: $0.decodedName) },

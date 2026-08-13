@@ -255,11 +255,14 @@ fun userPickerSearchText(user: User): String =
         user.decodedNotes,
     ).filter { it.isNotBlank() }.joinToString(" ")
 
-/** Logged-in API user first, then A–Z. */
-fun usersForNamePicker(users: List<User>, currentUser: User?): List<User> {
-    val pinned = currentUser?.let { me ->
-        users.firstOrNull { it.id == me.id } ?: me
-    }
+/** Current user first, then A-Z. */
+fun usersSortedWithCurrentFirst(
+    users: List<User>,
+    currentUser: User?,
+    includeCurrentIfMissing: Boolean = false,
+): List<User> {
+    val fromList = currentUser?.let { me -> users.firstOrNull { it.id == me.id } }
+    val pinned = fromList ?: currentUser?.takeIf { includeCurrentIfMissing }
     val pinnedId = pinned?.id
     val rest = users
         .asSequence()
@@ -268,6 +271,10 @@ fun usersForNamePicker(users: List<User>, currentUser: User?): List<User> {
         .toList()
     return if (pinned != null) listOf(pinned) + rest else rest
 }
+
+/** Current user first, then A-Z. */
+fun usersForNamePicker(users: List<User>, currentUser: User?): List<User> =
+    usersSortedWithCurrentFirst(users, currentUser, includeCurrentIfMissing = true)
 
 fun locationPickerSearchText(location: Location): String =
     listOf(

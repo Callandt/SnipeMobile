@@ -24,8 +24,10 @@ import com.callandt.snipemobile.ui.asset.FormSectionTitle
 import com.callandt.snipemobile.ui.asset.formatApiDate
 import com.callandt.snipemobile.ui.asset.normalizeDecimalForApi
 import com.callandt.snipemobile.ui.asset.parseApiDate
+import com.callandt.snipemobile.ui.components.CreatableSearchablePickerField
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
+import com.callandt.snipemobile.ui.management.ManagementEntity
 import com.callandt.snipemobile.ui.util.L10n
 import kotlinx.coroutines.launch
 
@@ -120,7 +122,7 @@ private fun LicenseFormSheet(
     val canSave = name.trim().isNotEmpty() && selectedCategoryId > 0 && seats >= 1
 
     LaunchedEffect(Unit) {
-        if (categories.isEmpty()) viewModel.apiClient.fetchCategories()
+        if (categories.isEmpty() || licenseCategories.isEmpty()) viewModel.apiClient.fetchCategories()
         if (companies.isEmpty()) viewModel.apiClient.fetchCompanies()
         if (manufacturers.isEmpty()) viewModel.apiClient.fetchManufacturers()
         if (suppliers.isEmpty()) viewModel.apiClient.fetchSuppliers()
@@ -211,10 +213,14 @@ private fun LicenseFormSheet(
                 label = { Text(L10n.string("product_key")) },
                 modifier = Modifier.fillMaxWidth(),
             )
-            SearchablePickerField(
+            CreatableSearchablePickerField(
                 label = L10n.fieldLabel("category", required = true),
                 items = licenseCategories.map { PickerItem(it.id, it.decodedName) },
                 selectedId = selectedCategoryId.takeIf { it > 0 },
+                viewModel = viewModel,
+                placeholder = L10n.string("choose_category"),
+                creatableEntity = ManagementEntity.Categories,
+                createDefaults = mapOf("category_type" to "license"),
                 onSelected = { selectedCategoryId = it.id },
             )
             SearchablePickerField(

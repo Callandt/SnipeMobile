@@ -69,7 +69,9 @@ struct AddComponentSheet: View {
     }
 
     private func setupOnAppear() {
-        if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
+        if apiClient.categories.isEmpty || apiClient.categories(for: "component").isEmpty {
+            Task { await apiClient.fetchCategories() }
+        }
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }
         Task { await apiClient.fetchCompanies() }
         Task { await apiClient.fetchManufacturers() }

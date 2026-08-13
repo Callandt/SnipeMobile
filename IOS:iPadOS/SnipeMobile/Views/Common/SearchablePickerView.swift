@@ -176,6 +176,21 @@ struct AdaptivePickerRow<Value: Hashable>: View {
 
 // MARK: - Inline management create
 
+private func mergingPendingPickerItem<Value: Hashable>(
+    _ items: [(value: Value, label: String)],
+    pending: (value: Value, label: String)?
+) -> [(value: Value, label: String)] {
+    guard let pending else { return items }
+    if items.contains(where: { $0.value == pending.value }) { return items }
+    return items + [pending]
+}
+
+private func pickerValue<Value: Hashable>(fromCreatedId newId: Int) -> Value? {
+    if Value.self == String.self { return String(newId) as? Value }
+    if Value.self == Int.self { return newId as? Value }
+    return nil
+}
+
 /// Picker row with optional inline create via management forms, locations, or users.
 struct CreatableAdaptivePickerRow<Value: Hashable>: View {
     let title: String
@@ -191,8 +206,13 @@ struct CreatableAdaptivePickerRow<Value: Hashable>: View {
     @State private var showManagementForm = false
     @State private var showLocationForm = false
     @State private var showUserForm = false
+    @State private var pendingCreated: (value: Value, label: String)? = nil
 
     private var canCreate: Bool { creatableEntity != nil || creatableLocation || creatableUser }
+
+    private var displayedItems: [(value: Value, label: String)] {
+        mergingPendingPickerItem(items, pending: pendingCreated)
+    }
 
     private var addNewLabel: String? {
         if let creatableEntity {
@@ -206,7 +226,7 @@ struct CreatableAdaptivePickerRow<Value: Hashable>: View {
     var body: some View {
         AdaptivePickerRow(
             title: title,
-            items: items,
+            items: displayedItems,
             selection: $selection,
             emptyOption: emptyOption,
             addNewLabel: addNewLabel,
@@ -256,12 +276,25 @@ struct CreatableAdaptivePickerRow<Value: Hashable>: View {
     }
 
     private func applyCreatedId(_ newId: Int?) {
-        guard let newId else { return }
-        if Value.self == String.self {
-            selection = (String(newId) as! Value)
-        } else if Value.self == Int.self {
-            selection = (newId as! Value)
+        guard let newId, let newValue: Value = pickerValue(fromCreatedId: newId) else { return }
+        let label = displayedItems.first(where: { $0.value == newValue })?.label
+            ?? createdLabel(for: newId)
+            ?? "#\(newId)"
+        pendingCreated = (newValue, label)
+        selection = newValue
+    }
+
+    private func createdLabel(for id: Int) -> String? {
+        if creatableEntity == .categories {
+            return apiClient.categories.first(where: { $0.id == id }).map { HTMLDecoder.decode($0.name) }
         }
+        if creatableLocation {
+            return apiClient.locations.first(where: { $0.id == id })?.decodedName
+        }
+        if creatableUser {
+            return apiClient.users.first(where: { $0.id == id })?.decodedName
+        }
+        return nil
     }
 }
 
@@ -280,8 +313,13 @@ struct CreatableSearchablePickerRow<Value: Hashable>: View {
     @State private var showManagementForm = false
     @State private var showLocationForm = false
     @State private var showUserForm = false
+    @State private var pendingCreated: (value: Value, label: String)? = nil
 
     private var canCreate: Bool { creatableEntity != nil || creatableLocation || creatableUser }
+
+    private var displayedItems: [(value: Value, label: String)] {
+        mergingPendingPickerItem(items, pending: pendingCreated)
+    }
 
     private var addNewLabel: String? {
         if let creatableEntity {
@@ -295,7 +333,7 @@ struct CreatableSearchablePickerRow<Value: Hashable>: View {
     var body: some View {
         SearchablePickerRow(
             title: title,
-            items: items,
+            items: displayedItems,
             selection: $selection,
             emptyOption: emptyOption,
             addNewLabel: addNewLabel,
@@ -345,11 +383,24 @@ struct CreatableSearchablePickerRow<Value: Hashable>: View {
     }
 
     private func applyCreatedId(_ newId: Int?) {
-        guard let newId else { return }
-        if Value.self == String.self {
-            selection = (String(newId) as! Value)
-        } else if Value.self == Int.self {
-            selection = (newId as! Value)
+        guard let newId, let newValue: Value = pickerValue(fromCreatedId: newId) else { return }
+        let label = displayedItems.first(where: { $0.value == newValue })?.label
+            ?? createdLabel(for: newId)
+            ?? "#\(newId)"
+        pendingCreated = (newValue, label)
+        selection = newValue
+    }
+
+    private func createdLabel(for id: Int) -> String? {
+        if creatableEntity == .categories {
+            return apiClient.categories.first(where: { $0.id == id }).map { HTMLDecoder.decode($0.name) }
         }
+        if creatableLocation {
+            return apiClient.locations.first(where: { $0.id == id })?.decodedName
+        }
+        if creatableUser {
+            return apiClient.users.first(where: { $0.id == id })?.decodedName
+        }
+        return nil
     }
 }

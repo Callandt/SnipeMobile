@@ -563,11 +563,13 @@ struct ContentView: View {
             }
 
             // QR = Snipe-IT URL; 1D barcode = literal tag (keeps leading zeros).
-            if scanResult.type == .qr, let url = URL(string: scannedValue) {
-                if let link = SnipeITQRLink.parse(from: url) {
+            if scanResult.type == .qr {
+                if let link = SnipeITQRLink.parse(scannedValue) {
                     handleSnipeITQRLink(link)
                     return
                 }
+            }
+            if scanResult.type == .qr, let url = URL(string: scannedValue) {
 
                 // Dell QR: service tag. Look up by serial.
                 if enableDellQrScan,
@@ -652,14 +654,26 @@ struct ContentView: View {
             }
 
         case .hardware(let id):
-            pendingQRLink = link
             selectedTab = .hardware
-            if apiClient.assets.first(where: { $0.id == id }) == nil {
+            if apiClient.assets.first(where: { $0.id == id }) != nil {
+                pendingQRLink = link
+            } else {
                 Task {
                     if apiClient.assets.isEmpty {
                         await apiClient.fetchPrimaryThenBackground()
                     }
-                    await resolveMissingQRLink(link, id: id)
+                    if let asset = await apiClient.resolveHardwareFromQR(id: id) {
+                        await MainActor.run {
+                            pendingQRLink = .hardware(id: asset.id)
+                            selectedTab = .hardware
+                        }
+                    } else {
+                        await MainActor.run {
+                            pendingQRLink = nil
+                            scanErrorMessage = link.notFoundMessage(id: id)
+                            showScanErrorAlert = true
+                        }
+                    }
                 }
             }
 
@@ -720,14 +734,7 @@ struct ContentView: View {
         let resolved: Bool
         switch link {
         case .hardware:
-            if apiClient.assets.first(where: { $0.id == id }) != nil {
-                resolved = true
-            } else if let detailed = await apiClient.fetchHardwareDetails(assetId: id) {
-                apiClient.applyUpdatedAsset(detailed)
-                resolved = true
-            } else {
-                resolved = false
-            }
+            resolved = await apiClient.resolveHardwareFromQR(id: id) != nil
         case .component:
             if apiClient.components.first(where: { $0.id == id }) != nil {
                 resolved = true
@@ -2932,8 +2939,10 @@ private struct UsersContent: View {
         if filter.isActive {
             items = items.filter { filter.matches($0, dimensions: dimensions) }
         }
-        if searchText.isEmpty { return items }
-        return items.filter { SearchHelpers.userMatches($0, query: searchText) }
+        if !searchText.isEmpty {
+            items = items.filter { SearchHelpers.userMatches($0, query: searchText) }
+        }
+        return apiClient.sortedUsersPinningCurrent(items)
     }
 
     var body: some View {

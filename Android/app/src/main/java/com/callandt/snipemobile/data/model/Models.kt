@@ -284,13 +284,52 @@ object AssetModelRowSerializer : KSerializer<AssetModelRow> {
     }
 }
 
-@Serializable
+@Serializable(with = CategoryRowSerializer::class)
 data class CategoryRow(
     val id: Int,
     val name: String,
     @SerialName("category_type") val categoryType: String? = null,
 ) {
     val decodedName: String get() = HtmlDecoder.decode(name)
+}
+
+object CategoryRowSerializer : KSerializer<CategoryRow> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("CategoryRow") {
+        element<Int>("id")
+        element<String>("name")
+        element<String?>("category_type", isOptional = true)
+    }
+
+    override fun deserialize(decoder: Decoder): CategoryRow {
+        val obj = (decoder as JsonDecoder).decodeJsonElement().jsonObject
+        return CategoryRow(
+            id = SnipeDecoders.flexibleInt(obj["id"]) ?: 0,
+            name = SnipeDecoders.flexibleStringOrNumber(obj["name"]).orEmpty(),
+            categoryType = categoryTypeFrom(obj["category_type"] ?: obj["type"]),
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: CategoryRow) {
+        val obj = buildJsonObject {
+            put("id", value.id)
+            put("name", value.name)
+            value.categoryType?.let { put("category_type", it) }
+        }
+        (encoder as JsonEncoder).encodeJsonElement(obj)
+    }
+
+    private fun categoryTypeFrom(element: JsonElement?): String? {
+        if (element == null || element is JsonNull) return null
+        if (element is JsonPrimitive) {
+            return element.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+        }
+        if (element is JsonObject) {
+            return SnipeDecoders.flexibleStringOrNumber(element["type"])
+                ?: SnipeDecoders.flexibleStringOrNumber(element["id"])?.takeIf { it.toIntOrNull() == null }
+                ?: SnipeDecoders.flexibleStringOrNumber(element["name"])
+        }
+        return null
+    }
 }
 
 typealias Category = NamedId

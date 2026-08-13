@@ -64,7 +64,7 @@ struct AccessoryEditSheet: View {
                     purchaseDate = d
                     hasPurchaseDate = true
                 }
-                if apiClient.categories.isEmpty {
+                if apiClient.categories.isEmpty || apiClient.categories(for: "accessory").isEmpty {
                     Task { await apiClient.fetchCategories() }
                 }
                 if apiClient.locations.isEmpty {
@@ -73,17 +73,19 @@ struct AccessoryEditSheet: View {
                 Task { await apiClient.fetchCompanies() }
                 Task { await apiClient.fetchManufacturers() }
                 Task { await apiClient.fetchSuppliers() }
-                let validCategoryIds = Set(apiClient.categories.map(\.id))
+                let accessoryCategories = apiClient.categories(for: "accessory")
+                let validCategoryIds = Set(accessoryCategories.map(\.id))
                 if selectedCategoryId != 0, !validCategoryIds.contains(selectedCategoryId) {
-                    selectedCategoryId = apiClient.categories.first?.id ?? 0
+                    selectedCategoryId = accessoryCategories.first?.id ?? 0
                 }
-                if selectedCategoryId == 0, let first = apiClient.categories.first {
+                if selectedCategoryId == 0, let first = accessoryCategories.first {
                     selectedCategoryId = first.id
                 }
             }
             .onChange(of: apiClient.categories.count) { _, _ in
-                if selectedCategoryId != 0, !apiClient.categories.contains(where: { $0.id == selectedCategoryId }) {
-                    selectedCategoryId = apiClient.categories.first?.id ?? 0
+                let accessoryCategories = apiClient.categories(for: "accessory")
+                if selectedCategoryId != 0, !accessoryCategories.contains(where: { $0.id == selectedCategoryId }) {
+                    selectedCategoryId = accessoryCategories.first?.id ?? 0
                 }
             }
             .alert(L10n.string("result"), isPresented: $showResult) {
@@ -99,7 +101,7 @@ struct AccessoryEditSheet: View {
             TextField(L10n.fieldLabel("name", required: true), text: $name)
             CreatableAdaptivePickerRow(
                 title: L10n.fieldLabel("category", required: true),
-                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                items: apiClient.categories(for: "accessory").map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedCategoryId,
                 emptyOption: (0, L10n.string("choose_category")),
                 apiClient: apiClient,

@@ -24,8 +24,10 @@ import com.callandt.snipemobile.ui.asset.FormSectionTitle
 import com.callandt.snipemobile.ui.asset.formatApiDate
 import com.callandt.snipemobile.ui.asset.normalizeDecimalForApi
 import com.callandt.snipemobile.ui.asset.parseApiDate
+import com.callandt.snipemobile.ui.components.CreatableSearchablePickerField
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
+import com.callandt.snipemobile.ui.management.ManagementEntity
 import com.callandt.snipemobile.ui.util.L10n
 import kotlinx.coroutines.launch
 
@@ -108,7 +110,7 @@ private fun AccessoryFormSheet(
     val canSave = name.trim().isNotEmpty() && selectedCategoryId > 0
 
     LaunchedEffect(Unit) {
-        if (categories.isEmpty()) viewModel.apiClient.fetchCategories()
+        if (categories.isEmpty() || accessoryCategories.isEmpty()) viewModel.apiClient.fetchCategories()
         if (locations.isEmpty()) viewModel.apiClient.fetchLocations()
         if (companies.isEmpty()) viewModel.apiClient.fetchCompanies()
         if (manufacturers.isEmpty()) viewModel.apiClient.fetchManufacturers()
@@ -180,10 +182,14 @@ private fun AccessoryFormSheet(
                 label = { Text(L10n.fieldLabel("name", required = true)) },
                 modifier = Modifier.fillMaxWidth(),
             )
-            SearchablePickerField(
+            CreatableSearchablePickerField(
                 label = L10n.fieldLabel("category", required = true),
                 items = categoryItems,
                 selectedId = selectedCategoryId.takeIf { it > 0 },
+                viewModel = viewModel,
+                placeholder = L10n.string("choose_category"),
+                creatableEntity = ManagementEntity.Categories,
+                createDefaults = mapOf("category_type" to "accessory"),
                 onSelected = { selectedCategoryId = it.id },
             )
             OutlinedTextField(

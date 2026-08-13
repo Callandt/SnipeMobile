@@ -20,49 +20,102 @@ sealed class SnipeITQRLink {
     }
 
     companion object {
-        fun parse(url: URI): SnipeITQRLink? {
-            val lowerPath = url.path.lowercase()
+        private val reservedTokens = setOf(
+            "bytag", "create", "bulkedit", "bulkdelete", "bulkaudit", "labels",
+            "audit", "requested", "clone", "restore", "import", "export",
+            "quickscan", "quickadd", "checkout", "checkin", "edit", "delete",
+            "view", "files", "history", "maintenances", "api", "v1",
+        )
 
-            if (lowerPath.contains("/hardware/bytag")) {
-                val query = url.rawQuery.orEmpty()
-                val tag = query.split("&")
-                    .mapNotNull { part ->
-                        val idx = part.indexOf('=')
-                        if (idx <= 0) return@mapNotNull null
-                        val name = part.substring(0, idx).lowercase()
-                        if (name != "assettag" && name != "asset_tag") return@mapNotNull null
-                        URLDecoder.decode(part.substring(idx + 1), Charsets.UTF_8.name())
-                    }
-                    .firstOrNull()
-                    ?.trim()
-                    .orEmpty()
-                return if (tag.isNotEmpty()) HardwareByTag(tag) else null
+        fun parse(url: URI): SnipeITQRLink? = parse(url.toString())
+
+        /** Parse Snipe-IT item URLs. */
+        fun parse(urlString: String): SnipeITQRLink? {
+            val text = urlString.trim()
+            if (text.isEmpty()) return null
+            return parsePath(pathLike(text), queryString(text))
+        }
+
+        private fun parsePath(path: String, query: String?): SnipeITQRLink? {
+            if (path.contains("hardware", ignoreCase = true)) {
+                assetTagFromQuery(query)?.let { return HardwareByTag(it) }
             }
 
-            val segments = url.path.split("/").filter { it.isNotEmpty() }
-            for (index in 0 until segments.size - 1) {
-                val segment = segments[index].lowercase()
-                val next = segments[index + 1]
+            val segments = path
+                .split('/', '#')
+                .map { decode(it) }
+                .filter { it.isNotEmpty() }
 
-                if (segment == "ht") {
-                    val tag = URLDecoder.decode(next, Charsets.UTF_8.name()).trim()
-                    return if (tag.isNotEmpty()) HardwareByTag(tag) else null
+            for (index in segments.indices) {
+                val segment = segments[index].lowercase()
+                val next = segments.getOrNull(index + 1)
+
+                if (segment == "hardware" && next?.equals("bytag", ignoreCase = true) == true) {
+                    val tag = segments.getOrNull(index + 2)
+                    if (!tag.isNullOrEmpty() && !isReserved(tag)) return HardwareByTag(tag)
+                    return assetTagFromQuery(query)?.let { HardwareByTag(it) }
                 }
 
-                val id = next.toIntOrNull() ?: continue
-                return when (segment) {
-                    "hardware" -> Hardware(id)
-                    "components" -> Component(id)
-                    "accessories" -> Accessory(id)
-                    "licenses" -> License(id)
-                    "consumables" -> Consumable(id)
-                    else -> continue
+                if (next.isNullOrEmpty() || isReserved(next)) continue
+
+                if (segment == "ht") return HardwareByTag(next)
+
+                when (segment) {
+                    "hardware" -> return hardwareToken(next)
+                    "components" -> next.toIntOrNull()?.let { return Component(it) }
+                    "accessories" -> next.toIntOrNull()?.let { return Accessory(it) }
+                    "licenses" -> next.toIntOrNull()?.let { return License(it) }
+                    "consumables" -> next.toIntOrNull()?.let { return Consumable(it) }
                 }
             }
             return null
         }
 
-        fun parse(urlString: String): SnipeITQRLink? =
-            runCatching { parse(URI(urlString)) }.getOrNull()
+        /** Digits = id; anything else = asset tag. */
+        private fun hardwareToken(token: String): SnipeITQRLink {
+            val id = token.toIntOrNull()
+            return if (id != null && id.toString() == token) Hardware(id) else HardwareByTag(token)
+        }
+
+        private fun isReserved(token: String): Boolean =
+            token.lowercase() in reservedTokens
+
+        private fun pathLike(text: String): String {
+            var value = text
+            val scheme = value.indexOf("://")
+            if (scheme >= 0) {
+                value = value.substring(scheme + 3)
+                val hostEnd = value.indexOfFirst { it == '/' || it == '?' || it == '#' }
+                value = if (hostEnd >= 0) value.substring(hostEnd) else ""
+            }
+            val queryStart = value.indexOf('?')
+            if (queryStart >= 0) value = value.substring(0, queryStart)
+            return value.replace('#', '/')
+        }
+
+        private fun queryString(text: String): String? {
+            val start = text.indexOf('?')
+            if (start < 0) return null
+            var query = text.substring(start + 1)
+            val hash = query.indexOf('#')
+            if (hash >= 0) query = query.substring(0, hash)
+            return query
+        }
+
+        private fun assetTagFromQuery(query: String?): String? {
+            if (query.isNullOrEmpty()) return null
+            for (part in query.split('&')) {
+                val idx = part.indexOf('=')
+                if (idx <= 0) continue
+                val name = part.substring(0, idx).lowercase()
+                if (name != "assettag" && name != "asset_tag") continue
+                val tag = decode(part.substring(idx + 1)).trim()
+                if (tag.isNotEmpty()) return tag
+            }
+            return null
+        }
+
+        private fun decode(value: String): String =
+            runCatching { URLDecoder.decode(value, Charsets.UTF_8.name()) }.getOrDefault(value)
     }
 }

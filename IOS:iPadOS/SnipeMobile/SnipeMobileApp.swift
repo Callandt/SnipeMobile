@@ -721,8 +721,10 @@ struct MainSplitView: View {
         return apiClient.components.filter { SearchHelpers.componentMatches($0, query: searchText) }
     }
     var filteredUsers: [User] {
-        if searchText.isEmpty { return apiClient.users }
-        return apiClient.users.filter { SearchHelpers.userMatches($0, query: searchText) }
+        let items = searchText.isEmpty
+            ? apiClient.users
+            : apiClient.users.filter { SearchHelpers.userMatches($0, query: searchText) }
+        return apiClient.sortedUsersPinningCurrent(items)
     }
     var filteredLocations: [Location] {
         if searchText.isEmpty { return apiClient.locations }
@@ -2502,11 +2504,13 @@ struct MainSplitView: View {
                 }
             }
 
-            if scanResult.type == .qr, let url = URL(string: scannedValue) {
-                if let link = SnipeITQRLink.parse(from: url) {
+            if scanResult.type == .qr {
+                if let link = SnipeITQRLink.parse(scannedValue) {
                     Task { await openSnipeITQRLink(link) }
                     return
                 }
+            }
+            if scanResult.type == .qr, let url = URL(string: scannedValue) {
 
                 if enableDellQrScan,
                    let host = url.host, host.lowercased().contains("dell"),
@@ -2593,12 +2597,8 @@ struct MainSplitView: View {
             if apiClient.assets.first(where: { $0.id == id }) == nil, apiClient.assets.isEmpty {
                 await apiClient.fetchPrimaryThenBackground()
             }
-            if let asset = apiClient.assets.first(where: { $0.id == id }) {
+            if let asset = await apiClient.resolveHardwareFromQR(id: id) {
                 selectedAsset = asset
-                selectedAssetDetailTab = 0
-            } else if let detailed = await apiClient.fetchHardwareDetails(assetId: id) {
-                apiClient.applyUpdatedAsset(detailed)
-                selectedAsset = detailed
                 selectedAssetDetailTab = 0
             } else {
                 scanErrorMessage = link.notFoundMessage(id: id)

@@ -80,7 +80,7 @@ struct LicenseEditSheet: View {
                 .disableAutocorrection(true)
             CreatableAdaptivePickerRow(
                 title: L10n.fieldLabel("category", required: true),
-                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                items: apiClient.categories(for: "license").map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedCategoryId,
                 emptyOption: (0, L10n.string("choose_category")),
                 apiClient: apiClient,
@@ -217,7 +217,9 @@ struct LicenseEditSheet: View {
             hasTerminationDate = true
         }
 
-        if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
+        if apiClient.categories.isEmpty || apiClient.categories(for: "license").isEmpty {
+            Task { await apiClient.fetchCategories() }
+        }
         Task { await apiClient.fetchCompanies() }
         Task { await apiClient.fetchManufacturers() }
         Task { await apiClient.fetchSuppliers() }

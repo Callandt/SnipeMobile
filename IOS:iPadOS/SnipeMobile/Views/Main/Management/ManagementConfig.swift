@@ -50,6 +50,58 @@ enum ManagementValue {
         default: return "0"
         }
     }
+
+    static let categoryTypeSlugs = ["asset", "accessory", "consumable", "component", "license"]
+
+    /// Machine slug from a list/detail row (`accessory`, not the localized name).
+    static func categoryTypeSlug(from row: [String: Any]) -> String {
+        canonicalizeCategoryType(categoryTypeRaw(row["category_type"] ?? row["type"]))
+    }
+
+    static func categoryTypeLabel(from row: [String: Any]) -> String? {
+        categoryTypeLabel(categoryTypeSlug(from: row))
+    }
+
+    static func categoryTypeLabel(_ raw: String) -> String? {
+        let slug = canonicalizeCategoryType(raw)
+        if slug.isEmpty { return nil }
+        if categoryTypeSlugs.contains(slug) {
+            return L10n.string("category_type_\(slug)")
+        }
+        return slug
+    }
+
+    private static func categoryTypeRaw(_ any: Any?) -> String {
+        if let dict = any as? [String: Any] {
+            let type = scalarString(dict["type"])
+            if !type.isEmpty { return type }
+            let id = scalarString(dict["id"])
+            if !id.isEmpty, Int(id) == nil { return id }
+            let name = scalarString(dict["name"])
+            if !name.isEmpty { return name }
+            return id
+        }
+        return scalarString(any)
+    }
+
+    static func canonicalizeCategoryType(_ raw: String) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.isEmpty { return "" }
+        if let slug = L10n.categoryTypeSlug(fromLocalized: raw) { return slug }
+        let aliases: [String: String] = [
+            "assets": "asset", "hardware": "asset",
+            "accessories": "accessory", "accessoires": "accessory",
+            "accesorios": "accessory", "acessórios": "accessory", "accessori": "accessory",
+            "consumables": "consumable", "verbruiksartikelen": "consumable",
+            "consommables": "consumable", "consumibles": "consumable",
+            "consumíveis": "consumable", "consumabili": "consumable",
+            "components": "component", "componenten": "component",
+            "composants": "component", "componentes": "component",
+            "licenses": "license", "licenties": "license", "licences": "license",
+            "licencias": "license", "licenças": "license", "licenze": "license",
+        ]
+        return aliases[value] ?? value
+    }
 }
 
 // MARK: - Picker option sources
@@ -86,7 +138,8 @@ enum ManagementOptionSource {
         case .locations:
             return client.locations.map { ManagementOption(id: String($0.id), label: $0.decodedName) }
         case .users:
-            return client.users.map { ManagementOption(id: String($0.id), label: $0.decodedName) }
+            return client.sortedUsersPinningCurrent(client.users, includeCurrentIfMissing: true)
+                .map { ManagementOption(id: String($0.id), label: $0.decodedName) }
         case .fieldsets:
             return (client.fieldsets ?? []).map { ManagementOption(id: String($0.id), label: HTMLDecoder.decode($0.name)) }
         case .depreciations:
@@ -387,7 +440,7 @@ extension ManagementEntity {
                 fields: [
                     ManagementFormField(bodyKey: "name", titleKey: "name", kind: .text, required: true),
                     ManagementFormField(bodyKey: "category_type", titleKey: "mgmt_category_type", kind: .picker(.categoryType), required: true,
-                                        rowValueReader: { ManagementValue.scalarString($0["category_type"]).lowercased() }),
+                                        rowValueReader: { ManagementValue.categoryTypeSlug(from: $0) }),
                     ManagementFormField(bodyKey: "use_default_eula", titleKey: "mgmt_use_default_eula", kind: .toggle,
                                         rowValueReader: { ManagementValue.boolString($0["use_default_eula"]) }),
                     ManagementFormField(bodyKey: "eula_text", titleKey: "mgmt_eula_text", kind: .multiline),
@@ -395,8 +448,7 @@ extension ManagementEntity {
                     ManagementFormField(bodyKey: "checkin_email", titleKey: "mgmt_checkin_email", kind: .toggle)
                 ],
                 subtitleReader: { row in
-                    let type = ManagementValue.scalarString(row["category_type"]).lowercased()
-                    return type.isEmpty ? nil : L10n.string("category_type_\(type)")
+                    ManagementValue.categoryTypeLabel(from: row)
                 }
             )
 

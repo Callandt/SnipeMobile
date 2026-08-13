@@ -296,6 +296,13 @@ struct ManagementFormView: View {
 
         if result.success {
             await refreshBackingList()
+            if entity == .categories, let newId = result.id {
+                apiClient.upsertCategory(
+                    id: newId,
+                    name: values["name"] ?? "",
+                    categoryType: values["category_type"]
+                )
+            }
             if let onCreated {
                 onCreated(result.id)
             }

@@ -404,7 +404,7 @@ internal object L10n_en {
         "mgmt_custom_regex_hint" to "Example: regex:/^[0-9]{15}\$/",
         "mgmt_default_label" to "Default label",
         "mgmt_delete_failed_title" to "Could not delete",
-        "mgmt_delete_message" to "“%s” will be permanently deleted. This can't be undone.\n\nIf this item is still used by assets, models or other records, Snipe-IT will block the delete — clear those links first.",
+        "mgmt_delete_message" to "\"%s\" will be permanently deleted. This can't be undone.\n\nIf this item is still used by assets, models or other records, Snipe-IT will block the delete. Clear those links first.",
         "mgmt_delete_still_in_use" to "This item is still in use elsewhere in Snipe-IT. Remove or reassign all linked assets, models, users or other records first, then try again.",
         "mgmt_delete_title" to "Delete %s?",
         "mgmt_deleted" to "Deleted.",

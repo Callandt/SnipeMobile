@@ -478,6 +478,15 @@ fun ManagementFormSheet(
                     isSaving = false
                     if (result.success) {
                         refreshBackingList(entity, viewModel)
+                        if (entity == ManagementEntity.Categories) {
+                            result.id?.let { newId ->
+                                viewModel.apiClient.upsertCategory(
+                                    id = newId,
+                                    name = values["name"].orEmpty(),
+                                    categoryType = values["category_type"],
+                                )
+                            }
+                        }
                         if (!isEdit) {
                             onCreated(
                                 result.id,
@@ -621,7 +630,9 @@ private fun pickerOptionsForField(
 
     return when (field.pickerSource) {
         ManagementPickerSource.CategoriesAsset -> PickerOptionsResult(
-            categories.filter { it.categoryType?.lowercase() == "asset" }
+            categories.filter {
+                ManagementValue.canonicalizeCategoryType(it.categoryType.orEmpty()) == "asset"
+            }
                 .map { PickerItem(it.id, it.decodedName) },
             emptyList(),
         )

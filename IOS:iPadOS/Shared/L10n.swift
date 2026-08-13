@@ -80,6 +80,29 @@ enum L10n {
         return required ? label + " *" : label
     }
 
+    /// Maps a Snipe-IT category type (slug or localized label) to `asset` / `accessory` / …
+    static func categoryTypeSlug(fromLocalized raw: String) -> String? {
+        let needle = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return nil }
+        let slugs = ["asset", "accessory", "consumable", "component", "license"]
+        let tabKey: [String: String] = [
+            "asset": "tab_assets",
+            "accessory": "tab_accessories",
+            "consumable": "tab_consumables",
+            "component": "tab_components",
+            "license": "tab_licenses",
+        ]
+        let tables = [english, dutch, french, spanish, german, chinese, portuguese, japanese, italian, korean, russian, arabic]
+        for slug in slugs {
+            if needle == slug { return slug }
+            for table in tables {
+                if table["category_type_\(slug)"]?.lowercased() == needle { return slug }
+                if let key = tabKey[slug], table[key]?.lowercased() == needle { return slug }
+            }
+        }
+        return nil
+    }
+
     /// status_meta to localized label.
     static func statusLabel(_ statusMeta: String) -> String {
         let key = "status_\(statusMeta.trimmingCharacters(in: .whitespaces).lowercased())"
@@ -123,7 +146,7 @@ enum L10n {
         "mgmt_empty": "Nothing here yet",
         "mgmt_empty_desc": "Tap + to create the first one.",
         "mgmt_delete_title": "Delete %@?",
-        "mgmt_delete_message": "“%@” will be permanently deleted. This can't be undone.\n\nIf this item is still used by assets, models or other records, Snipe-IT will block the delete — clear those links first.",
+        "mgmt_delete_message": "\"%@\" will be permanently deleted. This can't be undone.\n\nIf this item is still used by assets, models or other records, Snipe-IT will block the delete. Clear those links first.",
         "mgmt_deleted": "Deleted.",
         "mgmt_delete_failed_title": "Could not delete",
         "mgmt_delete_still_in_use": "This item is still in use elsewhere in Snipe-IT. Remove or reassign all linked assets, models, users or other records first, then try again.",
@@ -1636,7 +1659,7 @@ enum L10n {
         "tab_locations": "Locaties",
         "tab_assets": "Assets",
         "tab_licenses": "Licenties",
-        "tab_consumables": "Consumables",
+        "tab_consumables": "Verbruiksartikelen",
         "tab_components": "Componenten",
         "tab_stock": "Voorraad",
         "tab_directory": "Directory",
@@ -1665,7 +1688,7 @@ enum L10n {
         "mgmt_empty": "Nog niets hier",
         "mgmt_empty_desc": "Tik op + om de eerste aan te maken.",
         "mgmt_delete_title": "%@ verwijderen?",
-        "mgmt_delete_message": "“%@” wordt permanent verwijderd. Dit kan niet ongedaan worden gemaakt.\n\nAls dit item nog gekoppeld is aan assets, models of andere records, weigert Snipe-IT de delete — verwijder of herkoppel die eerst.",
+        "mgmt_delete_message": "\"%@\" wordt permanent verwijderd. Dit kan niet ongedaan worden gemaakt.\n\nAls dit item nog gekoppeld is aan assets, modellen of andere gegevens, weigert Snipe-IT de verwijdering. Verwijder of herkoppel die eerst.",
         "mgmt_deleted": "Verwijderd.",
         "mgmt_delete_failed_title": "Verwijderen mislukt",
         "mgmt_delete_still_in_use": "Dit item is nog ergens in gebruik in Snipe-IT. Verwijder of herkoppel eerst alle gekoppelde assets, models, gebruikers of andere records, en probeer opnieuw.",
@@ -1748,13 +1771,13 @@ enum L10n {
         "category_type_license": "Licentie",
         "add": "Toevoegen",
         "add_license": "Licentie toevoegen",
-        "add_consumable": "Consumable toevoegen",
+        "add_consumable": "Verbruiksartikel toevoegen",
         "add_component": "Component toevoegen",
         "add_user": "Gebruiker toevoegen",
         "add_location": "Locatie toevoegen",
         "add_coming_soon": "Toevoegen vanuit de app is nog niet ondersteund.",
         "search_licenses": "Zoek licenties",
-        "search_consumables": "Zoek consumables",
+        "search_consumables": "Zoek verbruiksartikelen",
         "search_components": "Zoek componenten",
         "loading_consumables": "Verbruiksartikelen laden…",
         "no_consumables": "Geen verbruiksartikelen",
@@ -2021,10 +2044,10 @@ enum L10n {
         "delete_user_still_manager": "Deze user beheert nog andere users of locaties. Wijs eerst een andere manager toe, en probeer opnieuw.",
         "delete_user_still_in_use": "Deze user heeft nog toewijzingen of verantwoordelijkheden in Snipe-IT. Check assets/accessories/licenses in en verwijder manager-rollen eerst.",
         "delete_location_confirm_message": "Weet je zeker dat je \"%@\" wilt verwijderen?\n\nAssets en accessories die naar deze locatie zijn uitgecheckt worden eerst ingecheckt. Snipe-IT vereist daarna nog: geen users, sublocaties, stock-items of assets met deze (standaard)locatie.",
-        "delete_component_still_checked_out": "Van dit component is nog quantity uitgecheckt naar assets. Die moeten eerst worden ingecheckt — anders weigert Snipe-IT de delete.",
+        "delete_component_still_checked_out": "Van dit component is nog een aantal uitgecheckt naar assets. Check die eerst in, anders weigert Snipe-IT de verwijdering.",
         "delete_component_missing_pivot": "Kon de checkout-record niet vinden om dit component in te checken.",
-        "delete_consumable_confirm_message": "Weet je zeker dat je \"%@\" wilt verwijderen?\n\nConsumables kunnen in Snipe-IT niet worden ingecheckt (checkout = verbruikt). Het consumable-record wordt verwijderd.",
-        "delete_consumable_failed": "Dit consumable kon niet worden verwijderd. Controleer je rechten of probeer het opnieuw in Snipe-IT.",
+        "delete_consumable_confirm_message": "Weet je zeker dat je \"%@\" wilt verwijderen?\n\nVerbruiksartikelen kunnen in Snipe-IT niet worden ingecheckt (checkout = verbruikt). Het record wordt verwijderd.",
+        "delete_consumable_failed": "Dit verbruiksartikel kon niet worden verwijderd. Controleer je rechten of probeer het opnieuw in Snipe-IT.",
         "delete_component_confirm_message_with_checkin": "\"%@\" is nog uitgecheckt naar één of meer assets. Die worden eerst ingecheckt, daarna wordt het component verwijderd.",
         "deleting": "Verwijderen…",
         "saved": "Opgeslagen!",
@@ -7830,7 +7853,7 @@ enum L10n {
         "mgmt_groups": "Группы",
         "settings_activity_log": "Журнал активности",
         "settings_activity_log_footer": "Просмотр полной истории активности (журналов) вашей системы Snipe-IT.",
-        "mgmt_placeholder_desc": "Этот раздел — заглушка. Просмотр, создание, редактирование и удаление появятся здесь вскоре.",
+        "mgmt_placeholder_desc": "Этот раздел пока пустой. Просмотр, создание, редактирование и удаление появятся здесь вскоре.",
         "loading": "Загрузка…",
         "retry": "Повторить",
         "mgmt_none": "Нет",
@@ -8326,7 +8349,7 @@ enum L10n {
         "labels_generate_run": "Создать (%d)",
         "labels_generate_failed": "Не удалось создать этикетки.",
         "labels_no_asset_tags": "Не выбраны допустимые инв. номера.",
-        "labels_server_settings_footer": "Этикетки используют настройки сервера Snipe-IT (Админ → Настройки → Этикетки). Штрихкоды должны быть включены, а новый движок этикеток — активен.",
+        "labels_server_settings_footer": "Этикетки используют настройки сервера Snipe-IT (Админ → Настройки → Этикетки). Штрихкоды должны быть включены, и новый движок этикеток должен быть активен.",
         "last_audit_date": "Дата последнего аудита",
         "audit_due_today_header": "Сегодня (%d)",
         "audit_overdue_header": "Просроченные аудиты (%d)",

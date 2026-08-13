@@ -80,7 +80,9 @@ struct AddLicenseSheet: View {
     }
 
     private func setupOnAppear() {
-        if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
+        if apiClient.categories.isEmpty || apiClient.categories(for: "license").isEmpty {
+            Task { await apiClient.fetchCategories() }
+        }
         Task { await apiClient.fetchCompanies() }
         Task { await apiClient.fetchManufacturers() }
         Task { await apiClient.fetchSuppliers() }

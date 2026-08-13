@@ -172,7 +172,7 @@ class SnipeITAPIClient: ObservableObject {
         }
 
         while true {
-            if isCancelled() { return nil }
+            if isCancelled() || Task.isCancelled { return nil }
 
             var components = URLComponents(string: "\(baseURL)\(path)")
             var query: [URLQueryItem] = [
@@ -194,9 +194,12 @@ class SnipeITAPIClient: ObservableObject {
             do {
                 (data, response) = try await urlSession.data(for: request)
             } catch {
+                if Self.isCancellation(error) || Task.isCancelled {
+                    return nil
+                }
                 // Server unreachable / timeout / certificate failure.
                 // Keep cached data, surface a notice.
-                    if reportConnectionError {
+                if reportConnectionError {
                     let kind = Self.connectionFailureKind(from: error)
                     AppLog.network("GET \(path) failed kind=\(kind.rawValue)")
                     self.reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
@@ -208,7 +211,8 @@ class SnipeITAPIClient: ObservableObject {
             if let http = response as? HTTPURLResponse {
                 if http.statusCode == 429 {
                     // Throttled: back off and retry the same page.
-                    try await Task.sleep(nanoseconds: 1_500_000_000)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    if Task.isCancelled { return nil }
                     continue
                 }
                 guard (200...299).contains(http.statusCode) else {
@@ -309,6 +313,18 @@ class SnipeITAPIClient: ObservableObject {
             }
         }
         return .other
+    }
+
+    static func isCancellation(_ error: Error) -> Bool {
+        var current: Error? = error
+        while let err = current {
+            if err is CancellationError { return true }
+            if (err as? URLError)?.code == .cancelled { return true }
+            let ns = err as NSError
+            if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+            current = ns.userInfo[NSUnderlyingErrorKey] as? Error
+        }
+        return false
     }
 
     static func localizedConnectionFailureMessage(from error: Error) -> String {
@@ -676,6 +692,27 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    func upsertCategory(id: Int, name: String, categoryType: String?) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let slug: String?
+        if let categoryType {
+            let canonical = ManagementValue.canonicalizeCategoryType(categoryType)
+            slug = canonical.isEmpty ? categoryType : canonical
+        } else {
+            slug = nil
+        }
+        if let idx = categories.firstIndex(where: { $0.id == id }) {
+            let existing = categories[idx]
+            categories[idx] = CategoryRow(
+                id: id,
+                name: trimmedName.isEmpty ? existing.name : trimmedName,
+                categoryType: slug ?? existing.categoryType
+            )
+        } else {
+            categories.insert(CategoryRow(id: id, name: trimmedName, categoryType: slug), at: 0)
+        }
+    }
+
     func applyUpdatedLicense(_ license: License) {
         if let idx = licenses.firstIndex(where: { $0.id == license.id }) {
             licenses[idx] = license
@@ -776,6 +813,7 @@ class SnipeITAPIClient: ObservableObject {
                     await reconcilePendingAssetDetails()
                 }
             } catch {
+                if Self.isCancellation(error) { return }
                 await MainActor.run {
                     if myGen == self.fetchAssetsGeneration {
                         self.errorMessage = "Error fetching assets: \(error.localizedDescription)"
@@ -784,6 +822,27 @@ class SnipeITAPIClient: ObservableObject {
             }
         }
         await fetchAssetsTask?.value
+    }
+
+    /// Try id, then asset tag.
+    func resolveHardwareFromQR(id: Int) async -> Asset? {
+        if let existing = assets.first(where: { $0.id == id }) { return existing }
+        if let detailed = await fetchHardwareDetails(assetId: id) {
+            applyUpdatedAsset(detailed)
+            return detailed
+        }
+        let tag = String(id)
+        let normalized = tag.lowercased()
+        if let tagged = assets.first(where: {
+            $0.decodedAssetTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized
+        }) {
+            return tagged
+        }
+        if let byTag = await fetchHardwareByTag(assetTag: tag) {
+            applyUpdatedAsset(byTag)
+            return byTag
+        }
+        return nil
     }
 
     func fetchHardwareByTag(assetTag: String) async -> Asset? {
@@ -895,10 +954,11 @@ class SnipeITAPIClient: ObservableObject {
                 reportConnectionError: true
             ) else { return }
             await MainActor.run {
-                self.users = rows.sorted { $0.name < $1.name }
+                self.users = Self.sortedUsersByName(rows)
                 self.reconcileCurrentUserWithUsersList()
             }
         } catch {
+            if Self.isCancellation(error) { return }
             await MainActor.run {
                 self.errorMessage = "Error fetching users: \(error.localizedDescription)"
                 #if DEBUG
@@ -977,6 +1037,7 @@ class SnipeITAPIClient: ObservableObject {
             currentUser = user
             reconcileCurrentUserWithUsersList()
         } catch {
+            if Self.isCancellation(error) { return }
             if reportErrors {
                 let kind = Self.connectionFailureKind(from: error)
                 AppLog.network("GET /users/me failed kind=\(kind.rawValue)")
@@ -1002,24 +1063,31 @@ class SnipeITAPIClient: ObservableObject {
         return users.first(where: { $0.id == currentUser.id }) ?? currentUser
     }
 
+    static func sortedUsersByName(_ users: [User]) -> [User] {
+        users.sorted {
+            $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
+        }
+    }
+
+    /// Current user first, then A-Z.
+    func sortedUsersPinningCurrent(_ users: [User], includeCurrentIfMissing: Bool = false) -> [User] {
+        let fromList = currentUser.flatMap { me in users.first(where: { $0.id == me.id }) }
+        let pinned = fromList ?? (includeCurrentIfMissing ? currentUser : nil)
+        let rest = Self.sortedUsersByName(users.filter { $0.id != pinned?.id })
+        if let pinned { return [pinned] + rest }
+        return rest
+    }
+
     func filteredCheckoutUsers(searchText: String) -> [User] {
-        let pinnedId = defaultCheckoutUser?.id
         var filtered = users.filter { SearchHelpers.userMatches($0, query: searchText) }
 
-        if let pinned = defaultCheckoutUser {
-            if SearchHelpers.userMatches(pinned, query: searchText),
-               !filtered.contains(where: { $0.id == pinned.id }) {
-                filtered.insert(pinned, at: 0)
-            }
+        if let pinned = defaultCheckoutUser,
+           SearchHelpers.userMatches(pinned, query: searchText),
+           !filtered.contains(where: { $0.id == pinned.id }) {
+            filtered.insert(pinned, at: 0)
         }
 
-        return filtered.sorted { lhs, rhs in
-            if let pinnedId {
-                if lhs.id == pinnedId { return true }
-                if rhs.id == pinnedId { return false }
-            }
-            return lhs.decodedName.localizedCaseInsensitiveCompare(rhs.decodedName) == .orderedAscending
-        }
+        return sortedUsersPinningCurrent(filtered, includeCurrentIfMissing: false)
     }
 
     func fetchUserDetails(userId: Int) async -> User? {
@@ -1075,6 +1143,7 @@ class SnipeITAPIClient: ObservableObject {
                 self.accessories = rows
             }
         } catch {
+            if Self.isCancellation(error) { return }
             await MainActor.run {
                 self.errorMessage = "Error fetching accessories: \(error.localizedDescription)"
                 #if DEBUG
@@ -1100,6 +1169,7 @@ class SnipeITAPIClient: ObservableObject {
                 self.licenses = rows
             }
         } catch {
+            if Self.isCancellation(error) { return }
             await MainActor.run {
                 self.errorMessage = "Error fetching licenses: \(error.localizedDescription)"
                 #if DEBUG
@@ -1125,6 +1195,7 @@ class SnipeITAPIClient: ObservableObject {
                 self.consumables = rows
             }
         } catch {
+            if Self.isCancellation(error) { return }
             await MainActor.run {
                 self.errorMessage = "Error fetching consumables: \(error.localizedDescription)"
                 #if DEBUG
@@ -1397,6 +1468,7 @@ class SnipeITAPIClient: ObservableObject {
                 self.components = rows
             }
         } catch {
+            if Self.isCancellation(error) { return }
             await MainActor.run {
                 self.errorMessage = "Error fetching components: \(error.localizedDescription)"
                 #if DEBUG
@@ -1714,6 +1786,7 @@ class SnipeITAPIClient: ObservableObject {
                 reportConnectionError: reportErrors
             ) ?? []
         } catch {
+            if Self.isCancellation(error) { return [] }
             if reportErrors {
                 reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
             }
@@ -1731,6 +1804,7 @@ class SnipeITAPIClient: ObservableObject {
                 reportConnectionError: reportErrors
             ) ?? []
         } catch {
+            if Self.isCancellation(error) { return [] }
             if reportErrors {
                 reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
             }
@@ -1749,6 +1823,7 @@ class SnipeITAPIClient: ObservableObject {
                 as: Accessory.self,
                 reportConnectionError: reportErrors
             )
+            if Task.isCancelled { return [] }
             if let fromEndpoint {
                 if !fromEndpoint.isEmpty || AppModeStore.isUserMode {
                     return fromEndpoint
@@ -1758,6 +1833,7 @@ class SnipeITAPIClient: ObservableObject {
                 return []
             }
         } catch {
+            if Self.isCancellation(error) || Task.isCancelled { return [] }
             if reportErrors {
                 reportRefreshError(Self.localizedConnectionFailureMessage(from: error))
             }
@@ -1765,8 +1841,10 @@ class SnipeITAPIClient: ObservableObject {
             // Admin: fall through to checkout scan.
         }
 
+        if Task.isCancelled { return [] }
         if accessories.isEmpty {
             await fetchAccessories()
+            if Task.isCancelled { return [] }
         }
         let candidates = accessories.filter { accessory in
             guard let qty = accessory.qty else { return false }
@@ -1777,6 +1855,7 @@ class SnipeITAPIClient: ObservableObject {
 
         var results: [Accessory] = []
         for accessory in candidates {
+            if Task.isCancelled { return results }
             let rows = await fetchAccessoryCheckedOutList(accessoryId: accessory.id)
             if rows.contains(where: { $0.assignedTo?.matchesUser(userId) == true }) {
                 results.append(accessory)
@@ -1790,8 +1869,10 @@ class SnipeITAPIClient: ObservableObject {
 
     func fetchUserConsumables(userId: Int) async -> [Consumable] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
+        if Task.isCancelled { return [] }
         if consumables.isEmpty {
             await fetchConsumables()
+            if Task.isCancelled { return [] }
         }
 
         let candidates = consumables.filter { consumable in
@@ -1801,6 +1882,7 @@ class SnipeITAPIClient: ObservableObject {
 
         var results: [Consumable] = []
         for consumable in candidates {
+            if Task.isCancelled { return results }
             let rows = await fetchConsumableCheckedOutList(consumableId: consumable.id)
             if rows.contains(where: { $0.userId == userId }) {
                 results.append(consumable)
@@ -2768,8 +2850,14 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func categories(for type: String) -> [CategoryRow] {
-        let typed = categories.filter { ($0.categoryType ?? "").lowercased() == type.lowercased() }
-        return typed.isEmpty ? categories : typed
+        let wanted = ManagementValue.canonicalizeCategoryType(type)
+        guard !wanted.isEmpty else { return [] }
+        return categories.filter { categoryTypeMatches($0.categoryType, wanted: wanted) }
+    }
+
+    private func categoryTypeMatches(_ categoryType: String?, wanted: String) -> Bool {
+        let actual = ManagementValue.canonicalizeCategoryType(categoryType ?? "")
+        return !actual.isEmpty && actual == wanted
     }
 
     func fetchLocations() async {
@@ -3455,7 +3543,79 @@ class SnipeITAPIClient: ObservableObject {
         let id: Int
         let name: String
         let categoryType: String?
-        enum CodingKeys: String, CodingKey { case id, name; case categoryType = "category_type" }
+        enum CodingKeys: String, CodingKey {
+            case id, name, type
+            case categoryType = "category_type"
+        }
+
+        init(id: Int, name: String, categoryType: String? = nil) {
+            self.id = id
+            self.name = name
+            self.categoryType = categoryType
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let intId = try? c.decode(Int.self, forKey: .id) {
+                id = intId
+            } else if let stringId = try? c.decode(String.self, forKey: .id), let intId = Int(stringId) {
+                id = intId
+            } else {
+                throw DecodingError.dataCorruptedError(forKey: .id, in: c, debugDescription: "Expected category id")
+            }
+            name = try c.decode(String.self, forKey: .name)
+            if let raw = Self.decodeCategoryType(c) {
+                let slug = ManagementValue.canonicalizeCategoryType(raw)
+                categoryType = slug.isEmpty ? raw : slug
+            } else {
+                categoryType = nil
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(id, forKey: .id)
+            try c.encode(name, forKey: .name)
+            try c.encodeIfPresent(categoryType, forKey: .categoryType)
+        }
+
+        private static func decodeCategoryType(_ c: KeyedDecodingContainer<CodingKeys>) -> String? {
+            if let value = nonempty(try? c.decode(String.self, forKey: .categoryType)) {
+                return value
+            }
+            if let nested = try? c.decode(NestedCategoryType.self, forKey: .categoryType) {
+                if let type = nonempty(nested.type) { return type }
+                if let id = nonempty(nested.id), Int(id) == nil { return id }
+                return nonempty(nested.name)
+            }
+            return nonempty(try? c.decode(String.self, forKey: .type))
+        }
+
+        private static func nonempty(_ value: String?) -> String? {
+            let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        private struct NestedCategoryType: Decodable {
+            let id: String?
+            let type: String?
+            let name: String?
+
+            enum CodingKeys: String, CodingKey { case id, type, name }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                id = Self.flexString(c, .id)
+                type = Self.flexString(c, .type)
+                name = Self.flexString(c, .name)
+            }
+
+            private static func flexString(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> String? {
+                if let s = try? c.decode(String.self, forKey: key) { return s }
+                if let i = try? c.decode(Int.self, forKey: key) { return String(i) }
+                return nil
+            }
+        }
     }
     struct CategoriesResponse: Codable {
         let rows: [CategoryRow]
@@ -3469,7 +3629,21 @@ class SnipeITAPIClient: ObservableObject {
                 path: "/api/v1/categories",
                 as: CategoryRow.self
             ) else { return }
-            await MainActor.run { self.categories = rows }
+            await MainActor.run {
+                var previousTypes: [Int: String] = [:]
+                for row in self.categories {
+                    if let type = row.categoryType, !type.isEmpty {
+                        previousTypes[row.id] = type
+                    }
+                }
+                self.categories = rows.map { row in
+                    let raw = (row.categoryType?.isEmpty == false ? row.categoryType : previousTypes[row.id]) ?? ""
+                    let slug = ManagementValue.canonicalizeCategoryType(raw)
+                    let type = slug.isEmpty ? (raw.isEmpty ? nil : raw) : slug
+                    if type == row.categoryType { return row }
+                    return CategoryRow(id: row.id, name: row.name, categoryType: type)
+                }
+            }
         } catch {
             print("Error fetching categories: \(error)")
         }

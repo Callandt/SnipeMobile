@@ -52,8 +52,9 @@ struct ConsumableEditSheet: View {
             }
             .onAppear(perform: setup)
             .onChange(of: apiClient.categories.count) { _, _ in
-                if selectedCategoryId != 0, !apiClient.categories.contains(where: { $0.id == selectedCategoryId }) {
-                    selectedCategoryId = apiClient.categories.first?.id ?? 0
+                let consumableCategories = apiClient.categories(for: "consumable")
+                if selectedCategoryId != 0, !consumableCategories.contains(where: { $0.id == selectedCategoryId }) {
+                    selectedCategoryId = consumableCategories.first?.id ?? 0
                 }
             }
             .alert(L10n.string("result"), isPresented: $showResult) {
@@ -82,7 +83,9 @@ struct ConsumableEditSheet: View {
             purchaseDate = d
             hasPurchaseDate = true
         }
-        if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
+        if apiClient.categories.isEmpty || apiClient.categories(for: "consumable").isEmpty {
+            Task { await apiClient.fetchCategories() }
+        }
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }
         Task { await apiClient.fetchCompanies() }
         Task { await apiClient.fetchManufacturers() }

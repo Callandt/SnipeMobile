@@ -10,6 +10,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.Locale
 
 enum class ManagementFieldKind {
     Text,
@@ -108,6 +109,26 @@ object ManagementValue {
         "1", "true" -> "1"
         else -> "0"
     }
+
+    fun categoryTypeSlug(row: JsonObject): String =
+        canonicalizeCategoryType(categoryTypeRaw(row["category_type"] ?: row["type"]))
+
+    private fun categoryTypeRaw(element: JsonElement?): String {
+        val obj = element as? JsonObject
+        if (obj != null) {
+            scalarString(obj["type"]).takeIf { it.isNotEmpty() }?.let { return it }
+            scalarString(obj["id"]).takeIf { it.isNotEmpty() && it.toIntOrNull() == null }?.let { return it }
+            scalarString(obj["name"]).takeIf { it.isNotEmpty() }?.let { return it }
+            return scalarString(obj["id"])
+        }
+        return scalarString(element)
+    }
+
+    fun canonicalizeCategoryType(raw: String): String {
+        val value = raw.trim().lowercase()
+        if (value.isEmpty()) return ""
+        return categoryTypeByLabel[value] ?: value
+    }
 }
 
 fun ManagementEntity.config(): ManagementEntityConfig = when (this) {
@@ -166,12 +187,12 @@ fun ManagementEntity.config(): ManagementEntityConfig = when (this) {
                 required = true,
                 defaultValue = "asset",
                 pickerSource = ManagementPickerSource.CategoryType,
-                rowValueReader = { ManagementValue.scalarString(it["category_type"]).lowercase() },
+                rowValueReader = { ManagementValue.categoryTypeSlug(it) },
             ),
             ManagementFormField("notes", "notes", ManagementFieldKind.Multiline),
         ),
         subtitleReader = { row ->
-            categoryTypeLabel(ManagementValue.scalarString(row["category_type"]).lowercase())
+            categoryTypeLabel(ManagementValue.categoryTypeSlug(row))
         },
     )
 
@@ -323,9 +344,52 @@ fun statusTypeLabel(type: String): String? = when (type) {
     else -> type.takeIf { it.isNotEmpty() }
 }
 
-fun categoryTypeLabel(type: String): String? = when (type) {
-    "asset", "accessory", "consumable", "component", "license" -> L10n.string("category_type_$type")
-    else -> type.takeIf { it.isNotEmpty() }
+private val categoryTypeSlugs = listOf("asset", "accessory", "consumable", "component", "license")
+
+private val categoryTypeByLabel: Map<String, String> by lazy {
+    val locales = listOf("en", "nl", "fr", "es", "de", "zh", "pt", "ja", "it", "ko", "ru", "ar")
+    buildMap {
+        put("asset", "asset")
+        put("assets", "asset")
+        put("hardware", "asset")
+        put("accessory", "accessory")
+        put("accessories", "accessory")
+        put("consumable", "consumable")
+        put("consumables", "consumable")
+        put("component", "component")
+        put("components", "component")
+        put("license", "license")
+        put("licenses", "license")
+        for (slug in categoryTypeSlugs) {
+            put(slug, slug)
+            for (code in locales) {
+                val typeLabel = L10n.string("category_type_$slug", Locale.forLanguageTag(code))
+                    .trim()
+                    .lowercase()
+                if (typeLabel.isNotEmpty()) put(typeLabel, slug)
+            }
+        }
+        val tabKeys = mapOf(
+            "tab_assets" to "asset",
+            "tab_accessories" to "accessory",
+            "tab_consumables" to "consumable",
+            "tab_components" to "component",
+            "tab_licenses" to "license",
+        )
+        for ((key, slug) in tabKeys) {
+            for (code in locales) {
+                val label = L10n.string(key, Locale.forLanguageTag(code)).trim().lowercase()
+                if (label.isNotEmpty()) put(label, slug)
+            }
+        }
+    }
+}
+
+fun categoryTypeLabel(type: String): String? {
+    val slug = ManagementValue.canonicalizeCategoryType(type)
+    if (slug.isEmpty()) return null
+    if (slug in categoryTypeSlugs) return L10n.string("category_type_$slug")
+    return slug
 }
 
 fun statusTypeOptions(): List<Pair<String, String>> = listOf(

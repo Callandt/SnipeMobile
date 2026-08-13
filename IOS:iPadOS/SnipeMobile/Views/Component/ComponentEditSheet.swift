@@ -52,8 +52,9 @@ struct ComponentEditSheet: View {
             }
             .onAppear(perform: setup)
             .onChange(of: apiClient.categories.count) { _, _ in
-                if selectedCategoryId != 0, !apiClient.categories.contains(where: { $0.id == selectedCategoryId }) {
-                    selectedCategoryId = apiClient.categories.first?.id ?? 0
+                let componentCategories = apiClient.categories(for: "component")
+                if selectedCategoryId != 0, !componentCategories.contains(where: { $0.id == selectedCategoryId }) {
+                    selectedCategoryId = componentCategories.first?.id ?? 0
                 }
             }
             .alert(L10n.string("result"), isPresented: $showResult) {
@@ -82,16 +83,19 @@ struct ComponentEditSheet: View {
             purchaseDate = d
             hasPurchaseDate = true
         }
-        if apiClient.categories.isEmpty { Task { await apiClient.fetchCategories() } }
+        if apiClient.categories.isEmpty || apiClient.categories(for: "component").isEmpty {
+            Task { await apiClient.fetchCategories() }
+        }
         if apiClient.locations.isEmpty { Task { await apiClient.fetchLocations() } }
         Task { await apiClient.fetchCompanies() }
         Task { await apiClient.fetchManufacturers() }
         Task { await apiClient.fetchSuppliers() }
-        let validCategoryIds = Set(apiClient.categories.map(\.id))
+        let componentCategories = apiClient.categories(for: "component")
+        let validCategoryIds = Set(componentCategories.map(\.id))
         if selectedCategoryId != 0, !validCategoryIds.contains(selectedCategoryId) {
-            selectedCategoryId = apiClient.categories.first?.id ?? 0
+            selectedCategoryId = componentCategories.first?.id ?? 0
         }
-        if selectedCategoryId == 0, let first = apiClient.categories.first {
+        if selectedCategoryId == 0, let first = componentCategories.first {
             selectedCategoryId = first.id
         }
     }
@@ -101,7 +105,7 @@ struct ComponentEditSheet: View {
             TextField(L10n.fieldLabel("name", required: true), text: $name)
             CreatableAdaptivePickerRow(
                 title: L10n.fieldLabel("category", required: true),
-                items: apiClient.categories.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                items: apiClient.categories(for: "component").map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
                 selection: $selectedCategoryId,
                 emptyOption: (0, L10n.string("choose_category")),
                 apiClient: apiClient,

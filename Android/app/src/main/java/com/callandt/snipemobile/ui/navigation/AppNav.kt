@@ -448,7 +448,9 @@ private suspend fun navigateFromQrLink(
     openEntity: (String) -> Unit,
 ) {
     val route = when (link) {
-        is SnipeITQRLink.Hardware -> Routes.asset(link.id)
+        is SnipeITQRLink.Hardware -> {
+            viewModel.apiClient.resolveHardwareFromQR(link.id)?.let { Routes.asset(it.id) }
+        }
         is SnipeITQRLink.Accessory -> Routes.accessory(link.id)
         is SnipeITQRLink.License -> Routes.license(link.id)
         is SnipeITQRLink.Consumable -> Routes.consumable(link.id)
@@ -461,12 +463,7 @@ private suspend fun navigateFromQrLink(
     if (route != null) {
         openEntity(route)
     } else {
-        val message = if (link is SnipeITQRLink.HardwareByTag) {
-            L10n.string("asset_not_found")
-        } else {
-            "Item niet gevonden"
-        }
-        snackbarHostState.showSnackbar(message)
+        snackbarHostState.showSnackbar(L10n.string("asset_not_found"))
     }
 }
 

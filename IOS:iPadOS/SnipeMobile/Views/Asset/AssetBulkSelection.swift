@@ -339,19 +339,23 @@ struct ContinuousScannerSheet: View {
             return (asset.decodedAssetTag.isEmpty ? trimmed : asset.decodedAssetTag, asset)
         }
 
-        if let url = URL(string: trimmed), url.scheme != nil {
-            if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-               let item = comps.queryItems?.first(where: { ["asset_tag", "assettag"].contains($0.name.lowercased()) }),
-               let value = item.value, !value.isEmpty {
-                if let asset = resolveLocally(value) {
-                    return (asset.decodedAssetTag.isEmpty ? value : asset.decodedAssetTag, asset)
+        if let link = SnipeITQRLink.parse(trimmed) {
+            switch link {
+            case .hardware(let id):
+                if let asset = apiClient.assets.first(where: { $0.id == id }) {
+                    return (asset.decodedAssetTag.isEmpty ? String(id) : asset.decodedAssetTag, asset)
                 }
-                return (value, nil)
-            }
-            if url.path.lowercased().contains("/hardware"),
-               let last = url.pathComponents.last, let id = Int(last),
-               let asset = apiClient.assets.first(where: { $0.id == id }) {
-                return (asset.decodedAssetTag.isEmpty ? trimmed : asset.decodedAssetTag, asset)
+                if let tagged = resolveLocally(String(id)) {
+                    return (tagged.decodedAssetTag.isEmpty ? String(id) : tagged.decodedAssetTag, tagged)
+                }
+                return (String(id), nil)
+            case .hardwareByTag(let tag):
+                if let asset = resolveLocally(tag) {
+                    return (asset.decodedAssetTag.isEmpty ? tag : asset.decodedAssetTag, asset)
+                }
+                return (tag, nil)
+            default:
+                break
             }
         }
 

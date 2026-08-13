@@ -44,6 +44,7 @@ import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.AppSecret
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.management.ManagementValue
 import com.callandt.snipemobile.debug.AppLog
 import com.callandt.snipemobile.data.secure.SecureStore
 import kotlinx.coroutines.CoroutineScope
@@ -828,7 +829,7 @@ class SnipeApiClient(
             reportConnectionError = true,
         ) ?: return
         withContext(Dispatchers.Main) {
-            _users.value = rows.sortedBy { it.decodedName.lowercase() }
+            _users.value = rows.sortedBy { it.decodedName.lowercase(Locale.getDefault()) }
             reconcileCurrentUserWithUsersList()
         }
         scheduleCacheSave()
@@ -882,8 +883,16 @@ class SnipeApiClient(
         _models.value = it.sortedBy { model -> model.decodedName.lowercase() }
     }
 
-    suspend fun fetchCategories() = fetchSimpleList("/api/v1/categories", CategoryRow.serializer()) {
-        _categories.value = it.sortedBy { row -> row.decodedName.lowercase() }
+    suspend fun fetchCategories() = fetchSimpleList("/api/v1/categories", CategoryRow.serializer()) { incoming ->
+        val previousTypes = _categories.value.mapNotNull { row ->
+            row.categoryType?.takeIf { it.isNotBlank() }?.let { row.id to it }
+        }.toMap()
+        _categories.value = incoming.map { row ->
+            val raw = row.categoryType?.takeIf { it.isNotBlank() } ?: previousTypes[row.id]
+            val slug = raw?.let { ManagementValue.canonicalizeCategoryType(it) }?.ifEmpty { null }
+            val type = slug ?: raw
+            if (type == row.categoryType) row else row.copy(categoryType = type)
+        }.sortedBy { row -> row.decodedName.lowercase() }
     }
 
     /** Asset-tag settings from the server. No-op if unauthorized. */
@@ -1107,10 +1116,34 @@ class SnipeApiClient(
     // endregion
 
     fun categoriesFor(type: String): List<CategoryRow> {
-        val typed = _categories.value.filter {
-            (it.categoryType ?: "").equals(type, ignoreCase = true)
+        val wanted = ManagementValue.canonicalizeCategoryType(type)
+        if (wanted.isEmpty()) return emptyList()
+        return _categories.value.filter { categoryTypeMatches(it.categoryType, wanted) }
+    }
+
+    fun upsertCategory(id: Int, name: String, categoryType: String?) {
+        val trimmedName = name.trim()
+        val slug = categoryType
+            ?.let { ManagementValue.canonicalizeCategoryType(it) }
+            ?.ifEmpty { null }
+            ?: categoryType
+        val current = _categories.value.toMutableList()
+        val idx = current.indexOfFirst { it.id == id }
+        if (idx >= 0) {
+            val existing = current[idx]
+            current[idx] = existing.copy(
+                name = trimmedName.ifEmpty { existing.name },
+                categoryType = slug ?: existing.categoryType,
+            )
+        } else {
+            current.add(0, CategoryRow(id = id, name = trimmedName, categoryType = slug))
         }
-        return typed.ifEmpty { _categories.value }
+        _categories.value = current.sortedBy { it.decodedName.lowercase() }
+    }
+
+    private fun categoryTypeMatches(categoryType: String?, wanted: String): Boolean {
+        val actual = ManagementValue.canonicalizeCategoryType(categoryType ?: "")
+        return actual.isNotEmpty() && actual == wanted
     }
 
     suspend fun fetchAccessoryCheckedOutList(accessoryId: Int): List<AccessoryCheckedOutRow> =
@@ -1437,8 +1470,7 @@ class SnipeApiClient(
 
         when (val link = SnipeITQRLink.parse(trimmed)) {
             is SnipeITQRLink.Hardware -> {
-                _assets.value.firstOrNull { it.id == link.id }?.let { return it }
-                return fetchHardwareDetails(link.id)?.also { cacheResolvedAsset(it) }
+                return resolveHardwareFromQR(link.id)
             }
             is SnipeITQRLink.HardwareByTag -> {
                 resolveLocally(link.tag)?.let { return it }
@@ -1448,6 +1480,16 @@ class SnipeApiClient(
         }
 
         return fetchHardwareByTag(trimmed)?.also { cacheResolvedAsset(it) }
+    }
+
+    /** Try id, then asset tag. */
+    suspend fun resolveHardwareFromQR(id: Int): Asset? {
+        _assets.value.firstOrNull { it.id == id }?.let { return it }
+        fetchHardwareDetails(id)?.also { cacheResolvedAsset(it) }?.let { return it }
+        val tag = id.toString()
+        val normalized = tag.lowercase()
+        _assets.value.firstOrNull { it.decodedAssetTag.trim().lowercase() == normalized }?.let { return it }
+        return fetchHardwareByTag(tag)?.also { cacheResolvedAsset(it) }
     }
 
     private suspend fun cacheResolvedAsset(asset: Asset) {
@@ -3048,7 +3090,11 @@ class SnipeApiClient(
         }
         val response = executeJsonPost(url, body)
         if (!isSnipeApiHttpSuccess(response.code)) {
-            return CreateResult(false, message = "HTTP ${response.code}: ${response.body.take(300)}")
+            return CreateResult(
+                false,
+                message = extractApiErrorMessage(response.json)
+                    ?: "HTTP ${response.code}: ${response.body.take(300)}",
+            )
         }
         if (isSnipeApiErrorResponse(response.json)) {
             return CreateResult(false, message = extractApiErrorMessage(response.json) ?: "Create failed.")
@@ -3288,9 +3334,26 @@ class SnipeApiClient(
 
         fun extractApiErrorMessage(json: JsonObject?): String? {
             json ?: return null
-            json["message"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return it }
-            json["error"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return it }
+            (json["message"] as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotEmpty() && !it.equals("error", ignoreCase = true) && it != "false" }
+                ?.let { return it }
+            stringsFromFieldDictionary(json["messages"]).firstOrNull()?.let { return it }
+            stringsFromFieldDictionary(json["errors"]).firstOrNull()?.let { return it }
+            (json["error"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return it }
             return null
+        }
+
+        private fun stringsFromFieldDictionary(value: JsonElement?): List<String> {
+            if (value == null || value is JsonNull) return emptyList()
+            (value as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return listOf(it) }
+            val obj = value as? JsonObject ?: return emptyList()
+            return obj.values.flatMap { stringsFromFieldValue(it) }
+        }
+
+        private fun stringsFromFieldValue(value: JsonElement): List<String> {
+            (value as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return listOf(it) }
+            val array = value as? JsonArray ?: return emptyList()
+            return array.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { text -> text.isNotEmpty() } }
         }
 
         fun evaluateWriteResponse(

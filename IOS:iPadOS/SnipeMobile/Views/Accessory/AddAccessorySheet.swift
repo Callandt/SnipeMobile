@@ -60,7 +60,7 @@ struct AddAccessorySheet: View {
     }
 
     private func setupOnAppear() {
-        if apiClient.categories.isEmpty {
+        if apiClient.categories.isEmpty || apiClient.categories(for: "accessory").isEmpty {
             Task { await apiClient.fetchCategories() }
         }
         if apiClient.locations.isEmpty {
