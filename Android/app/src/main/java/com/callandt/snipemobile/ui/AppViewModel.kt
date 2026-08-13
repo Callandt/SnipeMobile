@@ -15,7 +15,7 @@ import com.callandt.snipemobile.data.prefs.AppMode
 import com.callandt.snipemobile.data.prefs.AppModeCheckProgress
 import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
-import com.callandt.snipemobile.data.secure.SecretKey
+import com.callandt.snipemobile.data.secure.AppSecret
 import com.callandt.snipemobile.data.secure.SecureStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -323,14 +323,14 @@ class AppViewModel(
     }
 
     fun dellTechDirectClientId(): String =
-        secureStore.getString(SecretKey.DELL_TECH_DIRECT_CLIENT_ID)
+        secureStore.getString(AppSecret.DELL_TECH_DIRECT_CLIENT_ID)
 
     fun dellTechDirectClientSecret(): String =
-        secureStore.getString(SecretKey.DELL_TECH_DIRECT_CLIENT_SECRET)
+        secureStore.getString(AppSecret.DELL_TECH_DIRECT_CLIENT_SECRET)
 
     fun saveDellTechDirectCredentials(clientId: String, clientSecret: String) {
-        secureStore.setString(SecretKey.DELL_TECH_DIRECT_CLIENT_ID, clientId.trim())
-        secureStore.setString(SecretKey.DELL_TECH_DIRECT_CLIENT_SECRET, clientSecret)
+        secureStore.setString(AppSecret.DELL_TECH_DIRECT_CLIENT_ID, clientId.trim())
+        secureStore.setString(AppSecret.DELL_TECH_DIRECT_CLIENT_SECRET, clientSecret)
     }
 
     suspend fun testDellTechDirectConnection(): String? {
@@ -364,7 +364,7 @@ class AppViewModel(
         apiClient.clearPendingUnauthorizedSessionWipe()
     }
 
-    fun currentApiToken(): String = secureStore.getString(SecretKey.API_TOKEN)
+    fun currentApiToken(): String = secureStore.getString(AppSecret.API_TOKEN)
 
     class Factory(private val app: SnipeMobileApp) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

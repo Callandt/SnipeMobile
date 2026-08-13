@@ -42,7 +42,7 @@ import com.callandt.snipemobile.data.prefs.AppMode
 import com.callandt.snipemobile.data.prefs.AppModeCheckProgress
 import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
-import com.callandt.snipemobile.data.secure.SecretKey
+import com.callandt.snipemobile.data.secure.AppSecret
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.debug.AppLog
 import com.callandt.snipemobile.data.secure.SecureStore
@@ -278,7 +278,7 @@ class SnipeApiClient(
         get() = normalizeBaseUrl(preferences.getBaseUrlBlocking())
 
     val apiToken: String
-        get() = secureStore.getString(SecretKey.API_TOKEN)
+        get() = secureStore.getString(AppSecret.API_TOKEN)
 
     private val cacheKey: String
         get() = LocalCacheStore.keyForBaseUrl(baseUrl)
@@ -315,7 +315,7 @@ class SnipeApiClient(
         }
 
         preferences.setBaseUrl(normalizedBaseUrl)
-        secureStore.setString(SecretKey.API_TOKEN, normalizedToken)
+        secureStore.setString(AppSecret.API_TOKEN, normalizedToken)
         _isConfigured.value = true
         preferences.setIsConfigured(true)
 

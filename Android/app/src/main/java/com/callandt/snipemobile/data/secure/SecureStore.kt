@@ -9,7 +9,6 @@ import java.nio.ByteBuffer
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 enum class AppSecret(val storageKey: String) {
@@ -17,9 +16,6 @@ enum class AppSecret(val storageKey: String) {
     DELL_TECH_DIRECT_CLIENT_ID("dellTechDirectClientId"),
     DELL_TECH_DIRECT_CLIENT_SECRET("dellTechDirectClientSecret"),
 }
-
-/** Alias kept for existing call sites. */
-typealias SecretKey = AppSecret
 
 /**
  * Secrets encrypted with an AES key in the Android Keystore.
@@ -30,7 +26,7 @@ class SecureStore(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
 
-    private val aesKey: SecretKey by lazy { getOrCreateKeystoreKey() }
+    private val aesKey: javax.crypto.SecretKey by lazy { getOrCreateKeystoreKey() }
 
     fun getString(key: AppSecret): String {
         val encoded = prefs.getString(key.storageKey, null) ?: return ""
@@ -93,9 +89,9 @@ class SecureStore(context: Context) {
         return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
     }
 
-    private fun getOrCreateKeystoreKey(): SecretKey {
+    private fun getOrCreateKeystoreKey(): javax.crypto.SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        (keyStore.getKey(KEY_ALIAS, null) as? javax.crypto.SecretKey)?.let { return it }
 
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
         generator.init(

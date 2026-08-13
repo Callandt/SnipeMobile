@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersionCode = 2
+val appVersionCode = 5
 val appVersionName = "1.0"
 
 android {
@@ -26,11 +26,20 @@ android {
 
     buildTypes {
         release {
+            // Minify off until R8 keep-rules are validated on-device.
+            // Enabling it previously caused Play closed-test startup crashes.
             isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
+        }
+        debug {
+            isMinifyEnabled = false
         }
     }
 

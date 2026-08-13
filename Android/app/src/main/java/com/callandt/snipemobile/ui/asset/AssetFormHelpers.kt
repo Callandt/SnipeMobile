@@ -197,7 +197,6 @@ internal fun AssetFullScreenSheet(
         SideEffect {
             val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
             WindowCompat.setDecorFitsSystemWindows(window, false)
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             // Full-screen dialog needs MATCH_PARENT on the window.
             window.setLayout(
                 WindowManager.LayoutParams.MATCH_PARENT,

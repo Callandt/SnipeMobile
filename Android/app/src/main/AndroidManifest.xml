@@ -30,6 +30,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.SnipeMobile">
             <intent-filter>
