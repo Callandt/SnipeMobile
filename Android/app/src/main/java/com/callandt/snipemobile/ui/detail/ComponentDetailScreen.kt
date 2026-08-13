@@ -1,6 +1,5 @@
 package com.callandt.snipemobile.ui.detail
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +39,7 @@ import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.component.ComponentCheckinConfirmDialog
 import com.callandt.snipemobile.ui.component.ComponentCheckoutSheet
 import com.callandt.snipemobile.ui.component.EditComponentSheet
+import com.callandt.snipemobile.ui.components.AssetCard
 import com.callandt.snipemobile.ui.components.AssetCheckedOutBanner
 import com.callandt.snipemobile.ui.components.DetailBarAction
 import com.callandt.snipemobile.ui.components.DetailBottomBar
@@ -313,42 +313,55 @@ private fun ComponentDetailContent(
             } else if (checkedOutRows.isEmpty()) {
                 Text(L10n.string("assigned_to_none_component"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                    checkedOutRows.forEach { row ->
-                        val fullAsset = row.assetId?.let { id -> assets.find { it.id == id } }
-                        val title = fullAsset?.decodedName
-                            ?: HtmlDecoder.decode(row.assetName ?: "")
-                        val tag = fullAsset?.decodedAssetTag ?: row.decodedAssetTag
-                        val qty = row.assignedQty
-                        val clickModifier = row.assetId?.let { assetId ->
-                            onOpenAsset?.let { callback -> Modifier.clickable { callback(assetId) } }
-                        } ?: Modifier
-                        Column(modifier = clickModifier) {
+                checkedOutRows.forEach { row ->
+                    val fullAsset = row.assetId?.let { id -> assets.find { it.id == id } }
+                    val title = fullAsset?.decodedName
+                        ?: HtmlDecoder.decode(row.assetName ?: "")
+                    val tag = fullAsset?.decodedAssetTag ?: row.decodedAssetTag
+                    val qty = row.assignedQty
+                    val canCheckin = row.assignedPivotId != null
+                    val onOpen = row.assetId?.let { assetId ->
+                        onOpenAsset?.let { callback -> { callback(assetId) } }
+                    }
+                    Column {
+                        if (fullAsset != null) {
+                            AssetCard(
+                                asset = fullAsset,
+                                onClick = { onOpen?.invoke() },
+                                onLongClick = { onCheckin(row) }.takeIf { canCheckin },
+                            )
+                        } else {
                             AssetCheckedOutBanner(
                                 assigneeName = title.ifEmpty { tag }.ifEmpty { L10n.string("asset") },
                                 icon = Icons.Default.Laptop,
+                                onClick = onOpen,
+                                onLongClick = { onCheckin(row) }.takeIf { canCheckin },
                             )
-                            if (tag.isNotEmpty()) {
-                                Text(
-                                    text = L10n.string("tag_label", tag),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(start = 4.dp, top = 4.dp),
-                                )
-                            }
-                            if (qty != null && qty > 1) {
-                                Text(
-                                    text = "${L10n.string("quantity")}: $qty",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(start = 4.dp, top = 2.dp),
-                                )
-                            }
-                            if (row.assignedPivotId != null) {
-                                androidx.compose.material3.TextButton(onClick = { onCheckin(row) }) {
-                                    Text(L10n.string("check_in_lower"))
-            }
+                        }
+                        if (tag.isNotEmpty() && fullAsset == null) {
+                            Text(
+                                text = L10n.string("tag_label", tag),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+                            )
+                        }
+                        if (qty != null && qty > 1) {
+                            Text(
+                                text = "${L10n.string("quantity")}: $qty",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                            )
                         }
                     }
+                }
+                if (checkedOutRows.any { it.assignedPivotId != null }) {
+                    Text(
+                        text = L10n.string("assigned_checkin_hint"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

@@ -16,6 +16,7 @@ struct AddAccessorySheet: View {
     @State private var hasPurchaseDate = false
     @State private var selectedManufacturerId: Int?
     @State private var selectedSupplierId: Int?
+    @State private var notes = ""
     @State private var isSaving = false
     @State private var resultMessage = ""
     @State private var showResult = false
@@ -29,6 +30,7 @@ struct AddAccessorySheet: View {
             Form {
                 generalSection
                 purchaseSection
+                notesSection
             }
             .navigationTitle(L10n.string("new_accessory"))
             .toolbar { toolbarContent }
@@ -162,6 +164,13 @@ struct AddAccessorySheet: View {
         }
     }
 
+    private var notesSection: some View {
+        Section(header: Text(L10n.string("notes"))) {
+            TextField(L10n.string("notes"), text: $notes, axis: .vertical)
+                .lineLimit(3...6)
+        }
+    }
+
     private func parsedQuantity() -> Int {
         max(1, Int(quantityText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1)
     }
@@ -196,7 +205,10 @@ struct AddAccessorySheet: View {
                 locationId: selectedLocationId,
                 manufacturerId: selectedManufacturerId,
                 supplierId: selectedSupplierId,
-                customFields: nil
+                customFields: nil,
+                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? nil
+                    : notes.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             await MainActor.run {
                 isSaving = false

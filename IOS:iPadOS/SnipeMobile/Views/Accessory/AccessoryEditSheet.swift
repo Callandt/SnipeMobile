@@ -19,6 +19,7 @@ struct AccessoryEditSheet: View {
     @State private var hasPurchaseDate: Bool = false
     @State private var selectedManufacturerId: Int?
     @State private var selectedSupplierId: Int?
+    @State private var notes: String = ""
     @State private var isSaving: Bool = false
     @State private var showResult: Bool = false
     @State private var resultMessage: String = ""
@@ -28,6 +29,7 @@ struct AccessoryEditSheet: View {
             Form {
                 generalSection
                 purchaseSection
+                notesSection
             }
             .listStyle(.insetGrouped)
             .navigationTitle("")
@@ -57,6 +59,7 @@ struct AccessoryEditSheet: View {
                 selectedSupplierId = accessory.supplier?.id
                 orderNumber = HTMLDecoder.decode(accessory.orderNumber ?? "")
                 purchaseCost = accessory.purchaseCost ?? ""
+                notes = accessory.decodedNotes
                 if let d = DateInfo.parseAPIDate(accessory.purchaseDate) {
                     purchaseDate = d
                     hasPurchaseDate = true
@@ -84,11 +87,7 @@ struct AccessoryEditSheet: View {
                 }
             }
             .alert(L10n.string("result"), isPresented: $showResult) {
-                Button(L10n.string("ok"), role: .cancel) {
-                    if resultMessage.contains("Saved") || resultMessage.lowercased().contains("opgeslagen") {
-                        isPresented = false
-                    }
-                }
+                Button(L10n.string("ok"), role: .cancel) {}
             } message: {
                 Text(resultMessage)
             }
@@ -190,6 +189,13 @@ struct AccessoryEditSheet: View {
         }
     }
 
+    private var notesSection: some View {
+        Section(header: Text(L10n.string("notes"))) {
+            TextField(L10n.string("notes"), text: $notes, axis: .vertical)
+                .lineLimit(3...6)
+        }
+    }
+
     private func parsedQuantity() -> Int {
         max(1, Int(quantityText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1)
     }
@@ -224,15 +230,17 @@ struct AccessoryEditSheet: View {
                 companyId: selectedCompanyId,
                 locationId: selectedLocationId,
                 manufacturerId: selectedManufacturerId,
-                supplierId: selectedSupplierId
+                supplierId: selectedSupplierId,
+                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             await MainActor.run {
                 isSaving = false
-                resultMessage = apiClient.lastApiMessage ?? (success ? "Saved." : "Save failed.")
-                showResult = true
                 if success {
                     onSuccess?()
                     isPresented = false
+                } else {
+                    resultMessage = apiClient.lastApiMessage ?? L10n.string("mgmt_save_failed")
+                    showResult = true
                 }
             }
         }

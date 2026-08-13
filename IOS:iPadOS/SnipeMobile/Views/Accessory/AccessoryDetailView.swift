@@ -133,6 +133,20 @@ struct AccessoryDetailView: View {
                             .padding(.horizontal)
                         }
 
+                        if !currentAccessory.decodedNotes.isEmpty {
+                            Text(L10n.string("notes"))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            Text(currentAccessory.decodedNotes)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                                .padding(.horizontal)
+                        }
+
                         // Assigned via checkedout API
                         checkedOutSection
 

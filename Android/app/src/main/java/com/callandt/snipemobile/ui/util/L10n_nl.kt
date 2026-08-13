@@ -353,6 +353,7 @@ internal object L10n_nl {
         "license_not_found_id" to "Licentie met ID %s niet gevonden.",
         "license_seats_assigned" to "Toegewezen",
         "license_seats_assigned_hint" to "Houd een toegewezen seat ingedrukt om de toewijzing te verwijderen.",
+        "assigned_checkin_hint" to "Houd een toegewezen item ingedrukt om het in te checken.",
         "license_seats_consumed" to "Verbruikt (niet herbruikbaar)",
         "license_seats_free" to "Beschikbaar",
         "license_seats_summary" to "%d van %d beschikbaar",

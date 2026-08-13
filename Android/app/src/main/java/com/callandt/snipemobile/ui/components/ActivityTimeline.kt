@@ -1,7 +1,5 @@
 package com.callandt.snipemobile.ui.components
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,12 +39,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeApiClient
 import com.callandt.snipemobile.data.model.Activity
-import com.callandt.snipemobile.data.model.ActivityFile
 import com.callandt.snipemobile.ui.theme.SnipeAccent
 import com.callandt.snipemobile.ui.theme.SnipeGreen
 import com.callandt.snipemobile.ui.theme.SnipeOrange
@@ -65,7 +62,10 @@ fun ActivityTimelineList(
     contentPadding: PaddingValues = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
     showItemType: Boolean = false,
     preferItemHeadline: Boolean = false,
-    baseUrl: String = "",
+    apiClient: SnipeApiClient? = null,
+    fileObjectType: String? = null,
+    fileObjectId: Int? = null,
+    onFileClick: ((Activity) -> Unit)? = null,
     footer: (LazyListScope.() -> Unit)? = null,
 ) {
     LazyColumn(
@@ -78,7 +78,10 @@ fun ActivityTimelineList(
                 isLast = index == activities.lastIndex && footer == null,
                 showItemType = showItemType,
                 preferItemHeadline = preferItemHeadline,
-                baseUrl = baseUrl,
+                apiClient = apiClient,
+                fileObjectType = fileObjectType,
+                fileObjectId = fileObjectId,
+                onFileClick = onFileClick,
             )
         }
         footer?.invoke(this)
@@ -118,7 +121,10 @@ fun ActivityTimelineRow(
     modifier: Modifier = Modifier,
     showItemType: Boolean = false,
     preferItemHeadline: Boolean = false,
-    baseUrl: String = "",
+    apiClient: SnipeApiClient? = null,
+    fileObjectType: String? = null,
+    fileObjectId: Int? = null,
+    onFileClick: ((Activity) -> Unit)? = null,
 ) {
     val actionColor = activityActionColor(activity.actionType)
     Row(
@@ -156,7 +162,10 @@ fun ActivityTimelineRow(
             activity = activity,
             showItemType = showItemType,
             preferItemHeadline = preferItemHeadline,
-            baseUrl = baseUrl,
+            apiClient = apiClient,
+            fileObjectType = fileObjectType,
+            fileObjectId = fileObjectId,
+            onFileClick = onFileClick,
             modifier = Modifier
                 .weight(1f)
                 .padding(bottom = 24.dp),
@@ -170,7 +179,10 @@ fun ActivityTimelineCard(
     modifier: Modifier = Modifier,
     showItemType: Boolean = false,
     preferItemHeadline: Boolean = false,
-    baseUrl: String = "",
+    apiClient: SnipeApiClient? = null,
+    fileObjectType: String? = null,
+    fileObjectId: Int? = null,
+    onFileClick: ((Activity) -> Unit)? = null,
 ) {
     val actionColor = activityActionColor(activity.actionType)
     val whenText = activity.createdAt?.localizedDisplay(includeTime = true).orEmpty()
@@ -180,7 +192,6 @@ fun ActivityTimelineCard(
     val isCheckout = isCheckoutAction(activity.actionType)
     val targetName = activity.target?.decodedName?.takeIf { it.isNotBlank() }
     val file = activity.file
-    val context = LocalContext.current
 
     Column(
         modifier = modifier
@@ -222,26 +233,103 @@ fun ActivityTimelineCard(
             }
         }
 
-        Text(
-            text = headline,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-            color = if (headline == L10n.string("no_details")) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-        )
+        val thumbType = fileObjectType ?: activity.item?.type
+        val thumbId = fileObjectId ?: activity.item?.id
+        val thumbClient = apiClient
+        val imageFile = file?.takeIf { it.isImage }
 
-        if (activity.decodedNote.isNotBlank() &&
-            !headline.contains(activity.decodedNote) &&
-            !(file?.isImage == true && preferItemHeadline)
-        ) {
+        if (thumbClient != null && imageFile != null && thumbType != null && thumbId != null) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                SnipeFileThumbnail(
+                    apiClient = thumbClient,
+                    objectType = thumbType,
+                    objectId = thumbId,
+                    fileId = activity.id,
+                    filename = imageFile.decodedFilename,
+                    size = 64.dp,
+                    cornerRadius = 12.dp,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (preferItemHeadline) {
+                        val itemName = activity.item?.decodedName?.takeIf { it.isNotEmpty() }
+                        if (itemName != null) {
+                            Text(
+                                text = itemName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        if (imageFile.decodedFilename.isNotEmpty()) {
+                            Text(
+                                text = imageFile.decodedFilename,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (activity.decodedNote.isNotBlank()) {
+                            Text(
+                                text = activity.decodedNote,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        if (activity.decodedNote.isNotBlank()) {
+                            Text(
+                                text = activity.decodedNote,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        if (imageFile.decodedFilename.isNotEmpty()) {
+                            Text(
+                                text = imageFile.decodedFilename,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = if (activity.decodedNote.isNotBlank()) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
             Text(
-                text = activity.decodedNote,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = headline,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = if (headline == L10n.string("no_details")) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
             )
+
+            if (activity.decodedNote.isNotBlank() &&
+                !headline.contains(activity.decodedNote) &&
+                !(file?.isImage == true && preferItemHeadline)
+            ) {
+                Text(
+                    text = activity.decodedNote,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         val meta = activity.logMeta.orEmpty()
@@ -306,12 +394,8 @@ fun ActivityTimelineCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .clickable(enabled = resolveActivityFileUrl(file, baseUrl) != null) {
-                            resolveActivityFileUrl(file, baseUrl)?.let { url ->
-                                runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                }
-                            }
+                        .clickable(enabled = onFileClick != null) {
+                            onFileClick?.invoke(activity)
                         }
                         .padding(vertical = 2.dp),
                 ) {
@@ -418,19 +502,6 @@ fun activityActionColor(type: String): Color {
 private fun isCheckoutAction(type: String): Boolean {
     val lower = type.lowercase()
     return lower.contains("check") && (lower.contains("out") || lower.contains("uit"))
-}
-
-private fun resolveActivityFileUrl(file: ActivityFile, baseUrl: String): String? {
-    val remote = file.url?.trim().orEmpty()
-    if (remote.isEmpty()) return null
-    if (remote.startsWith("http://", ignoreCase = true) ||
-        remote.startsWith("https://", ignoreCase = true)
-    ) {
-        return remote
-    }
-    val base = baseUrl.trimEnd('/')
-    if (base.isEmpty()) return null
-    return if (remote.startsWith("/")) "$base$remote" else "$base/$remote"
 }
 
 private fun prettifyFieldLabel(field: String): String {

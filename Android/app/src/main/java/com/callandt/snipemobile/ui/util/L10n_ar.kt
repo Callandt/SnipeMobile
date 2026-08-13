@@ -353,6 +353,7 @@ internal object L10n_ar {
         "license_not_found_id" to "لم يُعثر على ترخيص بالمعرّف %s.",
         "license_seats_assigned" to "معيَّن",
         "license_seats_assigned_hint" to "اضغط مطوّلًا على مقعد معيَّن لإلغاء تعيينه.",
+        "assigned_checkin_hint" to "اضغط مطوّلًا على عنصر معيَّن لإرجاعه.",
         "license_seats_consumed" to "مستخدم (غير قابل لإعادة الاستخدام)",
         "license_seats_free" to "متاح",
         "license_seats_summary" to "%d من %d متاح",

@@ -303,6 +303,20 @@ fun AppNav(viewModel: AppViewModel) {
                             )
                         }
                     },
+                    // Code 128 / other 1D → look up by tag or serial.
+                    onRawBarcodeScanned = { raw ->
+                        scope.launch {
+                            val asset = viewModel.apiClient.resolveScannedHardware(raw)
+                            if (asset != null) {
+                                navController.popBackStack()
+                                openEntityFromQr(Routes.asset(asset.id))
+                            } else {
+                                snackbarHostState.showSnackbar(
+                                    L10n.string("asset_not_found_scanned_value", raw),
+                                )
+                            }
+                        }
+                    },
                     onDellUrlScanned = { url ->
                         if (!enableDellQrScan) {
                             scope.launch {
@@ -440,7 +454,7 @@ private suspend fun navigateFromQrLink(
         is SnipeITQRLink.Consumable -> Routes.consumable(link.id)
         is SnipeITQRLink.Component -> Routes.component(link.id)
         is SnipeITQRLink.HardwareByTag -> {
-            val asset = viewModel.apiClient.fetchHardwareByTag(link.tag)
+            val asset = viewModel.apiClient.resolveScannedHardware(link.tag)
             asset?.let { Routes.asset(it.id) }
         }
     }

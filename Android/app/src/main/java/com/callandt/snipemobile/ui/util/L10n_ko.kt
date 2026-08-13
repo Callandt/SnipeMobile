@@ -353,6 +353,7 @@ internal object L10n_ko {
         "license_not_found_id" to "ID %s인 라이선스를 찾을 수 없습니다.",
         "license_seats_assigned" to "할당됨",
         "license_seats_assigned_hint" to "할당된 시트를 길게 눌러 할당을 해제하세요.",
+        "assigned_checkin_hint" to "할당된 항목을 길게 눌러 체크인하세요.",
         "license_seats_consumed" to "사용됨 (재사용 불가)",
         "license_seats_free" to "사용 가능",
         "license_seats_summary" to "%d/%d 사용 가능",

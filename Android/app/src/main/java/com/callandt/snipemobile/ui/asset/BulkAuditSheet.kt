@@ -59,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.callandt.snipemobile.data.api.SnipeITQRLink
 import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.ui.AppViewModel
@@ -387,35 +386,6 @@ internal fun AssetMultiSelectScreen(
     }
 }
 
-/** Resolves a scanned/typed value to a local or remote [Asset]. */
-private suspend fun resolveScannedAsset(raw: String, viewModel: AppViewModel): Asset? {
-    val trimmed = raw.trim()
-    if (trimmed.isEmpty()) return null
-    val assets = viewModel.assets.value
-
-    fun resolveLocally(value: String): Asset? {
-        val normalized = value.trim().lowercase()
-        if (normalized.isEmpty()) return null
-        return assets.firstOrNull { asset ->
-            asset.decodedAssetTag.trim().lowercase() == normalized ||
-                asset.decodedSerial.trim().lowercase() == normalized ||
-                asset.altBarcode?.trim()?.lowercase() == normalized
-        }
-    }
-
-    resolveLocally(trimmed)?.let { return it }
-
-    when (val link = SnipeITQRLink.parse(trimmed)) {
-        is SnipeITQRLink.Hardware -> assets.firstOrNull { it.id == link.id }?.let { return it }
-        is SnipeITQRLink.HardwareByTag -> {
-            resolveLocally(link.tag)?.let { return it }
-            return viewModel.apiClient.fetchHardwareByTag(link.tag)
-        }
-        else -> Unit
-    }
-
-    return viewModel.apiClient.fetchHardwareByTag(trimmed)
-}
 
 /** Continuous scan-to-add screen with a manual entry fallback. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -456,7 +426,7 @@ internal fun BulkAssetScannerScreen(
         if (trimmed.isEmpty() || isResolving) return
         isResolving = true
         scope.launch {
-            val asset = resolveScannedAsset(trimmed, viewModel)
+            val asset = viewModel.apiClient.resolveScannedHardware(trimmed)
             isResolving = false
             if (asset == null) {
                 show(L10n.string("asset_not_found_short", trimmed), true)

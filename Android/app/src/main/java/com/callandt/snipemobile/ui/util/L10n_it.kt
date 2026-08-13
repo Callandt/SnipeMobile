@@ -353,6 +353,7 @@ internal object L10n_it {
         "license_not_found_id" to "Licenza con ID %s non trovata.",
         "license_seats_assigned" to "Assegnati",
         "license_seats_assigned_hint" to "Tieni premuto un posto assegnato per rimuoverlo.",
+        "assigned_checkin_hint" to "Tieni premuto un elemento assegnato per fare il check-in.",
         "license_seats_consumed" to "Usati (non riutilizzabili)",
         "license_seats_free" to "Disponibili",
         "license_seats_summary" to "%d di %d disponibili",

@@ -45,9 +45,12 @@ import com.callandt.snipemobile.data.api.DellQrLink
 import com.callandt.snipemobile.data.api.SnipeITQRLink
 import com.callandt.snipemobile.ui.util.L10n
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.net.URI
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 enum class QrScannerMode {
     SnipeIT,
@@ -62,6 +65,7 @@ fun QrScannerScreen(
     onError: (String) -> Unit,
     mode: QrScannerMode = QrScannerMode.SnipeIT,
     onDellUrlScanned: (URI) -> Unit = {},
+    onRawBarcodeScanned: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -72,7 +76,9 @@ fun QrScannerScreen(
         )
     }
     var handled by remember { mutableStateOf(false) }
-    val errorThrottle = remember { java.util.concurrent.atomic.AtomicLong(0L) }
+    val errorThrottle = remember { AtomicLong(0L) }
+    val lastRawScan = remember { AtomicReference("") }
+    val lastRawTime = remember { AtomicLong(0L) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -137,12 +143,11 @@ fun QrScannerScreen(
                                         )
                                         scanner.process(image)
                                             .addOnSuccessListener { barcodes ->
-                                                val raw = barcodes.firstOrNull()?.rawValue
-                                                    ?: return@addOnSuccessListener
-                                                if (handled) return@addOnSuccessListener
-
+                                                if (handled || barcodes.isEmpty()) return@addOnSuccessListener
                                                 when (mode) {
                                                     QrScannerMode.Dell -> {
+                                                        val raw = barcodes.firstOrNull()?.rawValue
+                                                            ?: return@addOnSuccessListener
                                                         val url = DellQrLink.parse(raw)
                                                         if (url != null &&
                                                             DellQrLink.isDellUrl(url) &&
@@ -154,29 +159,23 @@ fun QrScannerScreen(
                                                             reportInvalid(previewView, errorThrottle, onError, L10n.string("invalid_dell_qr"))
                                                         }
                                                     }
-                                                    QrScannerMode.SnipeIT -> {
-                                                        val link = SnipeITQRLink.parse(raw)
-                                                        if (link != null) {
+                                                    QrScannerMode.SnipeIT -> handleSnipeITBarcodes(
+                                                        barcodes = barcodes,
+                                                        previewView = previewView,
+                                                        errorThrottle = errorThrottle,
+                                                        lastRawScan = lastRawScan,
+                                                        lastRawTime = lastRawTime,
+                                                        onLinkParsed = { link ->
                                                             handled = true
-                                                            previewView.post { onLinkParsed(link) }
-                                                        } else {
-                                                            val dellUrl = DellQrLink.parse(raw)
-                                                            if (dellUrl != null &&
-                                                                DellQrLink.isDellUrl(dellUrl) &&
-                                                                !DellQrLink.extractServiceTag(dellUrl).isNullOrBlank()
-                                                            ) {
-                                                                handled = true
-                                                                previewView.post { onDellUrlScanned(dellUrl) }
-                                                            } else {
-                                                                reportInvalid(
-                                                                    previewView,
-                                                                    errorThrottle,
-                                                                    onError,
-                                                                    L10n.string("invalid_qr_unrecognized"),
-                                                                )
-                                                            }
-                                                        }
-                                                    }
+                                                            onLinkParsed(link)
+                                                        },
+                                                        onDellUrlScanned = { url ->
+                                                            handled = true
+                                                            onDellUrlScanned(url)
+                                                        },
+                                                        onRawBarcodeScanned = onRawBarcodeScanned,
+                                                        onError = onError,
+                                                    )
                                                 }
                                             }
                                             .addOnCompleteListener { imageProxy.close() }
@@ -222,9 +221,84 @@ fun QrScannerScreen(
     }
 }
 
+private fun handleSnipeITBarcodes(
+    barcodes: List<Barcode>,
+    previewView: PreviewView,
+    errorThrottle: AtomicLong,
+    lastRawScan: AtomicReference<String>,
+    lastRawTime: AtomicLong,
+    onLinkParsed: (SnipeITQRLink) -> Unit,
+    onDellUrlScanned: (URI) -> Unit,
+    onRawBarcodeScanned: (String) -> Unit,
+    onError: (String) -> Unit,
+) {
+    val values = barcodes.mapNotNull { barcode ->
+        val raw = barcode.rawValue?.trim().orEmpty()
+        if (raw.isEmpty()) null else barcode to raw
+    }
+    if (values.isEmpty()) return
+
+    values.firstNotNullOfOrNull { (_, raw) -> SnipeITQRLink.parse(raw) }?.let { link ->
+        previewView.post { onLinkParsed(link) }
+        return
+    }
+
+    values.firstNotNullOfOrNull { (_, raw) ->
+        val url = DellQrLink.parse(raw)
+        if (url != null &&
+            DellQrLink.isDellUrl(url) &&
+            !DellQrLink.extractServiceTag(url).isNullOrBlank()
+        ) {
+            url
+        } else {
+            null
+        }
+    }?.let { url ->
+        previewView.post { onDellUrlScanned(url) }
+        return
+    }
+
+    // 1D codes are tags/serials, not Snipe-IT URLs.
+    val oneD = values.firstOrNull { (barcode, raw) ->
+        is1DBarcode(barcode.format) || (barcode.format == Barcode.FORMAT_UNKNOWN && !looksLikeUrl(raw))
+    }
+    if (oneD != null) {
+        val raw = oneD.second
+        val now = System.currentTimeMillis()
+        if (raw == lastRawScan.get() && now - lastRawTime.get() < 2500) return
+        lastRawScan.set(raw)
+        lastRawTime.set(now)
+        previewView.post { onRawBarcodeScanned(raw) }
+        return
+    }
+
+    reportInvalid(previewView, errorThrottle, onError, L10n.string("invalid_qr_unrecognized"))
+}
+
+private fun is1DBarcode(format: Int): Boolean = when (format) {
+    Barcode.FORMAT_CODE_128,
+    Barcode.FORMAT_CODE_39,
+    Barcode.FORMAT_CODE_93,
+    Barcode.FORMAT_CODABAR,
+    Barcode.FORMAT_EAN_13,
+    Barcode.FORMAT_EAN_8,
+    Barcode.FORMAT_ITF,
+    Barcode.FORMAT_UPC_A,
+    Barcode.FORMAT_UPC_E,
+    -> true
+    else -> false
+}
+
+private fun looksLikeUrl(raw: String): Boolean {
+    val value = raw.trim()
+    return value.contains("://") ||
+        value.startsWith("http://", ignoreCase = true) ||
+        value.startsWith("https://", ignoreCase = true)
+}
+
 private fun reportInvalid(
     previewView: PreviewView,
-    errorThrottle: java.util.concurrent.atomic.AtomicLong,
+    errorThrottle: AtomicLong,
     onError: (String) -> Unit,
     message: String,
 ) {

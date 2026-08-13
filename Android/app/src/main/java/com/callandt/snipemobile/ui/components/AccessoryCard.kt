@@ -32,6 +32,7 @@ fun AccessoryCard(
     accessory: Accessory,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    showAvailability: Boolean = true,
 ) {
     val remaining = accessory.remaining
     val qty = accessory.qty
@@ -87,7 +88,7 @@ fun AccessoryCard(
                         )
                     }
                 }
-                if (remaining != null || qty != null) {
+                if (showAvailability && (remaining != null || qty != null)) {
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             text = when {

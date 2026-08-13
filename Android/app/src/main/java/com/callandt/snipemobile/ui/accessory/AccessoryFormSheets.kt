@@ -91,7 +91,7 @@ private fun AccessoryFormSheet(
     var hasPurchaseDate by remember(existing?.id) {
         mutableStateOf(!existing?.purchaseDate.isNullOrBlank())
     }
-    var notes by remember(existing?.id) { mutableStateOf("") }
+    var notes by remember(existing?.id) { mutableStateOf(existing?.decodedNotes.orEmpty()) }
     var selectedCategoryId by remember(existing?.id) { mutableIntStateOf(existing?.category?.id ?: 0) }
     var selectedLocationId by remember(existing?.id) { mutableIntStateOf(existing?.location?.id ?: 0) }
     var selectedCompanyId by remember(existing?.id) { mutableIntStateOf(existing?.company?.id ?: 0) }
@@ -130,7 +130,7 @@ private fun AccessoryFormSheet(
         if (hasPurchaseDate) {
             parseApiDate(purchaseDateText)?.let { body["purchase_date"] = formatApiDate(it) }
         }
-        notes.trim().takeIf { it.isNotEmpty() }?.let { body["notes"] = it }
+        body["notes"] = notes.trim()
         if (selectedLocationId > 0) body["location_id"] = selectedLocationId
         if (selectedCompanyId > 0) body["company_id"] = selectedCompanyId
         if (selectedManufacturerId > 0) body["manufacturer_id"] = selectedManufacturerId

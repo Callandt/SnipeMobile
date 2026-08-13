@@ -195,6 +195,7 @@ fun AccessoryDetailScreen(
                         users = users,
                         assets = assets,
                         locations = locations,
+                        onCheckinRow = { checkinTarget = it },
                         onOpenUser = onOpenUser,
                         onOpenLocation = onOpenLocation,
                         onOpenAsset = onOpenAsset,
@@ -282,6 +283,7 @@ private fun AccessoryDetailContent(
     users: List<User>,
     assets: List<Asset>,
     locations: List<Location>,
+    onCheckinRow: (AccessoryCheckedOutRow) -> Unit,
     onOpenUser: ((Int) -> Unit)?,
     onOpenLocation: ((Int) -> Unit)?,
     onOpenAsset: ((Int) -> Unit)?,
@@ -305,6 +307,12 @@ private fun AccessoryDetailContent(
             DetailRow(L10n.string("location"), accessory.decodedLocationName)
             DetailRow(L10n.string("category"), accessory.decodedCategoryName)
             DetailRow(L10n.string("company"), accessory.company?.name)
+        }
+
+        accessory.decodedNotes.takeIf { it.isNotBlank() }?.let { notes ->
+            DetailSectionCard(title = L10n.string("notes")) {
+                Text(notes, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
 
         if (accessory.qty != null || accessory.minAmt != null || accessory.remaining != null ||
@@ -338,9 +346,17 @@ private fun AccessoryDetailContent(
                         users = users,
                         assets = assets,
                         locations = locations,
+                        onCheckin = { onCheckinRow(row) }.takeIf { row.availableActions?.checkin == true },
                         onOpenUser = onOpenUser,
                         onOpenLocation = onOpenLocation,
                         onOpenAsset = onOpenAsset,
+                    )
+                }
+                if (checkedOutRows.any { it.availableActions?.checkin == true }) {
+                    Text(
+                        text = L10n.string("assigned_checkin_hint"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -372,6 +388,7 @@ private fun AccessoryCheckedOutRowCard(
     onOpenUser: ((Int) -> Unit)?,
     onOpenLocation: ((Int) -> Unit)?,
     onOpenAsset: ((Int) -> Unit)?,
+    onCheckin: (() -> Unit)?,
 ) {
     val assigned = row.assignedTo ?: return
     val assigneeId = assigned.id ?: return
@@ -383,12 +400,14 @@ private fun AccessoryCheckedOutRowCard(
                 UserCard(
                     user = user,
                     onClick = { onOpenUser?.invoke(user.id) },
+                    onLongClick = onCheckin,
                 )
             } else {
                 AssetCheckedOutBanner(
                     assigneeName = assigned.decodedName.ifEmpty { L10n.string("user") },
                     icon = Icons.Default.Person,
                     onClick = onOpenUser?.let { callback -> { callback(assigneeId) } },
+                    onLongClick = onCheckin,
                 )
             }
         }
@@ -398,12 +417,14 @@ private fun AccessoryCheckedOutRowCard(
                 LocationCard(
                     location = location,
                     onClick = { onOpenLocation?.invoke(location.id) },
+                    onLongClick = onCheckin,
                 )
             } else {
                 AssetCheckedOutBanner(
                     assigneeName = assigned.decodedName.ifEmpty { L10n.string("location") },
                     icon = Icons.Default.LocationOn,
                     onClick = onOpenLocation?.let { callback -> { callback(assigneeId) } },
+                    onLongClick = onCheckin,
                 )
             }
         }
@@ -413,6 +434,7 @@ private fun AccessoryCheckedOutRowCard(
                 AssetCard(
                     asset = asset,
                     onClick = { onOpenAsset?.invoke(asset.id) },
+                    onLongClick = onCheckin,
                 )
             } else {
                 Column {
@@ -423,6 +445,7 @@ private fun AccessoryCheckedOutRowCard(
                         },
                         icon = Icons.Default.Laptop,
                         onClick = onOpenAsset?.let { callback -> { callback(assigneeId) } },
+                        onLongClick = onCheckin,
                     )
                     if (assigned.decodedAssetTag.isNotEmpty()) {
                         Text(
@@ -439,6 +462,7 @@ private fun AccessoryCheckedOutRowCard(
             AssetCheckedOutBanner(
                 assigneeName = assigned.decodedName.ifEmpty { L10n.string("user") },
                 icon = Icons.Default.Person,
+                onLongClick = onCheckin,
             )
         }
     }

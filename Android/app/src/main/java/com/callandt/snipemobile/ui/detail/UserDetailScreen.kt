@@ -390,6 +390,7 @@ private fun UserDetailsBody(
                             AccessoryCard(
                                 accessory = accessory,
                                 onClick = { onOpenAccessory?.invoke(accessory.id) },
+                                showAvailability = false,
                             )
                         }
                     }

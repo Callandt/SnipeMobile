@@ -34,6 +34,7 @@ fun EditAssetSheet(
     asset: Asset,
     viewModel: AppViewModel,
     onDismiss: () -> Unit,
+    onSaved: () -> Unit = {},
 ) {
     val models by viewModel.models.collectAsState()
     val statusLabels by viewModel.statusLabels.collectAsState()
@@ -177,6 +178,7 @@ fun EditAssetSheet(
             isSaving = false
             if (success) {
                 viewModel.syncInBackground()
+                onSaved()
                 onDismiss()
             } else {
                 errorMessage = lastApiMessage ?: L10n.string("mgmt_save_failed")

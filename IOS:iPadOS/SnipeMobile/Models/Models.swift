@@ -799,6 +799,7 @@ struct Accessory: Identifiable, Codable, Hashable {
     let purchaseDate: String?
     let modelNumber: String?
     let image: String?
+    let notes: String?
 
     let decodedName: String
     let decodedAssetTag: String
@@ -807,6 +808,7 @@ struct Accessory: Identifiable, Codable, Hashable {
     let decodedLocationName: String
     let decodedManufacturerName: String
     let decodedCategoryName: String
+    let decodedNotes: String
 
     init(
         id: Int,
@@ -827,7 +829,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         purchaseCost: String? = nil,
         purchaseDate: String? = nil,
         modelNumber: String? = nil,
-        image: String? = nil
+        image: String? = nil,
+        notes: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -848,6 +851,7 @@ struct Accessory: Identifiable, Codable, Hashable {
         self.purchaseDate = purchaseDate
         self.modelNumber = modelNumber
         self.image = image
+        self.notes = notes
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedAssetTag = HTMLDecoder.decode(assetTag)
         self.decodedStatusLabelName = HTMLDecoder.decode(statusLabel?.name ?? "Unknown")
@@ -855,6 +859,7 @@ struct Accessory: Identifiable, Codable, Hashable {
         self.decodedLocationName = HTMLDecoder.decode(location?.name ?? "")
         self.decodedManufacturerName = HTMLDecoder.decode(manufacturer?.name ?? "")
         self.decodedCategoryName = HTMLDecoder.decode(category?.name ?? "")
+        self.decodedNotes = HTMLDecoder.decode(notes ?? "")
     }
 
     enum CodingKeys: String, CodingKey {
@@ -875,6 +880,7 @@ struct Accessory: Identifiable, Codable, Hashable {
         case purchaseDate = "purchase_date"
         case modelNumber = "model_number"
         case image
+        case notes
     }
 
     static func == (lhs: Accessory, rhs: Accessory) -> Bool {
@@ -897,7 +903,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         lhs.minAmt == rhs.minAmt &&
         lhs.remaining == rhs.remaining &&
         lhs.checkoutsCount == rhs.checkoutsCount &&
-        lhs.image == rhs.image
+        lhs.image == rhs.image &&
+        lhs.notes == rhs.notes
     }
 
     func hash(into hasher: inout Hasher) {
@@ -927,6 +934,7 @@ extension Accessory {
         let purchaseDate = Self.decodeOptionalPurchaseDate(from: container)
         let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
         let image = try? container.decodeIfPresent(String.self, forKey: .image)
+        let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
 
         self.init(
             id: id,
@@ -947,7 +955,8 @@ extension Accessory {
             purchaseCost: purchaseCost,
             purchaseDate: purchaseDate,
             modelNumber: modelNumber,
-            image: image
+            image: image,
+            notes: notes
         )
     }
 

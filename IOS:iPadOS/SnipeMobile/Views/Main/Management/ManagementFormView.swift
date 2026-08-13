@@ -305,7 +305,11 @@ struct ManagementFormView: View {
                 dismiss()
                 return
             }
-            resultMessage = result.message ?? L10n.string(isEdit ? "saved" : "mgmt_created")
+            if isEdit {
+                dismiss()
+                return
+            }
+            resultMessage = result.message ?? L10n.string("mgmt_created")
         } else {
             resultMessage = result.message ?? L10n.string("mgmt_save_failed")
         }

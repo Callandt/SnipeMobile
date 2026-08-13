@@ -376,6 +376,11 @@ private fun LicenseDetailContent(
                             onOpenAsset = onOpenAsset,
                         )
                     }
+                    Text(
+                        text = L10n.string("license_seats_assigned_hint"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 if (groups.free.isNotEmpty()) {
                     SeatGroupHeader("license_seats_free", groups.free.size)
@@ -421,6 +426,7 @@ private fun LicenseAssignedSeatCard(
 ) {
     val assignee = seat.resolvedAssignee(assets, users)
     val canCheckin = seat.userCanCheckin != false
+    val onLongClick = onCheckin.takeIf { canCheckin }
 
     when {
         seat.assignedAsset != null -> {
@@ -431,11 +437,13 @@ private fun LicenseAssignedSeatCard(
                     AssetCard(
                         asset = fullAsset,
                         onClick = { onOpenAsset?.invoke(fullAsset.id) },
+                        onLongClick = onLongClick,
                     )
                 } else {
                     ItemCard(
                         title = seat.assignedAsset.decodedName.ifEmpty { L10n.string("asset") },
                         onClick = onOpenAsset?.let { callback -> { callback(assetId) } },
+                        onLongClick = onLongClick,
                     )
                 }
                 assignee?.let { resolved ->
@@ -456,11 +464,6 @@ private fun LicenseAssignedSeatCard(
                         )
                     }
                 }
-                if (canCheckin) {
-                    androidx.compose.material3.TextButton(onClick = onCheckin) {
-                        Text(L10n.string("check_in_lower"))
-                    }
-                }
             }
         }
         seat.assignedUser != null -> {
@@ -471,6 +474,7 @@ private fun LicenseAssignedSeatCard(
                     UserCard(
                         user = fullUser,
                         onClick = { onOpenUser?.invoke(fullUser.id) },
+                        onLongClick = onLongClick,
                     )
                 } else {
                     val fallbackName = seat.assignedUser.name
@@ -481,12 +485,8 @@ private fun LicenseAssignedSeatCard(
                             com.callandt.snipemobile.util.HtmlDecoder.decode(it)
                         },
                         onClick = onOpenUser?.let { callback -> { callback(userId) } },
+                        onLongClick = onLongClick,
                     )
-                }
-                if (canCheckin) {
-                    androidx.compose.material3.TextButton(onClick = onCheckin) {
-                        Text(L10n.string("check_in_lower"))
-                    }
                 }
             }
         }

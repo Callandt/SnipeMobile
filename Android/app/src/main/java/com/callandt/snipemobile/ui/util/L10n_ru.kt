@@ -353,6 +353,7 @@ internal object L10n_ru {
         "license_not_found_id" to "Лицензия с ID %s не найдена.",
         "license_seats_assigned" to "Назначено",
         "license_seats_assigned_hint" to "Удерживайте назначенное место, чтобы снять назначение.",
+        "assigned_checkin_hint" to "Удерживайте назначенный элемент, чтобы вернуть его.",
         "license_seats_consumed" to "Использовано (нельзя повторно)",
         "license_seats_free" to "Доступно",
         "license_seats_summary" to "Доступно %d из %d",

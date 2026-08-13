@@ -57,11 +57,7 @@ struct ComponentEditSheet: View {
                 }
             }
             .alert(L10n.string("result"), isPresented: $showResult) {
-                Button(L10n.string("ok"), role: .cancel) {
-                    if resultMessage.contains("Saved") || resultMessage.lowercased().contains("opgeslagen") {
-                        isPresented = false
-                    }
-                }
+                Button(L10n.string("ok"), role: .cancel) {}
             } message: {
                 Text(resultMessage)
             }
@@ -238,11 +234,12 @@ struct ComponentEditSheet: View {
             )
             await MainActor.run {
                 isSaving = false
-                resultMessage = apiClient.lastApiMessage ?? (success ? "Saved." : "Save failed.")
-                showResult = true
                 if success {
                     onSuccess?()
                     isPresented = false
+                } else {
+                    resultMessage = apiClient.lastApiMessage ?? L10n.string("mgmt_save_failed")
+                    showResult = true
                 }
             }
         }

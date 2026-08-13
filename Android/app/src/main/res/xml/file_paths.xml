@@ -3,4 +3,5 @@
     <cache-path name="labels" path="labels/" />
     <cache-path name="camera" path="camera/" />
     <cache-path name="debug_exports" path="DebugExports/" />
+    <cache-path name="snipe_files" path="snipe-files/" />
 </paths>

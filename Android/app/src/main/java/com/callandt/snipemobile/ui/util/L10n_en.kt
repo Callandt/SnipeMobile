@@ -353,6 +353,7 @@ internal object L10n_en {
         "license_not_found_id" to "License with ID %s not found.",
         "license_seats_assigned" to "Assigned",
         "license_seats_assigned_hint" to "Press and hold an assigned seat to unassign it.",
+        "assigned_checkin_hint" to "Press and hold an assigned item to check it in.",
         "license_seats_consumed" to "Used (not reusable)",
         "license_seats_free" to "Available",
         "license_seats_summary" to "%d of %d available",

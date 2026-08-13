@@ -63,6 +63,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -833,8 +834,16 @@ class SnipeApiClient(
         scheduleCacheSave()
     }
 
-    suspend fun fetchAccessories() = fetchSimpleList("/api/v1/accessories", Accessory.serializer()) {
-        _accessories.value = it
+    suspend fun fetchAccessories() = fetchSimpleList("/api/v1/accessories", Accessory.serializer()) { incoming ->
+        val previousById = _accessories.value.associateBy { it.id }
+        _accessories.value = incoming.map { item ->
+            val cachedNotes = previousById[item.id]?.notes
+            if (item.notes.isNullOrBlank() && !cachedNotes.isNullOrBlank()) {
+                item.copy(notes = cachedNotes)
+            } else {
+                item
+            }
+        }
     }
 
     suspend fun fetchLicenses() = fetchSimpleList("/api/v1/licenses", License.serializer()) {
@@ -1400,6 +1409,42 @@ class SnipeApiClient(
 
     // region Hardware lookup
 
+    /** Scan value → asset (cache, then by-tag). */
+    suspend fun resolveScannedHardware(raw: String): Asset? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+
+        fun resolveLocally(value: String): Asset? {
+            val normalized = value.trim().lowercase()
+            if (normalized.isEmpty()) return null
+            return _assets.value.firstOrNull { asset ->
+                asset.decodedAssetTag.trim().lowercase() == normalized ||
+                    asset.decodedSerial.trim().lowercase() == normalized ||
+                    asset.altBarcode?.trim()?.lowercase() == normalized
+            }
+        }
+
+        resolveLocally(trimmed)?.let { return it }
+
+        when (val link = SnipeITQRLink.parse(trimmed)) {
+            is SnipeITQRLink.Hardware -> {
+                _assets.value.firstOrNull { it.id == link.id }?.let { return it }
+                return fetchHardwareDetails(link.id)?.also { cacheResolvedAsset(it) }
+            }
+            is SnipeITQRLink.HardwareByTag -> {
+                resolveLocally(link.tag)?.let { return it }
+                return fetchHardwareByTag(link.tag)?.also { cacheResolvedAsset(it) }
+            }
+            else -> Unit
+        }
+
+        return fetchHardwareByTag(trimmed)?.also { cacheResolvedAsset(it) }
+    }
+
+    private suspend fun cacheResolvedAsset(asset: Asset) {
+        withContext(Dispatchers.Main) { applyUpdatedAsset(asset) }
+    }
+
     suspend fun fetchHardwareByTag(assetTag: String): Asset? {
         val trimmed = assetTag.trim()
         if (baseUrl.isEmpty() || apiToken.isEmpty() || trimmed.isEmpty()) return null
@@ -1422,9 +1467,13 @@ class SnipeApiClient(
 
     suspend fun fetchHardwareDetails(assetId: Int): Asset? {
         if (baseUrl.isEmpty() || apiToken.isEmpty()) return null
-        return runCatching {
-            decodePayloadOrRoot<Asset>(executeGet("$baseUrl/api/v1/hardware/$assetId").body)
-        }.getOrNull()
+        val response = executeGet("$baseUrl/api/v1/hardware/$assetId", bypassCache = true)
+        if (response.code !in 200..299) return null
+        val json = response.json ?: return null
+        if (isSnipeApiErrorResponse(json)) return null
+        decodeJsonElementValue<Asset>(json)?.takeIf { it.id == assetId }?.let { return it }
+        val payload = json["payload"] as? JsonObject ?: return null
+        return decodeJsonElementValue<Asset>(payload)?.takeIf { it.id == assetId }
     }
 
     // endregion
@@ -1664,7 +1713,12 @@ class SnipeApiClient(
         val result = evaluateWriteResponse(response.json, response.code, "Saved.", "Save failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
-        refreshAssetInCache(assetId)
+        withContext(Dispatchers.Main) {
+            response.json?.let { mergeAssetFromResponseJson(it) }
+        }
+        if (wantsImageChange) {
+            fetchHardwareDetails(assetId)?.let { withContext(Dispatchers.Main) { applyUpdatedAsset(it) } }
+        }
         return true
     }
 
@@ -1672,19 +1726,47 @@ class SnipeApiClient(
         createEntity("$baseUrl/api/v1/accessories", body) { scope.launch { fetchAccessories() } }
 
     suspend fun updateAccessory(accessoryId: Int, body: Map<String, Any?>): Boolean =
-        patchEntity("$baseUrl/api/v1/accessories/$accessoryId", body) { refreshAccessoryInCache(accessoryId) }
+        patchEntity("$baseUrl/api/v1/accessories/$accessoryId", body) {
+            val notes = body["notes"] as? String
+            withContext(Dispatchers.Main) {
+                val current = _accessories.value.firstOrNull { it.id == accessoryId }
+                if (current != null && notes != null) {
+                    replaceCachedItem(current.copy(notes = notes.takeIf { it.isNotBlank() }))
+                }
+            }
+            refreshAccessoryInCache(accessoryId)
+            fetchAccessories()
+        }
 
     suspend fun createUser(body: Map<String, Any?>): CreateResult =
         createEntity("$baseUrl/api/v1/users", body) { scope.launch { fetchUsers() } }
 
-    suspend fun updateUser(userId: Int, body: Map<String, Any?>): Boolean =
-        patchEntity("$baseUrl/api/v1/users/$userId", body) { scope.launch { fetchUsers() } }
+    suspend fun updateUser(userId: Int, body: Map<String, Any?>): Boolean {
+        val response = executeJsonPatch("$baseUrl/api/v1/users/$userId", body)
+        val result = evaluateWriteResponse(response.json, response.code, "Saved.", "Save failed.")
+        withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
+        if (!result.success) return false
+        decodePayloadOrRoot<User>(response.body)?.let { updated ->
+            withContext(Dispatchers.Main) { replaceCachedUser(updated) }
+        }
+        scope.launch { fetchUsers() }
+        return true
+    }
 
     suspend fun createLocation(body: Map<String, Any?>): CreateResult =
         createEntity("$baseUrl/api/v1/locations", body) { scope.launch { fetchLocations() } }
 
-    suspend fun updateLocation(locationId: Int, body: Map<String, Any?>): Boolean =
-        patchEntity("$baseUrl/api/v1/locations/$locationId", body) { scope.launch { fetchLocations() } }
+    suspend fun updateLocation(locationId: Int, body: Map<String, Any?>): Boolean {
+        val response = executeJsonPatch("$baseUrl/api/v1/locations/$locationId", body)
+        val result = evaluateWriteResponse(response.json, response.code, "Saved.", "Save failed.")
+        withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
+        if (!result.success) return false
+        decodePayloadOrRoot<Location>(response.body)?.let { updated ->
+            withContext(Dispatchers.Main) { replaceCachedLocation(updated) }
+        }
+        scope.launch { fetchLocations() }
+        return true
+    }
 
     suspend fun createLicense(body: Map<String, Any?>): CreateResult =
         createEntity("$baseUrl/api/v1/licenses", body) { scope.launch { fetchLicenses() } }
@@ -1708,13 +1790,19 @@ class SnipeApiClient(
         createEntity("$baseUrl/api/v1/consumables", body) { scope.launch { fetchConsumables() } }
 
     suspend fun updateConsumable(consumableId: Int, body: Map<String, Any?>): Boolean =
-        patchEntity("$baseUrl/api/v1/consumables/$consumableId", body) { refreshConsumableInCache(consumableId) }
+        patchEntity("$baseUrl/api/v1/consumables/$consumableId", body) {
+            refreshConsumableInCache(consumableId)
+            fetchConsumables()
+        }
 
     suspend fun createComponent(body: Map<String, Any?>): CreateResult =
         createEntity("$baseUrl/api/v1/components", body) { scope.launch { fetchComponents() } }
 
     suspend fun updateComponent(componentId: Int, body: Map<String, Any?>): Boolean =
-        patchEntity("$baseUrl/api/v1/components/$componentId", body) { refreshComponentInCache(componentId) }
+        patchEntity("$baseUrl/api/v1/components/$componentId", body) {
+            refreshComponentInCache(componentId)
+            fetchComponents()
+        }
 
     suspend fun createMaintenance(body: Map<String, Any?>, image: UploadFile? = null): Boolean =
         createMaintenanceReturningId(body, image) != null
@@ -1779,6 +1867,9 @@ class SnipeApiClient(
         val result = evaluateWriteResponse(response.json, response.code, "Changes saved.", "Update failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return null
+        decodePayloadOrRoot<AssetMaintenance>(response.body)?.let { record ->
+            withContext(Dispatchers.Main) { replaceCachedMaintenance(record) }
+        }
         scope.launch { fetchAllMaintenances() }
         return id
     }
@@ -2499,6 +2590,38 @@ class SnipeApiClient(
         }.getOrDefault(emptyList())
     }
 
+    /** GET …/files/{fileId} (Bearer). */
+    suspend fun downloadObjectFile(
+        objectType: String,
+        objectId: Int,
+        fileId: Int,
+        preferredFilename: String,
+    ): java.io.File? {
+        if (baseUrl.isEmpty() || apiToken.isEmpty()) return null
+        val type = apiFilesObjectType(objectType)
+        return downloadToCache(
+            url = "$baseUrl/api/v1/$type/$objectId/files/$fileId",
+            preferredFilename = preferredFilename,
+            fileId = fileId,
+        )
+    }
+
+    /** Authenticated GET of a file URL. */
+    suspend fun downloadRemoteFile(url: String, preferredFilename: String): java.io.File? {
+        if (apiToken.isEmpty()) return null
+        val resolved = when {
+            url.startsWith("http://", ignoreCase = true) ||
+                url.startsWith("https://", ignoreCase = true) -> url
+            url.startsWith("/") -> "${baseUrl.trimEnd('/')}$url"
+            else -> "${baseUrl.trimEnd('/')}/$url"
+        }
+        return downloadToCache(resolved, preferredFilename, fileId = 0)
+    }
+
+    suspend fun refreshHardwareAfterWrite(assetId: Int) {
+        refreshAssetInCache(assetId)
+    }
+
     /** POST /hardware/{id}/files (`file[]` multipart). */
     suspend fun uploadAssetFiles(assetId: Int, files: List<UploadFile>, notes: String? = null): Boolean {
         if (files.isEmpty()) return true
@@ -2558,7 +2681,9 @@ class SnipeApiClient(
 
     private suspend fun refreshAssetInCache(assetId: Int, responseJson: JsonObject? = null) {
         synchronized(assetsPendingDetailRefresh) { assetsPendingDetailRefresh.add(assetId) }
-        responseJson?.let { mergeAssetFromResponseJson(it) }
+        if (responseJson != null) {
+            withContext(Dispatchers.Main) { runCatching { mergeAssetFromResponseJson(responseJson) } }
+        }
         fetchHardwareDetails(assetId)?.let { withContext(Dispatchers.Main) { applyUpdatedAsset(it) } }
     }
 
@@ -2642,11 +2767,75 @@ class SnipeApiClient(
         scheduleCacheSave()
     }
 
-    private fun mergeAssetFromResponseJson(json: JsonObject) {
-        val payload = json["payload"]?.jsonObject ?: return
-        decodeJsonElementValue<Asset>(payload)?.let { applyUpdatedAsset(it) }
-            ?: payload["asset"]?.jsonObject?.let { decodeJsonElementValue<Asset>(it) }?.let { applyUpdatedAsset(it) }
+    private fun replaceCachedUser(item: User) {
+        val list = _users.value.toMutableList()
+        val idx = list.indexOfFirst { it.id == item.id }
+        if (idx >= 0) list[idx] = item else list.add(0, item)
+        _users.value = list
+        if (_currentUser.value?.id == item.id) _currentUser.value = item
+        scheduleCacheSave()
     }
+
+    private fun replaceCachedLocation(item: Location) {
+        val list = _locations.value.toMutableList()
+        val idx = list.indexOfFirst { it.id == item.id }
+        if (idx >= 0) list[idx] = item else list.add(0, item)
+        _locations.value = list
+        scheduleCacheSave()
+    }
+
+    private fun replaceCachedMaintenance(item: AssetMaintenance) {
+        val list = _maintenances.value.toMutableList()
+        val idx = list.indexOfFirst { it.id == item.id }
+        if (idx >= 0) list[idx] = item else list.add(0, item)
+        _maintenances.value = list
+        scheduleCacheSave()
+    }
+
+    private fun mergeAssetFromResponseJson(json: JsonObject) {
+        val payload = json["payload"] as? JsonObject ?: return
+        // Check-in/out payload may use `asset` as a name string, not an object.
+        val obj = (payload["asset"] as? JsonObject) ?: payload
+        val incoming = decodeJsonElementValue<Asset>(obj) ?: return
+        if (incoming.id <= 0) return
+        val existing = _assets.value.find { it.id == incoming.id }
+        val merged = if (existing == null) incoming else existing.mergedWithPayload(incoming, obj)
+        applyUpdatedAsset(merged)
+    }
+
+    // PATCH/check-in payload can omit fields; keep cached values for missing keys.
+    private fun Asset.mergedWithPayload(incoming: Asset, obj: JsonObject): Asset = copy(
+        name = if (obj.containsKey("name")) incoming.name else name,
+        assetTag = if (obj.containsKey("asset_tag")) incoming.assetTag else assetTag,
+        serial = if (obj.containsKey("serial")) incoming.serial else serial,
+        model = if (obj.containsKey("model")) incoming.model else model,
+        statusLabel = if (obj.containsKey("status_label")) incoming.statusLabel else statusLabel,
+        category = if (obj.containsKey("category")) incoming.category else category,
+        manufacturer = if (obj.containsKey("manufacturer")) incoming.manufacturer else manufacturer,
+        supplier = if (obj.containsKey("supplier")) incoming.supplier else supplier,
+        notes = if (obj.containsKey("notes")) incoming.notes else notes,
+        orderNumber = if (obj.containsKey("order_number")) incoming.orderNumber else orderNumber,
+        company = if (obj.containsKey("company")) incoming.company else company,
+        location = if (obj.containsKey("location")) incoming.location else location,
+        rtdLocation = if (obj.containsKey("rtd_location")) incoming.rtdLocation else rtdLocation,
+        image = if (obj.containsKey("image")) incoming.image else image,
+        assignedTo = if (obj.containsKey("assigned_to")) incoming.assignedTo else assignedTo,
+        warrantyMonths = if (obj.containsKey("warranty_months")) incoming.warrantyMonths else warrantyMonths,
+        warrantyExpires = if (obj.containsKey("warranty_expires")) incoming.warrantyExpires else warrantyExpires,
+        purchaseDate = if (obj.containsKey("purchase_date")) incoming.purchaseDate else purchaseDate,
+        assetEolDate = if (obj.containsKey("asset_eol_date") || obj.containsKey("eol_date")) incoming.assetEolDate else assetEolDate,
+        nextAuditDate = if (obj.containsKey("next_audit_date")) incoming.nextAuditDate else nextAuditDate,
+        lastAuditDate = if (obj.containsKey("last_audit_date")) incoming.lastAuditDate else lastAuditDate,
+        lastCheckout = if (obj.containsKey("last_checkout")) incoming.lastCheckout else lastCheckout,
+        lastCheckin = if (obj.containsKey("last_checkin")) incoming.lastCheckin else lastCheckin,
+        expectedCheckin = if (obj.containsKey("expected_checkin")) incoming.expectedCheckin else expectedCheckin,
+        purchaseCost = if (obj.containsKey("purchase_cost")) incoming.purchaseCost else purchaseCost,
+        bookValue = if (obj.containsKey("book_value")) incoming.bookValue else bookValue,
+        customFields = if (obj.containsKey("custom_fields")) incoming.customFields else customFields,
+        userCanCheckout = if (obj.containsKey("user_can_checkout")) incoming.userCanCheckout else userCanCheckout,
+        availableActions = if (obj.containsKey("available_actions")) incoming.availableActions else availableActions,
+        updatedAt = if (obj.containsKey("updated_at")) incoming.updatedAt else updatedAt,
+    )
 
     // endregion
 
@@ -2737,9 +2926,13 @@ class SnipeApiClient(
         }
     }
 
-    private suspend fun executeGet(url: String, reportConnectionError: Boolean = false): HttpResult =
+    private suspend fun executeGet(
+        url: String,
+        reportConnectionError: Boolean = false,
+        bypassCache: Boolean = false,
+    ): HttpResult =
         withContext(Dispatchers.IO) {
-            val request = authorizedRequest(url).build()
+            val request = authorizedRequest(url, bypassCache = bypassCache).build()
             val response = client.newCall(request).execute()
             val body = response.body?.string().orEmpty()
             HttpResult(response.code, body, parseJsonObject(body))
@@ -2751,8 +2944,12 @@ class SnipeApiClient(
     private suspend fun executeJsonPatch(url: String, body: Map<String, Any?>): HttpResult =
         executeJsonRequest("PATCH", url, body)
 
-    private suspend fun executeJsonPut(url: String, body: Map<String, Any?>): HttpResult =
-        executeJsonRequest("PUT", url, body)
+    private suspend fun executeJsonPut(url: String, body: Map<String, Any?>): HttpResult {
+        val response = executeJsonRequest("PUT", url, body)
+        if (response.code != 405) return response
+        // Hosts that block PUT accept POST + _method.
+        return executeJsonRequest("POST", url, body + ("_method" to "PUT"))
+    }
 
     private suspend fun executeDelete(url: String): HttpResult =
         withContext(Dispatchers.IO) {
@@ -2861,15 +3058,80 @@ class SnipeApiClient(
         return true
     }
 
-    private suspend inline fun <reified T> fetchEntity(url: String): T? =
-        runCatching { decodePayloadOrRoot<T>(executeGet(url).body) }.getOrNull()
+    private suspend inline fun <reified T> fetchEntity(url: String): T? {
+        val response = executeGet(url, bypassCache = true)
+        if (response.code !in 200..299) return null
+        val json = response.json ?: return null
+        if (isSnipeApiErrorResponse(json)) return null
+        if (json.containsKey("id")) {
+            decodeJsonElementValue<T>(json)?.let { return it }
+        }
+        val payload = json["payload"] as? JsonObject ?: return null
+        return decodeJsonElementValue<T>(payload)
+    }
 
-    private fun authorizedRequest(url: String): Request.Builder =
-        Request.Builder()
+    private suspend fun downloadToCache(url: String, preferredFilename: String, fileId: Int): java.io.File? =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $apiToken")
+                .header("Accept", "*/*")
+                .header("User-Agent", USER_AGENT)
+                .build()
+            val response = client.newCall(request).execute()
+            response.use { http ->
+                if (http.code != 200) return@withContext null
+                val bytes = http.body?.bytes() ?: return@withContext null
+                if (!isBinaryFilePayload(bytes)) return@withContext null
+                val dir = java.io.File(appContext.cacheDir, "snipe-files").apply { mkdirs() }
+                val name = sanitizedDownloadFilename(preferredFilename, fileId)
+                val file = java.io.File(dir, "${java.util.UUID.randomUUID()}-$name")
+                file.writeBytes(bytes)
+                file
+            }
+        }
+
+    private fun apiFilesObjectType(itemType: String): String =
+        when (itemType.trim().lowercase(Locale.US)) {
+            "asset", "assets", "hardware" -> "hardware"
+            "accessory", "accessories" -> "accessories"
+            "component", "components" -> "components"
+            "consumable", "consumables" -> "consumables"
+            "license", "licenses" -> "licenses"
+            "user", "users" -> "users"
+            "location", "locations" -> "locations"
+            "model", "models", "asset_models" -> "models"
+            "maintenance", "maintenances" -> "maintenances"
+            else -> itemType.trim()
+        }
+
+    private fun isBinaryFilePayload(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        val first = bytes[0].toInt().toChar()
+        if (first == '{' || first == '[') return false
+        val headLen = minOf(200, bytes.size)
+        val head = bytes.copyOfRange(0, headLen).toString(Charsets.UTF_8).lowercase(Locale.US)
+        return !head.contains("<!doctype html") && !head.contains("<html")
+    }
+
+    private fun sanitizedDownloadFilename(preferred: String, fileId: Int): String {
+        val raw = preferred.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        return raw.ifBlank { "file-$fileId" }.take(120)
+    }
+
+    private fun authorizedRequest(url: String, bypassCache: Boolean = false): Request.Builder {
+        val builder = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $apiToken")
             .header("Accept", "application/json")
             .header("User-Agent", USER_AGENT)
+        if (bypassCache) {
+            builder.header("Cache-Control", "no-cache")
+            builder.header("Pragma", "no-cache")
+        }
+        return builder
+    }
 
     /**
      * Snipe-IT 8.7+ prefers `expected_completion_date`; older servers only know
@@ -3007,9 +3269,9 @@ class SnipeApiClient(
 
         fun isSnipeApiErrorResponse(json: JsonObject?): Boolean {
             json ?: return false
-            if (json["status"]?.jsonPrimitive?.contentOrNull?.lowercase() == "error") return true
-            if (json["errors"] != null) {
-                val status = json["status"]?.jsonPrimitive?.contentOrNull?.lowercase()
+            val status = (json["status"] as? JsonPrimitive)?.contentOrNull?.lowercase()
+            if (status == "error") return true
+            if (json["errors"] is JsonObject) {
                 if (status == null || status == "error") return true
             }
             return false

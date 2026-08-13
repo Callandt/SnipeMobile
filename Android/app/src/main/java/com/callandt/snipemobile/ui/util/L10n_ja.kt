@@ -353,6 +353,7 @@ internal object L10n_ja {
         "license_not_found_id" to "ID %sのライセンスが見つかりません。",
         "license_seats_assigned" to "割当済み",
         "license_seats_assigned_hint" to "割当済みシートを長押しして解除します。",
+        "assigned_checkin_hint" to "割り当て済みの項目を長押ししてチェックインします。",
         "license_seats_consumed" to "使用済み（再利用不可）",
         "license_seats_free" to "利用可能",
         "license_seats_summary" to "%d / %d 利用可能",

@@ -14,7 +14,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +29,8 @@ import com.callandt.snipemobile.ui.components.ActivityTimelineEmpty
 import com.callandt.snipemobile.ui.components.ActivityTimelineList
 import com.callandt.snipemobile.ui.components.ActivityTimelineLoading
 import com.callandt.snipemobile.ui.components.SearchTopBar
+import com.callandt.snipemobile.ui.components.SnipeFilePreviewHost
+import com.callandt.snipemobile.ui.components.rememberSnipeFilePreviewState
 import com.callandt.snipemobile.ui.util.L10n
 import kotlinx.coroutines.launch
 
@@ -48,7 +49,7 @@ fun ActivityLogScreen(
     var searchQuery by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val pageSize = 50
-    val baseUrl by viewModel.baseUrl.collectAsState()
+    val filePreview = rememberSnipeFilePreviewState(viewModel)
 
     val filtered = remember(activities, searchQuery) {
         val q = searchQuery.trim().lowercase()
@@ -146,8 +147,9 @@ fun ActivityLogScreen(
                         activities = filtered,
                         showItemType = true,
                         preferItemHeadline = true,
-                        baseUrl = baseUrl,
+                        apiClient = viewModel.apiClient,
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+                        onFileClick = { filePreview.openActivityFile(null, null, it) },
                         footer = {
                             if (searchQuery.isEmpty() && canLoadMore) {
                                 item {
@@ -168,4 +170,5 @@ fun ActivityLogScreen(
             }
         }
     }
+    SnipeFilePreviewHost(filePreview)
 }

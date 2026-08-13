@@ -136,9 +136,17 @@ fun AssetDetailScreen(
     var showEdit by remember { mutableStateOf(false) }
     var showAddMaintenance by remember { mutableStateOf(false) }
     var maintenanceReloadToken by remember { mutableIntStateOf(0) }
+    var checkInOutReloadToken by remember { mutableIntStateOf(0) }
     var isGeneratingLabel by remember { mutableStateOf(false) }
     var labelErrorMessage by remember { mutableStateOf<String?>(null) }
     val deleteState = rememberEntityDeleteState()
+
+    fun refreshAfterWrite() {
+        scope.launch {
+            viewModel.apiClient.refreshHardwareAfterWrite(assetId)
+            checkInOutReloadToken += 1
+        }
+    }
 
     suspend fun generateLabel() {
         val tag = asset?.decodedAssetTag?.trim().orEmpty()
@@ -266,6 +274,7 @@ fun AssetDetailScreen(
                 AssetDetailTab.Details -> AssetDetailsTab(
                     asset = asset,
                     viewModel = viewModel,
+                    reloadToken = checkInOutReloadToken,
                     onOpenUser = onOpenUser,
                     onOpenLocation = onOpenLocation,
                     onOpenAsset = onOpenAsset,
@@ -280,11 +289,16 @@ fun AssetDetailScreen(
                     onOpenMaintenance = onOpenMaintenance,
                     onAddMaintenance = { showAddMaintenance = true },
                 )
-                AssetDetailTab.Files -> AssetFilesTab(assetId = asset.id, viewModel = viewModel)
+                AssetDetailTab.Files -> AssetFilesTab(
+                    assetId = asset.id,
+                    viewModel = viewModel,
+                    reloadToken = checkInOutReloadToken,
+                )
                 AssetDetailTab.History -> ItemHistoryTab(
                     itemType = "asset",
                     itemId = asset.id,
                     viewModel = viewModel,
+                    reloadToken = checkInOutReloadToken,
                 )
             }
         }
@@ -295,6 +309,7 @@ fun AssetDetailScreen(
             asset = asset,
             viewModel = viewModel,
             onDismiss = { showEdit = false },
+            onSaved = { refreshAfterWrite() },
         )
     }
 
@@ -313,7 +328,7 @@ fun AssetDetailScreen(
             asset = asset,
             viewModel = viewModel,
             onDismiss = { showCheckout = false },
-            onSuccess = { scope.launch { viewModel.apiClient.fetchAssets() } },
+            onSuccess = { refreshAfterWrite() },
         )
     }
 
@@ -322,6 +337,7 @@ fun AssetDetailScreen(
             asset = asset,
             viewModel = viewModel,
             onDismiss = { showCheckin = false },
+            onSuccess = { refreshAfterWrite() },
         )
     }
 
@@ -358,6 +374,7 @@ fun AssetDetailScreen(
 private fun AssetDetailsTab(
     asset: Asset,
     viewModel: AppViewModel,
+    reloadToken: Int = 0,
     onOpenUser: ((Int) -> Unit)? = null,
     onOpenLocation: ((Int) -> Unit)? = null,
     onOpenAsset: ((Int) -> Unit)? = null,
@@ -374,11 +391,11 @@ private fun AssetDetailsTab(
     var assignedAccessories by remember(asset.id) { mutableStateOf<List<Accessory>>(emptyList()) }
     var assignedComponents by remember(asset.id) { mutableStateOf<List<AssetAssignedComponent>>(emptyList()) }
 
-    LaunchedEffect(asset.id) {
+    LaunchedEffect(asset.id, reloadToken) {
         detailAsset = viewModel.apiClient.fetchHardwareDetails(asset.id)
     }
 
-    LaunchedEffect(asset.id) {
+    LaunchedEffect(asset.id, reloadToken) {
         coroutineScope {
             val childAssetsDeferred = async { viewModel.apiClient.fetchAssetAssignedAssets(asset.id) }
             val licensesDeferred = async { viewModel.apiClient.fetchAssetLicenses(asset.id) }
@@ -444,63 +461,59 @@ private fun AssetDetailsTab(
             DetailRow(L10n.string("company"), asset.decodedCompanyName)
         }
 
-        asset.assignedTo?.let { assignedTo ->
-            val showAssignedSection = asset.statusLabel.statusMeta?.equals("deployed", ignoreCase = true) == true ||
-                !assignee.isNullOrEmpty()
-            if (showAssignedSection) {
-                DetailCardListSection(title = L10n.string("assigned_to")) {
-                    when {
-                        assignedTo.isUser -> {
-                            val user = users.firstOrNull { it.id == assignedTo.id }
-                            if (user != null) {
-                                UserCard(
-                                    user = user,
-                                    onClick = { onOpenUser?.invoke(user.id) },
-                                )
-                            } else {
-                                AssetCheckedOutBanner(
-                                    assigneeName = assignee ?: assignedTo.decodedName,
-                                    icon = assetCheckedOutIcon(asset),
-                                    onClick = onOpenUser?.let { callback -> { callback(assignedTo.id) } },
-                                )
-                            }
-                        }
-                        assignedTo.isLocation -> {
-                            val location = locations.firstOrNull { it.id == assignedTo.id }
-                            if (location != null) {
-                                LocationCard(
-                                    location = location,
-                                    onClick = { onOpenLocation?.invoke(location.id) },
-                                )
-                            } else {
-                                AssetCheckedOutBanner(
-                                    assigneeName = assignee ?: assignedTo.decodedName,
-                                    icon = assetCheckedOutIcon(asset),
-                                    onClick = onOpenLocation?.let { callback -> { callback(assignedTo.id) } },
-                                )
-                            }
-                        }
-                        assignedTo.isAsset -> {
-                            val assignedAsset = assets.firstOrNull { it.id == assignedTo.id }
-                            if (assignedAsset != null) {
-                                AssetCard(
-                                    asset = assignedAsset,
-                                    onClick = { onOpenAsset?.invoke(assignedAsset.id) },
-                                )
-                            } else {
-                                AssetCheckedOutBanner(
-                                    assigneeName = assignee ?: assignedTo.decodedName,
-                                    icon = assetCheckedOutIcon(asset),
-                                    onClick = onOpenAsset?.let { callback -> { callback(assignedTo.id) } },
-                                )
-                            }
-                        }
-                        else -> {
+        asset.assignedTo?.takeIf { isAssetDeployed(asset) }?.let { assignedTo ->
+            DetailCardListSection(title = L10n.string("assigned_to")) {
+                when {
+                    assignedTo.isUser -> {
+                        val user = users.firstOrNull { it.id == assignedTo.id }
+                        if (user != null) {
+                            UserCard(
+                                user = user,
+                                onClick = { onOpenUser?.invoke(user.id) },
+                            )
+                        } else {
                             AssetCheckedOutBanner(
                                 assigneeName = assignee ?: assignedTo.decodedName,
                                 icon = assetCheckedOutIcon(asset),
+                                onClick = onOpenUser?.let { callback -> { callback(assignedTo.id) } },
                             )
                         }
+                    }
+                    assignedTo.isLocation -> {
+                        val location = locations.firstOrNull { it.id == assignedTo.id }
+                        if (location != null) {
+                            LocationCard(
+                                location = location,
+                                onClick = { onOpenLocation?.invoke(location.id) },
+                            )
+                        } else {
+                            AssetCheckedOutBanner(
+                                assigneeName = assignee ?: assignedTo.decodedName,
+                                icon = assetCheckedOutIcon(asset),
+                                onClick = onOpenLocation?.let { callback -> { callback(assignedTo.id) } },
+                            )
+                        }
+                    }
+                    assignedTo.isAsset -> {
+                        val assignedAsset = assets.firstOrNull { it.id == assignedTo.id }
+                        if (assignedAsset != null) {
+                            AssetCard(
+                                asset = assignedAsset,
+                                onClick = { onOpenAsset?.invoke(assignedAsset.id) },
+                            )
+                        } else {
+                            AssetCheckedOutBanner(
+                                assigneeName = assignee ?: assignedTo.decodedName,
+                                icon = assetCheckedOutIcon(asset),
+                                onClick = onOpenAsset?.let { callback -> { callback(assignedTo.id) } },
+                            )
+                        }
+                    }
+                    else -> {
+                        AssetCheckedOutBanner(
+                            assigneeName = assignee ?: assignedTo.decodedName,
+                            icon = assetCheckedOutIcon(asset),
+                        )
                     }
                 }
             }
@@ -563,7 +576,7 @@ private fun AssetDetailsTab(
             }
         }
 
-        val customFields = (detailAsset ?: asset).customFields
+        val customFields = asset.customFields?.takeIf { it.isNotEmpty() } ?: detailAsset?.customFields
         val hasCustomFieldValues = customFields?.values?.any { it.decodedValue.isNotBlank() } == true
         if (hasCustomFieldValues) {
             DetailSectionCard(title = L10n.string("custom_fields")) {
@@ -730,9 +743,9 @@ private fun AssetDetailBottomBar(
     onCheckout: () -> Unit,
     onCheckin: () -> Unit,
 ) {
-    val actions = asset.availableActions
-    val showCheckin = actions?.checkin == true || isAssetDeployed(asset)
-    val showCheckout = actions?.checkout == true || canAssetCheckOut(asset)
+    // available_actions.checkin is a permission, not "this asset is out".
+    val showCheckin = isAssetDeployed(asset)
+    val showCheckout = canAssetCheckOut(asset)
 
     Column(
         modifier = Modifier
@@ -792,6 +805,7 @@ private fun DetailActionButton(
 private fun isAssetDeployed(asset: Asset): Boolean {
     val meta = asset.statusLabel.statusMeta?.trim()?.lowercase().orEmpty()
     if (meta == "deployed") return true
+    // assigned_to can linger after check-in; user_can_checkout means it's in.
     return asset.assignedTo != null && !asset.userCanCheckout
 }
 

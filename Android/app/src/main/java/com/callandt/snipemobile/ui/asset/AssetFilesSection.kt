@@ -1,6 +1,5 @@
 package com.callandt.snipemobile.ui.asset
 
-import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.format.Formatter
@@ -70,10 +69,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeApiClient
 import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.data.model.AssetFile
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
+import com.callandt.snipemobile.ui.components.SnipeFilePreviewHost
+import com.callandt.snipemobile.ui.components.SnipeFileThumbnail
+import com.callandt.snipemobile.ui.components.rememberSnipeFilePreviewState
 import com.callandt.snipemobile.ui.util.L10n
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -81,9 +84,9 @@ import java.util.UUID
 
 /** Asset files tab: list + upload + delete. */
 @Composable
-fun AssetFilesTab(assetId: Int, viewModel: AppViewModel) {
-    val context = LocalContext.current
+fun AssetFilesTab(assetId: Int, viewModel: AppViewModel, reloadToken: Int = 0) {
     val scope = rememberCoroutineScope()
+    val filePreview = rememberSnipeFilePreviewState(viewModel)
     var files by remember(assetId) { mutableStateOf<List<AssetFile>>(emptyList()) }
     var isLoading by remember(assetId) { mutableStateOf(true) }
     var showAddSheet by remember { mutableStateOf(false) }
@@ -98,7 +101,7 @@ fun AssetFilesTab(assetId: Int, viewModel: AppViewModel) {
         isLoading = false
     }
 
-    LaunchedEffect(assetId) { reload() }
+    LaunchedEffect(assetId, reloadToken) { reload() }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -135,18 +138,9 @@ fun AssetFilesTab(assetId: Int, viewModel: AppViewModel) {
                     items(files, key = { it.id }) { file ->
                         AssetFileRow(
                             file = file,
-                            onClick = {
-                                val url = file.url?.takeIf { it.isNotBlank() }
-                                if (url != null) {
-                                    runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                    }.onFailure {
-                                        noticeMessage = L10n.string("file_download_failed")
-                                    }
-                                } else {
-                                    noticeMessage = L10n.string("file_download_failed")
-                                }
-                            },
+                            assetId = assetId,
+                            apiClient = viewModel.apiClient,
+                            onClick = { filePreview.openAssetFile(assetId, file) },
                             onDelete = if (file.canDelete) {
                                 { filePendingDelete = file }
                             } else {
@@ -217,11 +211,15 @@ fun AssetFilesTab(assetId: Int, viewModel: AppViewModel) {
         snackbarHostState = snackbarHostState,
         onDismiss = { noticeMessage = null },
     )
+
+    SnipeFilePreviewHost(filePreview)
 }
 
 @Composable
 private fun AssetFileRow(
     file: AssetFile,
+    assetId: Int,
+    apiClient: SnipeApiClient,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?,
 ) {
@@ -240,14 +238,26 @@ private fun AssetFileRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(accentColor.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(fileIconFor(file), contentDescription = null, tint = accentColor)
+            if (file.isImage) {
+                SnipeFileThumbnail(
+                    apiClient = apiClient,
+                    objectType = "hardware",
+                    objectId = assetId,
+                    fileId = file.id,
+                    filename = file.decodedFilename,
+                    size = 52.dp,
+                    cornerRadius = 12.dp,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(accentColor.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(fileIconFor(file), contentDescription = null, tint = accentColor)
+                }
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(

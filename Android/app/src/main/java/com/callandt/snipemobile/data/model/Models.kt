@@ -843,6 +843,7 @@ data class Accessory(
     val purchaseDate: String? = null,
     val modelNumber: String? = null,
     val image: String? = null,
+    val notes: String? = null,
 ) {
     /** Snipe-IT accessories have no asset_tag; use id instead. */
     val assetTag: String get() = id.toString()
@@ -853,6 +854,7 @@ data class Accessory(
     val decodedLocationName: String get() = HtmlDecoder.decode(location?.name ?: "")
     val decodedManufacturerName: String get() = HtmlDecoder.decode(manufacturer?.name ?: "")
     val decodedCategoryName: String get() = HtmlDecoder.decode(category?.name ?: "")
+    val decodedNotes: String get() = HtmlDecoder.decode(notes ?: "")
 }
 
 object AccessorySerializer : KSerializer<Accessory> {
@@ -879,6 +881,7 @@ object AccessorySerializer : KSerializer<Accessory> {
             purchaseDate = SnipeDecoders.purchaseDateString(obj["purchase_date"]),
             modelNumber = SnipeDecoders.flexibleStringOrNumber(obj["model_number"]),
             image = SnipeDecoders.flexibleStringOrNumber(obj["image"]),
+            notes = SnipeDecoders.flexibleStringOrNumber(obj["notes"]),
         )
     }
 
@@ -904,6 +907,7 @@ object AccessorySerializer : KSerializer<Accessory> {
                     purchaseDate = value.purchaseDate,
                     modelNumber = value.modelNumber,
                     image = value.image,
+                    notes = value.notes,
                 ),
             ),
         )
@@ -929,6 +933,7 @@ object AccessorySerializer : KSerializer<Accessory> {
         @SerialName("purchase_date") val purchaseDate: String? = null,
         @SerialName("model_number") val modelNumber: String? = null,
         val image: String? = null,
+        val notes: String? = null,
     )
 }
 

@@ -353,6 +353,7 @@ internal object L10n_zh {
         "license_not_found_id" to "未找到 ID 为 %s 的许可证。",
         "license_seats_assigned" to "已分配",
         "license_seats_assigned_hint" to "按住已分配的席位可取消分配。",
+        "assigned_checkin_hint" to "按住已分配的项目以签入。",
         "license_seats_consumed" to "已使用（不可重复使用）",
         "license_seats_free" to "可用",
         "license_seats_summary" to "%d / %d 可用",

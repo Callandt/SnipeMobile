@@ -3489,7 +3489,8 @@ class SnipeITAPIClient: ObservableObject {
         locationId: Int?,
         manufacturerId: Int?,
         supplierId: Int?,
-        customFields: [String: String]?
+        customFields: [String: String]?,
+        notes: String? = nil
     ) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/accessories") else { return false }
         var request = URLRequest(url: url)
@@ -3525,6 +3526,9 @@ class SnipeITAPIClient: ObservableObject {
         }
         if let v = supplierId, v > 0 {
             body["supplier_id"] = v
+        }
+        if let v = notes, !v.isEmpty {
+            body["notes"] = v
         }
         if let cf = customFields, !cf.isEmpty {
             body["custom_fields"] = cf
@@ -3567,7 +3571,8 @@ class SnipeITAPIClient: ObservableObject {
         companyId: Int?,
         locationId: Int?,
         manufacturerId: Int?,
-        supplierId: Int?
+        supplierId: Int?,
+        notes: String? = nil
     ) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)") else { return false }
         var request = URLRequest(url: url)
@@ -3609,6 +3614,7 @@ class SnipeITAPIClient: ObservableObject {
         if let v = supplierId, v > 0 {
             body["supplier_id"] = v
         }
+        body["notes"] = notes ?? ""
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
