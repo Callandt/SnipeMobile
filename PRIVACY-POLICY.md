@@ -64,4 +64,4 @@ If your local law grants you specific privacy rights (for example under GDPR or 
 If you have questions about this privacy policy or SnipeMobile, you can contact:
 
 **Avery Callandt**  
-Email: avery.callandt@outlook.com
+Email: snipemobile@icloud.com
