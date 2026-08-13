@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 fun AddLicenseSheet(
     viewModel: AppViewModel,
     onDismiss: () -> Unit,
-    onCreated: () -> Unit = {},
+    onCreated: (Int?) -> Unit = {},
 ) {
     LicenseFormSheet(
         viewModel = viewModel,
@@ -58,7 +58,7 @@ fun EditLicenseSheet(
         saveLabel = L10n.string("save"),
         existing = license,
         onDismiss = onDismiss,
-        onSaved = onSaved,
+        onSaved = { onSaved() },
     )
 }
 
@@ -69,7 +69,7 @@ private fun LicenseFormSheet(
     saveLabel: String,
     existing: License?,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+    onSaved: (Int?) -> Unit,
 ) {
     val categories by viewModel.categories.collectAsState()
     val companies by viewModel.companies.collectAsState()
@@ -174,10 +174,14 @@ private fun LicenseFormSheet(
                 isSaving = true
                 scope.launch {
                     val body = buildBody()
+                    var createdId: Int? = null
                     val success = if (existing == null) {
                         val result = viewModel.apiClient.createLicense(body)
                         if (!result.success) {
                             errorMessage = result.message ?: lastApiMessage ?: L10n.string("create_failed")
+                        } else {
+                            createdId = result.id
+                            createdId?.let { viewModel.apiClient.fetchLicenseDetails(it) }
                         }
                         result.success
                     } else {
@@ -188,7 +192,7 @@ private fun LicenseFormSheet(
                     isSaving = false
                     if (success) {
                         viewModel.syncInBackground()
-                        onSaved()
+                        onSaved(createdId ?: existing?.id)
                         onDismiss()
                     }
                 }

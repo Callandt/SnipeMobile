@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 fun AddUserSheet(
     viewModel: AppViewModel,
     onDismiss: () -> Unit,
-    onCreated: () -> Unit = {},
+    onCreated: (Int?) -> Unit = {},
 ) {
     UserFormSheet(
         viewModel = viewModel,
@@ -55,7 +55,7 @@ fun EditUserSheet(
         saveLabel = L10n.string("save"),
         existing = user,
         onDismiss = onDismiss,
-        onSaved = onSaved,
+        onSaved = { onSaved() },
     )
 }
 
@@ -66,7 +66,7 @@ private fun UserFormSheet(
     saveLabel: String,
     existing: User?,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+    onSaved: (Int?) -> Unit,
 ) {
     val locations by viewModel.locations.collectAsState()
     val companies by viewModel.companies.collectAsState()
@@ -132,10 +132,14 @@ private fun UserFormSheet(
                 isSaving = true
                 scope.launch {
                     val body = buildBody()
+                    var createdId: Int? = null
                     val success = if (existing == null) {
                         val result = viewModel.apiClient.createUser(body)
                         if (!result.success) {
                             errorMessage = result.message ?: lastApiMessage ?: L10n.string("create_failed")
+                        } else {
+                            createdId = result.id
+                            createdId?.let { viewModel.apiClient.fetchUserDetails(it) }
                         }
                         result.success
                     } else {
@@ -146,7 +150,7 @@ private fun UserFormSheet(
                     isSaving = false
                     if (success) {
                         viewModel.syncInBackground()
-                        onSaved()
+                        onSaved(createdId ?: existing?.id)
                         onDismiss()
                     }
                 }

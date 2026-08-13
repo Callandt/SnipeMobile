@@ -13,6 +13,7 @@ struct AddAssetSheet: View {
     var prefilledDellURL: URL? = nil
     /// Plain serial pre-fill when no Dell URL is available.
     var prefilledSerial: String? = nil
+    var onCreated: ((Int?) -> Void)? = nil
     @State private var name = ""
     @State private var assetTag = ""
     @State private var serial = ""
@@ -545,6 +546,7 @@ struct AddAssetSheet: View {
             await MainActor.run {
                 isSaving = false
                 if success {
+                    onCreated?(createResult.assetId)
                     isPresented = false
                 } else {
                     resultMessage = apiClient.lastApiMessage ?? "Create failed."

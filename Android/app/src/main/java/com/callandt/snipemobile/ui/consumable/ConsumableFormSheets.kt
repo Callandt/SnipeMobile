@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 fun AddConsumableSheet(
     viewModel: AppViewModel,
     onDismiss: () -> Unit,
-    onCreated: () -> Unit = {},
+    onCreated: (Int?) -> Unit = {},
 ) {
     ConsumableFormSheet(
         viewModel = viewModel,
@@ -58,7 +58,7 @@ fun EditConsumableSheet(
         saveLabel = L10n.string("save"),
         existing = consumable,
         onDismiss = onDismiss,
-        onSaved = onSaved,
+        onSaved = { onSaved() },
     )
 }
 
@@ -69,7 +69,7 @@ private fun ConsumableFormSheet(
     saveLabel: String,
     existing: Consumable?,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+    onSaved: (Int?) -> Unit,
 ) {
     val categories by viewModel.categories.collectAsState()
     val locations by viewModel.locations.collectAsState()
@@ -150,10 +150,14 @@ private fun ConsumableFormSheet(
                 isSaving = true
                 scope.launch {
                     val body = buildBody()
+                    var createdId: Int? = null
                     val success = if (existing == null) {
                         val result = viewModel.apiClient.createConsumable(body)
                         if (!result.success) {
                             errorMessage = result.message ?: lastApiMessage ?: L10n.string("create_failed")
+                        } else {
+                            createdId = result.id
+                            createdId?.let { viewModel.apiClient.fetchConsumableDetails(it) }
                         }
                         result.success
                     } else {
@@ -164,7 +168,7 @@ private fun ConsumableFormSheet(
                     isSaving = false
                     if (success) {
                         viewModel.syncInBackground()
-                        onSaved()
+                        onSaved(createdId ?: existing?.id)
                         onDismiss()
                     }
                 }

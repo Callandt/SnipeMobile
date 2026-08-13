@@ -203,7 +203,7 @@ fun LicensesTab(
         AddLicenseSheet(
             viewModel = viewModel,
             onDismiss = { showAddLicense = false },
-            onCreated = { viewModel.syncInBackground() },
+            onCreated = { id -> id?.let(onLicenseClick) },
         )
     }
 

@@ -18,7 +18,6 @@ struct ManagementFormView: View {
     @State private var isSaving = false
     @State private var resultMessage = ""
     @State private var showResult = false
-    @State private var didSucceed = false
 
     private var customRegexSentinel: String { ManagementOptionSource.customRegexFormat }
 
@@ -58,10 +57,8 @@ struct ManagementFormView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .task(id: existing?.id) { await loadFormValues() }
-            .alert(L10n.string("result"), isPresented: $showResult) {
-                Button(L10n.string("ok")) {
-                    if didSucceed { dismiss() }
-                }
+            .alert(L10n.string("error"), isPresented: $showResult) {
+                Button(L10n.string("ok"), role: .cancel) { }
             } message: {
                 Text(resultMessage)
             }
@@ -297,22 +294,15 @@ struct ManagementFormView: View {
             result = await apiClient.managementCreate(path: config.path, body: body)
         }
 
-        didSucceed = result.success
         if result.success {
             await refreshBackingList()
-            if !isEdit, let onCreated {
+            if let onCreated {
                 onCreated(result.id)
-                dismiss()
-                return
             }
-            if isEdit {
-                dismiss()
-                return
-            }
-            resultMessage = result.message ?? L10n.string("mgmt_created")
-        } else {
-            resultMessage = result.message ?? L10n.string("mgmt_save_failed")
+            dismiss()
+            return
         }
+        resultMessage = result.message ?? L10n.string("mgmt_save_failed")
         showResult = true
     }
 

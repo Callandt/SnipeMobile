@@ -957,12 +957,31 @@ struct MainSplitView: View {
                 apiClient: apiClient,
                 isPresented: $showAddAsset,
                 prefilledDellURL: pendingDellURLForAdd,
-                prefilledSerial: pendingDellSerial
+                prefilledSerial: pendingDellSerial,
+                onCreated: { newId in
+                    Task {
+                        if let newId,
+                           let detailed = await apiClient.fetchHardwareDetails(assetId: newId) {
+                            await MainActor.run { selectedAsset = detailed }
+                        }
+                    }
+                }
             )
             .presentationDetents([.large])
         }
         .sheet(isPresented: $showAddAccessory) {
-            AddAccessorySheet(apiClient: apiClient, isPresented: $showAddAccessory)
+            AddAccessorySheet(
+                apiClient: apiClient,
+                isPresented: $showAddAccessory,
+                onCreated: { newId in
+                    Task {
+                        if let newId,
+                           let detailed = await apiClient.fetchAccessoryDetails(accessoryId: newId) {
+                            await MainActor.run { selectedAccessory = detailed }
+                        }
+                    }
+                }
+            )
                 .presentationDetents([.large])
         }
         .sheet(isPresented: $showAddMaintenance, onDismiss: {

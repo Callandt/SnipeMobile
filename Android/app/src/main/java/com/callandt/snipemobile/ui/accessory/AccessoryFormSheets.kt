@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 fun AddAccessorySheet(
     viewModel: AppViewModel,
     onDismiss: () -> Unit,
-    onCreated: () -> Unit = {},
+    onCreated: (Int?) -> Unit = {},
 ) {
     AccessoryFormSheet(
         viewModel = viewModel,
@@ -58,7 +58,7 @@ fun EditAccessorySheet(
         saveLabel = L10n.string("save"),
         existing = accessory,
         onDismiss = onDismiss,
-        onSaved = onSaved,
+        onSaved = { onSaved() },
     )
 }
 
@@ -69,7 +69,7 @@ private fun AccessoryFormSheet(
     saveLabel: String,
     existing: Accessory?,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+    onSaved: (Int?) -> Unit,
 ) {
     val categories by viewModel.categories.collectAsState()
     val locations by viewModel.locations.collectAsState()
@@ -149,10 +149,14 @@ private fun AccessoryFormSheet(
                 isSaving = true
                 scope.launch {
                     val body = buildBody()
+                    var createdId: Int? = null
                     val success = if (existing == null) {
                         val result = viewModel.apiClient.createAccessory(body)
                         if (!result.success) {
                             errorMessage = result.message ?: lastApiMessage ?: L10n.string("create_failed")
+                        } else {
+                            createdId = result.id
+                            createdId?.let { viewModel.apiClient.fetchAccessoryDetails(it) }
                         }
                         result.success
                     } else {
@@ -163,7 +167,7 @@ private fun AccessoryFormSheet(
                     isSaving = false
                     if (success) {
                         viewModel.syncInBackground()
-                        onSaved()
+                        onSaved(createdId ?: existing?.id)
                         onDismiss()
                     }
                 }

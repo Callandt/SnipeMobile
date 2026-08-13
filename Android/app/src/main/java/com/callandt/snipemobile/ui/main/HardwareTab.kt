@@ -591,7 +591,7 @@ fun HardwareTab(
                 dellPrefill = null
                 onClearPendingDellAdd()
             },
-            onCreated = { viewModel.syncInBackground() },
+            onCreated = { id -> id?.let(onAssetClick) },
             prefilledDellUrl = dellPrefill?.url,
             prefilledSerial = dellPrefill?.serial,
         )

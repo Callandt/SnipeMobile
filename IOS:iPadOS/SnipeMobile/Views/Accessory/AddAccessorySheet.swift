@@ -3,6 +3,7 @@ import SwiftUI
 struct AddAccessorySheet: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var isPresented: Bool
+    var onCreated: ((Int?) -> Void)? = nil
     @State private var name = ""
     @State private var selectedCategoryId: Int = 0
     @State private var quantityText = "1"
@@ -35,12 +36,8 @@ struct AddAccessorySheet: View {
             .navigationTitle(L10n.string("new_accessory"))
             .toolbar { toolbarContent }
             .onAppear(perform: setupOnAppear)
-            .alert(L10n.string("result"), isPresented: $showResult) {
-                Button(L10n.string("ok")) {
-                    if resultMessage.contains("created") || resultMessage.lowercased().contains("success") {
-                        isPresented = false
-                    }
-                }
+            .alert(L10n.string("error"), isPresented: $showResult) {
+                Button(L10n.string("ok"), role: .cancel) {}
             } message: {
                 Text(resultMessage)
             }
@@ -192,7 +189,7 @@ struct AddAccessorySheet: View {
         let quantity = parsedQuantity()
         let minAmt = parsedMinAmt()
         Task {
-            let success = await apiClient.createAccessory(
+            let result = await apiClient.createAccessory(
                 name: name.trimmingCharacters(in: .whitespaces),
                 categoryId: selectedCategoryId,
                 quantity: quantity,
@@ -212,8 +209,13 @@ struct AddAccessorySheet: View {
             )
             await MainActor.run {
                 isSaving = false
-                resultMessage = apiClient.lastApiMessage ?? (success ? "Accessory created!" : "Create failed.")
-                showResult = true
+                if result.success {
+                    onCreated?(result.id)
+                    isPresented = false
+                } else {
+                    resultMessage = apiClient.lastApiMessage ?? L10n.string("create_failed")
+                    showResult = true
+                }
             }
         }
     }

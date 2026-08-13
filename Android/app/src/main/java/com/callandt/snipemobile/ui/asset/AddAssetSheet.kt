@@ -39,7 +39,7 @@ import java.util.Date
 fun AddAssetSheet(
     viewModel: AppViewModel,
     onDismiss: () -> Unit,
-    onCreated: () -> Unit = {},
+    onCreated: (Int?) -> Unit = {},
     prefilledDellUrl: String? = null,
     prefilledSerial: String? = null,
 ) {
@@ -221,7 +221,7 @@ fun AddAssetSheet(
                     isSaving = false
                     if (result.success) {
                         viewModel.syncInBackground()
-                        onCreated()
+                        onCreated(result.id)
                         onDismiss()
                     } else {
                         errorMessage = result.message ?: lastApiMessage ?: L10n.string("create_failed")

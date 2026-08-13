@@ -1149,8 +1149,11 @@ class SnipeApiClient(
             serializer = ComponentAssetRow.serializer(),
         ).orEmpty()
 
-    suspend fun fetchUserDetails(userId: Int): User? =
-        fetchEntity<User>("$baseUrl/api/v1/users/$userId")
+    suspend fun fetchUserDetails(userId: Int): User? {
+        val item = fetchEntity<User>("$baseUrl/api/v1/users/$userId") ?: return null
+        withContext(Dispatchers.Main) { replaceCachedUser(item) }
+        return item
+    }
 
     suspend fun fetchUserAssets(userId: Int): List<Asset> =
         fetchAllPaginated(
@@ -1318,6 +1321,12 @@ class SnipeApiClient(
     suspend fun fetchLicenseDetails(licenseId: Int): License? {
         val item = fetchEntity<License>("$baseUrl/api/v1/licenses/$licenseId") ?: return null
         withContext(Dispatchers.Main) { replaceCachedItem(item) }
+        return item
+    }
+
+    suspend fun fetchLocationDetails(locationId: Int): Location? {
+        val item = fetchEntity<Location>("$baseUrl/api/v1/locations/$locationId") ?: return null
+        withContext(Dispatchers.Main) { replaceCachedLocation(item) }
         return item
     }
 

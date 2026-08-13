@@ -268,7 +268,7 @@ fun DirectoryTab(
         AddUserSheet(
             viewModel = viewModel,
             onDismiss = { showAddUser = false },
-            onCreated = { viewModel.syncInBackground() },
+            onCreated = { id -> id?.let(onUserClick) },
         )
     }
 
@@ -276,7 +276,7 @@ fun DirectoryTab(
         AddLocationSheet(
             viewModel = viewModel,
             onDismiss = { showAddLocation = false },
-            onCreated = { _, _ -> viewModel.syncInBackground() },
+            onCreated = { id, _ -> id?.let(onLocationClick) },
         )
     }
 

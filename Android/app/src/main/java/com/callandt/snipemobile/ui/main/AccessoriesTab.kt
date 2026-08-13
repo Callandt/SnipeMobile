@@ -199,7 +199,7 @@ fun AccessoriesTab(
         AddAccessorySheet(
             viewModel = viewModel,
             onDismiss = { showAddAccessory = false },
-            onCreated = { viewModel.syncInBackground() },
+            onCreated = { id -> id?.let(onAccessoryClick) },
         )
     }
 

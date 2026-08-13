@@ -3491,8 +3491,8 @@ class SnipeITAPIClient: ObservableObject {
         supplierId: Int?,
         customFields: [String: String]?,
         notes: String? = nil
-    ) async -> Bool {
-        guard let url = URL(string: "\(baseURL)/api/v1/accessories") else { return false }
+    ) async -> (success: Bool, id: Int?) {
+        guard let url = URL(string: "\(baseURL)/api/v1/accessories") else { return (false, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
@@ -3536,24 +3536,24 @@ class SnipeITAPIClient: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            guard let httpResponse = response as? HTTPURLResponse else { return (false, nil) }
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let hasNewId = (json?["payload"] as? [String: Any])?["id"] != nil
+            let newId = (json?["payload"] as? [String: Any])?["id"] as? Int
             let base = Self.evaluateWriteResponse(
                 json: json,
                 httpStatus: httpResponse.statusCode,
                 defaultSuccessMessage: "Accessory created!",
                 defaultFailureMessage: "Create failed."
             )
-            let success = base.success && hasNewId
+            let success = base.success && newId != nil
             let msg = success ? base.message : (Self.extractApiErrorMessage(from: json ?? [:]) ?? base.message)
             await MainActor.run { self.lastApiMessage = msg }
-            guard success else { return false }
+            guard success else { return (false, nil) }
             Task { await self.fetchAccessories() }
-            return true
+            return (true, newId)
         } catch {
             await MainActor.run { self.lastApiMessage = "Error: \(error.localizedDescription)" }
-            return false
+            return (false, nil)
         }
     }
 

@@ -288,7 +288,15 @@ struct ContentView: View {
                 apiClient: apiClient,
                 isPresented: $showingAddAsset,
                 prefilledDellURL: pendingDellURLForAdd,
-                prefilledSerial: pendingDellSerial
+                prefilledSerial: pendingDellSerial,
+                onCreated: { newId in
+                    Task {
+                        if let newId,
+                           let detailed = await apiClient.fetchHardwareDetails(assetId: newId) {
+                            await MainActor.run { hardwarePath.append(detailed) }
+                        }
+                    }
+                }
             )
         }
         .alert(
@@ -308,7 +316,18 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAddAccessory) {
-            AddAccessorySheet(apiClient: apiClient, isPresented: $showingAddAccessory)
+            AddAccessorySheet(
+                apiClient: apiClient,
+                isPresented: $showingAddAccessory,
+                onCreated: { newId in
+                    Task {
+                        if let newId,
+                           let detailed = await apiClient.fetchAccessoryDetails(accessoryId: newId) {
+                            await MainActor.run { accessoriesPath.append(detailed) }
+                        }
+                    }
+                }
+            )
         }
         .alert(
             L10n.string("refresh_failed_title"),

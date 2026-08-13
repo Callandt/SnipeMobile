@@ -26,7 +26,6 @@ struct AddComponentSheet: View {
     @State private var isSaving = false
     @State private var resultMessage: String = ""
     @State private var showResult = false
-    @State private var lastCreatedId: Int?
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
@@ -46,13 +45,8 @@ struct AddComponentSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .onAppear(perform: setupOnAppear)
-            .alert(L10n.string("result"), isPresented: $showResult) {
-                Button(L10n.string("ok")) {
-                    if lastCreatedId != nil {
-                        onCreated?(lastCreatedId)
-                        isPresented = false
-                    }
-                }
+            .alert(L10n.string("error"), isPresented: $showResult) {
+                Button(L10n.string("ok"), role: .cancel) {}
             } message: {
                 Text(resultMessage)
             }
@@ -203,10 +197,12 @@ struct AddComponentSheet: View {
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines)
         )
 
-        lastCreatedId = result.id
-        resultMessage = result.success
-            ? L10n.string("component_created")
-            : (apiClient.lastApiMessage ?? L10n.string("create_failed"))
-        showResult = true
+        if result.success {
+            onCreated?(result.id)
+            isPresented = false
+        } else {
+            resultMessage = apiClient.lastApiMessage ?? L10n.string("create_failed")
+            showResult = true
+        }
     }
 }

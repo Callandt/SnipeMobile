@@ -121,6 +121,7 @@ private fun LocationFormSheet(
                             errorMessage = result.message ?: lastApiMessage ?: L10n.string("create_failed")
                         } else {
                             createdId = result.id
+                            createdId?.let { viewModel.apiClient.fetchLocationDetails(it) }
                         }
                         result.success
                     } else {

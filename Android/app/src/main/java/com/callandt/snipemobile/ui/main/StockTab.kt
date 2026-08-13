@@ -320,7 +320,7 @@ fun StockTab(
         AddConsumableSheet(
             viewModel = viewModel,
             onDismiss = { showAddConsumable = false },
-            onCreated = { viewModel.syncInBackground() },
+            onCreated = { id -> id?.let(onConsumableClick) },
         )
     }
 
@@ -328,7 +328,7 @@ fun StockTab(
         AddComponentSheet(
             viewModel = viewModel,
             onDismiss = { showAddComponent = false },
-            onCreated = { viewModel.syncInBackground() },
+            onCreated = { id -> id?.let(onComponentClick) },
         )
     }
 
