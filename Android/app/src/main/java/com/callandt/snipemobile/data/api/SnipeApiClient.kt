@@ -45,6 +45,7 @@ import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.AppSecret
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.management.ManagementValue
+import com.callandt.snipemobile.ui.components.CardPhotoCache
 import com.callandt.snipemobile.debug.AppLog
 import com.callandt.snipemobile.data.secure.SecureStore
 import kotlinx.coroutines.CoroutineScope
@@ -1768,7 +1769,14 @@ class SnipeApiClient(
             response.json?.let { mergeAssetFromResponseJson(it) }
         }
         if (wantsImageChange) {
-            fetchHardwareDetails(assetId)?.let { withContext(Dispatchers.Main) { applyUpdatedAsset(it) } }
+            val previousImage = _assets.value.firstOrNull { it.id == assetId }?.image
+            fetchHardwareDetails(assetId)?.let { details ->
+                withContext(Dispatchers.Main) {
+                    CardPhotoCache.evict(appContext, previousImage, baseUrl)
+                    CardPhotoCache.evict(appContext, details.image, baseUrl)
+                    applyUpdatedAsset(details)
+                }
+            }
         }
         return true
     }

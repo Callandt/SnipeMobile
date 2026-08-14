@@ -17,6 +17,7 @@ import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.AppSecret
 import com.callandt.snipemobile.data.secure.SecureStore
+import coil.imageLoader
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -113,6 +114,9 @@ class AppViewModel(
 
     val autoFillAssetTag: StateFlow<Boolean> =
         preferences.autoFillAssetTag.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val showPhotosInCardList: StateFlow<Boolean> =
+        preferences.showPhotosInCardList.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val enableDellQrScan: StateFlow<Boolean> =
         preferences.enableDellQrScan.stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -318,6 +322,10 @@ class AppViewModel(
         viewModelScope.launch { preferences.setAutoFillAssetTag(enabled) }
     }
 
+    fun setShowPhotosInCardList(enabled: Boolean) {
+        viewModelScope.launch { preferences.setShowPhotosInCardList(enabled) }
+    }
+
     fun setEnableDellQrScan(enabled: Boolean) {
         viewModelScope.launch { preferences.setEnableDellQrScan(enabled) }
     }
@@ -354,6 +362,9 @@ class AppViewModel(
         secureStore.wipeAll()
         LocalCacheStore.clearAll(getApplication())
         WidgetSnapshotBuilder.clear(getApplication())
+        val loader = getApplication<Application>().imageLoader
+        loader.memoryCache?.clear()
+        loader.diskCache?.clear()
         viewModelScope.launch {
             preferences.wipeAll()
             AuditNotificationScheduler.updateSchedule(getApplication(), false, 9, 0)

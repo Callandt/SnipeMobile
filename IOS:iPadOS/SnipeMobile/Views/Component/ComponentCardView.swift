@@ -8,10 +8,7 @@ struct ComponentCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Image(systemName: "cpu")
-                    .font(.title2)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 36, height: 36)
+                CardListIcon(systemName: "cpu", imagePath: component.image)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(component.decodedName)
                         .font(.headline)

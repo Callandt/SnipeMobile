@@ -653,6 +653,8 @@ internal object L10n_ar {
         "settings_version" to "الإصدار",
         "share" to "مشاركة",
         "show_all_files" to "عرض الكل (%d)",
+        "show_photos_in_cards_footer" to "عند التفعيل، تعرض البطاقات صورة مصغرة بدلاً من الأيقونة إن وُجدت صورة.",
+        "show_photos_in_cards_toggle" to "إظهار الصور في القوائم",
         "skip" to "تخطّي",
         "sn_label" to "SN:",
         "start_date" to "تاريخ البدء",

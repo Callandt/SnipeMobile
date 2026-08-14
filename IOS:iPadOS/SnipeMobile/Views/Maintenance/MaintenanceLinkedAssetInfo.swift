@@ -5,6 +5,7 @@ struct MaintenanceLinkedAssetInfo {
     let title: String
     let detailLine: String?
     let assignee: String?
+    let imagePath: String?
 
     static func resolve(record: AssetMaintenance, asset: Asset?) -> MaintenanceLinkedAssetInfo? {
         if let asset {
@@ -44,7 +45,8 @@ struct MaintenanceLinkedAssetInfo {
         return MaintenanceLinkedAssetInfo(
             title: title,
             detailLine: details.isEmpty ? nil : details.joined(separator: " · "),
-            assignee: assignee
+            assignee: assignee,
+            imagePath: asset.image
         )
     }
 
@@ -57,12 +59,13 @@ struct MaintenanceLinkedAssetInfo {
             return MaintenanceLinkedAssetInfo(
                 title: name,
                 detailLine: String(format: L10n.string("tag_label"), tag),
-                assignee: nil
+                assignee: nil,
+                imagePath: nil
             )
         case let (name?, _):
-            return MaintenanceLinkedAssetInfo(title: name, detailLine: nil, assignee: nil)
+            return MaintenanceLinkedAssetInfo(title: name, detailLine: nil, assignee: nil, imagePath: nil)
         case let (_, tag?):
-            return MaintenanceLinkedAssetInfo(title: tag, detailLine: nil, assignee: nil)
+            return MaintenanceLinkedAssetInfo(title: tag, detailLine: nil, assignee: nil, imagePath: nil)
         default:
             return nil
         }

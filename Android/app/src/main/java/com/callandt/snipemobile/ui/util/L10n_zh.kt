@@ -653,6 +653,8 @@ internal object L10n_zh {
         "settings_version" to "版本",
         "share" to "共享",
         "show_all_files" to "显示全部（%d）",
+        "show_photos_in_cards_footer" to "开启后，如果有照片，卡片将显示照片缩略图而不是图标。",
+        "show_photos_in_cards_toggle" to "在列表中显示照片",
         "skip" to "跳过",
         "sn_label" to "SN：",
         "start_date" to "开始日期",

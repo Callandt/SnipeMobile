@@ -18,10 +18,7 @@ struct UserCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Image(systemName: "person.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 36, height: 36)
+                CardListIcon(systemName: "person.circle.fill", imagePath: user.image)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(cardTitle)
                         .font(.headline)

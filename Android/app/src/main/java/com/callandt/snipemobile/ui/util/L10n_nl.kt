@@ -653,6 +653,8 @@ internal object L10n_nl {
         "settings_version" to "Versie",
         "share" to "Delen",
         "show_all_files" to "Alles tonen (%d)",
+        "show_photos_in_cards_footer" to "Wanneer aan, tonen kaarten een miniatuur van de foto in plaats van het icoon, als er een foto beschikbaar is.",
+        "show_photos_in_cards_toggle" to "Toon foto's in kaarten",
         "skip" to "Overslaan",
         "sn_label" to "SN:",
         "start_date" to "Startdatum",

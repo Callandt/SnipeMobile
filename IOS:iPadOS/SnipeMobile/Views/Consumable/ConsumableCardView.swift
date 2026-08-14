@@ -8,10 +8,7 @@ struct ConsumableCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Image(systemName: "shippingbox")
-                    .font(.title2)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 36, height: 36)
+                CardListIcon(systemName: "shippingbox", imagePath: consumable.image)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(consumable.decodedName)
                         .font(.headline)

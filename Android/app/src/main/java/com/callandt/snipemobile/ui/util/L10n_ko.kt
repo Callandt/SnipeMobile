@@ -653,6 +653,8 @@ internal object L10n_ko {
         "settings_version" to "버전",
         "share" to "공유",
         "show_all_files" to "모두 보기 (%d)",
+        "show_photos_in_cards_footer" to "켜면 사진이 있을 때 아이콘 대신 미리보기를 표시합니다.",
+        "show_photos_in_cards_toggle" to "목록에 사진 표시",
         "skip" to "건너뛰기",
         "sn_label" to "SN:",
         "start_date" to "시작일",

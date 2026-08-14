@@ -653,6 +653,8 @@ internal object L10n_de {
         "settings_version" to "Version",
         "share" to "Teilen",
         "show_all_files" to "Alle anzeigen (%d)",
+        "show_photos_in_cards_footer" to "Wenn aktiviert, zeigen Karten ein Miniaturbild des Fotos statt des Symbols, sofern ein Foto vorhanden ist.",
+        "show_photos_in_cards_toggle" to "Fotos in Listen anzeigen",
         "skip" to "Überspringen",
         "sn_label" to "SN:",
         "start_date" to "Startdatum",

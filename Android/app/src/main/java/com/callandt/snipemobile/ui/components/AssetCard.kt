@@ -82,13 +82,12 @@ fun AssetCard(
             ) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
+                    CardListIcon(
                         imageVector = Icons.Default.Laptop,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                        modifier = Modifier.size(36.dp),
+                        imagePath = asset.image,
+                        cacheBuster = asset.updatedAt?.datetime ?: asset.updatedAt?.date,
                     )
                     Column(
                         modifier = Modifier.weight(1f),

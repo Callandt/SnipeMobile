@@ -28,6 +28,7 @@ struct SettingsView: View {
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
     @AppStorage("autoFillAssetTag") private var autoFillAssetTag: Bool = true
+    @AppStorage("showPhotosInCardList") private var showPhotosInCardList: Bool = false
 
     @State private var baseURL: String = ""
     @State private var apiToken: String = ""
@@ -159,6 +160,9 @@ struct SettingsView: View {
             .onChange(of: autoFillAssetTag) { _, newValue in
                 CloudSettingsStore.shared.setAutoFillAssetTag(newValue)
             }
+            .onChange(of: showPhotosInCardList) { _, newValue in
+                CloudSettingsStore.shared.setShowPhotosInCardList(newValue)
+            }
             .onChange(of: enableAuditSubtab) { _, newValue in
                 // Notifications only make sense when the Audit subtab is visible.
                 if !newValue, auditNotificationsEnabled {
@@ -274,6 +278,16 @@ struct SettingsView: View {
                     value: themeLabel
                 )
             }
+            SettingsToggleRow(
+                icon: "photo.on.rectangle",
+                iconColor: .teal,
+                title: L10n.string("show_photos_in_cards_toggle"),
+                isOn: $showPhotosInCardList
+            )
+        } header: {
+            Text(L10n.string("settings_general"))
+        } footer: {
+            Text(L10n.string("show_photos_in_cards_footer"))
         }
     }
 

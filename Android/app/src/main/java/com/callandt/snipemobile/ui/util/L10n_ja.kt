@@ -653,6 +653,8 @@ internal object L10n_ja {
         "settings_version" to "バージョン",
         "share" to "共有",
         "show_all_files" to "すべて表示（%d）",
+        "show_photos_in_cards_footer" to "オンにすると、写真がある場合はアイコンの代わりにサムネイルを表示します。",
+        "show_photos_in_cards_toggle" to "リストに写真を表示",
         "skip" to "スキップ",
         "sn_label" to "SN:",
         "start_date" to "開始日",

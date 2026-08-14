@@ -82,17 +82,17 @@ fun MaintenanceCard(
             ) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
+                    CardListIcon(
                         imageVector = Icons.Default.Build,
-                        contentDescription = null,
+                        imagePath = record.image,
+                        cacheBuster = record.updatedAt?.datetime ?: record.updatedAt?.date,
+                        size = 40.dp,
+                        cornerRadius = 12.dp,
                         tint = accent,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(accent.copy(alpha = 0.12f))
-                            .padding(10.dp),
+                        iconBackground = accent.copy(alpha = 0.12f),
+                        iconPadding = 10.dp,
                     )
                     Column(
                         modifier = Modifier.weight(1f),
@@ -183,15 +183,14 @@ private fun MaintenanceAssetHeader(info: MaintenanceLinkedAssetInfo) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
+        CardListIcon(
             imageVector = Icons.Default.Laptop,
-            contentDescription = null,
+            imagePath = info.imagePath,
+            size = 34.dp,
+            cornerRadius = 10.dp,
             tint = SnipeAccent,
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(SnipeAccent.copy(alpha = 0.12f))
-                .padding(8.dp),
+            iconBackground = SnipeAccent.copy(alpha = 0.12f),
+            iconPadding = 8.dp,
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -281,6 +280,7 @@ data class MaintenanceLinkedAssetInfo(
     val title: String,
     val detailLine: String?,
     val assignee: String?,
+    val imagePath: String? = null,
 ) {
     companion object {
         fun resolve(record: AssetMaintenance, asset: Asset?): MaintenanceLinkedAssetInfo? {
@@ -306,6 +306,7 @@ data class MaintenanceLinkedAssetInfo(
                 title = title,
                 detailLine = details.takeIf { it.isNotEmpty() }?.joinToString(" · "),
                 assignee = assetCheckedOutAssignee(asset),
+                imagePath = asset.image,
             )
         }
 

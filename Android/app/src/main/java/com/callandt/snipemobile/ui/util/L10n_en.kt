@@ -655,6 +655,8 @@ internal object L10n_en {
         "settings_version" to "Version",
         "share" to "Share",
         "show_all_files" to "Show all (%d)",
+        "show_photos_in_cards_footer" to "When on, cards show a thumbnail of the item photo instead of the icon, if a photo is available.",
+        "show_photos_in_cards_toggle" to "Show photos in lists",
         "skip" to "Skip",
         "sn_label" to "SN:",
         "start_date" to "Start Date",

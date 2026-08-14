@@ -63,6 +63,7 @@ import coil.compose.AsyncImage
 import com.callandt.snipemobile.data.model.AssetMaintenance
 import com.callandt.snipemobile.data.model.DateInfo
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.CardListIcon
 import com.callandt.snipemobile.ui.components.MaintenanceLinkedAssetInfo
 import com.callandt.snipemobile.ui.components.copyDetailValue
 import com.callandt.snipemobile.ui.maintenance.EditMaintenanceSheet
@@ -480,15 +481,14 @@ private fun AssetHeaderCard(info: MaintenanceLinkedAssetInfo) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            Icon(
+            CardListIcon(
                 imageVector = Icons.Default.Laptop,
-                contentDescription = null,
+                imagePath = info.imagePath,
+                size = 36.dp,
+                cornerRadius = 10.dp,
                 tint = SnipeAccent,
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(SnipeAccent.copy(alpha = 0.1f))
-                    .padding(8.dp),
+                iconBackground = SnipeAccent.copy(alpha = 0.1f),
+                iconPadding = 8.dp,
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(

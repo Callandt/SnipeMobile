@@ -188,10 +188,11 @@ struct LicenseSeatAssetCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Image(systemName: "laptopcomputer")
-                    .font(.title2)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 36, height: 36)
+                CardListIcon(
+                    systemName: "laptopcomputer",
+                    imagePath: asset?.image,
+                    cacheBuster: asset?.updatedAt?.datetime ?? asset?.updatedAt?.date
+                )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(assetTitle)
                         .font(.headline)

@@ -8,10 +8,7 @@ struct AccessoryCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Image(systemName: "mediastick")
-                    .font(.title2)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 36, height: 36)
+                CardListIcon(systemName: "mediastick", imagePath: accessory.image)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(accessory.decodedName)
                         .font(.headline)

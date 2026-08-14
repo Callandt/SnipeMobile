@@ -7,6 +7,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,6 +26,8 @@ import com.callandt.snipemobile.data.api.SnipeITQRLink
 import com.callandt.snipemobile.data.prefs.AppMode
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.DellAddPrefill
+import com.callandt.snipemobile.ui.components.CardPhotoSettings
+import com.callandt.snipemobile.ui.components.LocalCardPhotoSettings
 import com.callandt.snipemobile.ui.detail.AccessoryDetailScreen
 import com.callandt.snipemobile.ui.detail.AssetDetailScreen
 import com.callandt.snipemobile.ui.detail.ComponentDetailScreen
@@ -92,6 +95,8 @@ fun AppNav(viewModel: AppViewModel) {
     var showDellAddPrompt by remember { mutableStateOf<DellAddPrefill?>(null) }
     val isTablet = WindowAdaptive.isTabletLayout()
     val pendingMainTab by viewModel.pendingMainTab.collectAsState()
+    val showPhotosInCardList by viewModel.showPhotosInCardList.collectAsState()
+    val baseUrl by viewModel.baseUrl.collectAsState()
 
     fun returnToWelcomeAfterWipe() {
         viewModel.acknowledgeUnauthorizedSessionWipe()
@@ -183,7 +188,13 @@ fun AppNav(viewModel: AppViewModel) {
         }
     }
 
-    NavHost(navController = navController, startDestination = startDestination) {
+    CompositionLocalProvider(
+        LocalCardPhotoSettings provides CardPhotoSettings(
+            enabled = showPhotosInCardList,
+            baseUrl = baseUrl,
+        ),
+    ) {
+        NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.Welcome) {
             WelcomeScreen(onContinue = { navController.navigate(Routes.ApiSetup) })
         }
@@ -424,6 +435,7 @@ fun AppNav(viewModel: AppViewModel) {
         detailRoute(Routes.MaintenanceDetail, "id") { id ->
             MaintenanceDetailScreen(id, viewModel) { navController.popBackStack() }
         }
+    }
     }
 }
 

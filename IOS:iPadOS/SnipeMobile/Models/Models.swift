@@ -147,6 +147,7 @@ struct Asset: Identifiable, Codable, Hashable {
         lhs.decodedCategoryName == rhs.decodedCategoryName &&
         lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
         lhs.image == rhs.image &&
+        lhs.updatedAt?.datetime == rhs.updatedAt?.datetime &&
         lhs.nextAuditDate?.date == rhs.nextAuditDate?.date &&
         lhs.lastAuditDate?.date == rhs.lastAuditDate?.date &&
         lhs.expectedCheckin?.date == rhs.expectedCheckin?.date

@@ -27,6 +27,7 @@ private enum CloudKey: String, CaseIterable {
     case biometricsJustConfirmed
     case enableDellQrScan
     case autoFillAssetTag
+    case showPhotosInCardList
     case dellTechDirectClientId
     case dellTechDirectClientSecret
     /// Unix timestamp of last wipe. Other devices mirror it locally.
@@ -228,6 +229,14 @@ final class CloudSettingsStore {
         }
     }
 
+    func setShowPhotosInCardList(_ value: Bool) {
+        defaults.set(value, forKey: "showPhotosInCardList")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.showPhotosInCardList.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
     func setDellTechDirectClientId(_ value: String) {
         KeychainSecretStore.set(value, for: .dellTechDirectClientId)
         defaults.removeObject(forKey: "dellTechDirectClientId")
@@ -312,6 +321,9 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.autoFillAssetTag.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.autoFillAssetTag.rawValue), forKey: "autoFillAssetTag")
         }
+        if store.object(forKey: CloudKey.showPhotosInCardList.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.showPhotosInCardList.rawValue), forKey: "showPhotosInCardList")
+        }
         if let v = store.string(forKey: CloudKey.dellTechDirectClientId.rawValue) {
             KeychainSecretStore.set(v, for: .dellTechDirectClientId)
             defaults.removeObject(forKey: "dellTechDirectClientId")
@@ -347,6 +359,7 @@ final class CloudSettingsStore {
         store.set(defaults.bool(forKey: "biometricsJustConfirmed"), forKey: CloudKey.biometricsJustConfirmed.rawValue)
         store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
         store.set(defaults.object(forKey: "autoFillAssetTag") as? Bool ?? true, forKey: CloudKey.autoFillAssetTag.rawValue)
+        store.set(defaults.bool(forKey: "showPhotosInCardList"), forKey: CloudKey.showPhotosInCardList.rawValue)
         store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue)
         store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue)
     }
@@ -380,6 +393,7 @@ final class CloudSettingsStore {
         center.removeAllDeliveredNotifications()
 
         URLCache.shared.removeAllCachedResponses()
+        SnipeCardPhotoCache.clear()
 
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .appDataDidWipe, object: nil)

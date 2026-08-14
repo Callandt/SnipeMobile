@@ -71,13 +71,11 @@ fun UserCard(
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
+                CardListIcon(
                     imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                    modifier = Modifier.size(36.dp),
+                    imagePath = user.image,
                 )
                 Column(
                     modifier = Modifier.weight(1f),

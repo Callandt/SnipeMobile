@@ -272,11 +272,15 @@ struct MaintenanceDetailSheet: View {
     private func assetHeaderCard(_ info: MaintenanceLinkedAssetInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "laptopcomputer")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, height: 36)
-                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                CardListIcon(
+                    systemName: "laptopcomputer",
+                    imagePath: info.imagePath,
+                    size: 36,
+                    cornerRadius: 10,
+                    iconFont: .title2,
+                    iconColor: .secondary,
+                    iconBackground: Color.accentColor.opacity(0.1)
+                )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.string("asset"))
                         .font(.caption)

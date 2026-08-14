@@ -3894,7 +3894,11 @@ class SnipeITAPIClient: ObservableObject {
             // PATCH may omit image URL.
             if image != nil || update.image_delete == 1 {
                 if let details = await fetchHardwareDetails(assetId: assetId) {
-                    await MainActor.run { applyUpdatedAsset(details) }
+                    await MainActor.run {
+                        SnipeCardPhotoCache.invalidate(path: self.assets.first { $0.id == assetId }?.image)
+                        SnipeCardPhotoCache.invalidate(path: details.image)
+                        applyUpdatedAsset(details)
+                    }
                 }
             }
             return true

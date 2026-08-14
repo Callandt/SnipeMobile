@@ -653,6 +653,8 @@ internal object L10n_it {
         "settings_version" to "Versione",
         "share" to "Condividi",
         "show_all_files" to "Mostra tutti (%d)",
+        "show_photos_in_cards_footer" to "Se attivo, le schede mostrano una miniatura della foto al posto dell'icona, se disponibile.",
+        "show_photos_in_cards_toggle" to "Mostra foto negli elenchi",
         "skip" to "Salta",
         "sn_label" to "SN:",
         "start_date" to "Data di inizio",

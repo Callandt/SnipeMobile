@@ -26,11 +26,16 @@ struct MaintenanceCardView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "wrench.and.screwdriver.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(accentColor)
-                        .frame(width: 40, height: 40)
-                        .background(accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    CardListIcon(
+                        systemName: "wrench.and.screwdriver.fill",
+                        imagePath: record.image,
+                        cacheBuster: record.updatedAt?.datetime ?? record.updatedAt?.date,
+                        size: 40,
+                        cornerRadius: 12,
+                        iconFont: .system(size: 17, weight: .semibold),
+                        iconColor: accentColor,
+                        iconBackground: accentColor.opacity(0.12)
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         Text(record.decodedTitle)
                             .font(.headline)
@@ -95,11 +100,15 @@ struct MaintenanceCardView: View {
 
     private func assetHeader(_ info: MaintenanceLinkedAssetInfo) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "laptopcomputer")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 34, height: 34)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            CardListIcon(
+                systemName: "laptopcomputer",
+                imagePath: info.imagePath,
+                size: 34,
+                cornerRadius: 10,
+                iconFont: .system(size: 15, weight: .medium),
+                iconColor: Color.accentColor,
+                iconBackground: Color.accentColor.opacity(0.12)
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text(info.title)
                     .font(.subheadline.weight(.semibold))

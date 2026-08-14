@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Tune
@@ -197,6 +198,7 @@ private fun SettingsRootScreen(
     val showMaintenance by viewModel.showMaintenanceSubtab.collectAsState()
     val appMode by viewModel.appMode.collectAsState()
     val isAdminCapable by viewModel.isAdminCapable.collectAsState()
+    val showPhotosInCardList by viewModel.showPhotosInCardList.collectAsState()
     val isUserMode = appMode == AppMode.User
 
     val context = LocalContext.current
@@ -293,7 +295,16 @@ private fun SettingsRootScreen(
                         value = themeLabel,
                         onClick = { onNavigate(SettingsRoutes.Appearance) },
                     )
+                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                    SettingsToggleRow(
+                        icon = Icons.Default.PhotoLibrary,
+                        iconColor = Color(0xFF5AC8FA),
+                        title = L10n.string("show_photos_in_cards_toggle"),
+                        checked = showPhotosInCardList,
+                        onCheckedChange = { viewModel.setShowPhotosInCardList(it) },
+                    )
                 }
+                SettingsSectionFooter(L10n.string("show_photos_in_cards_footer"))
             }
 
             if (!isUserMode) {

@@ -653,6 +653,8 @@ internal object L10n_ru {
         "settings_version" to "Версия",
         "share" to "Поделиться",
         "show_all_files" to "Показать все (%d)",
+        "show_photos_in_cards_footer" to "Если включено, карточки показывают миниатюру фото вместо значка, если фото есть.",
+        "show_photos_in_cards_toggle" to "Показывать фото в списках",
         "skip" to "Пропустить",
         "sn_label" to "SN:",
         "start_date" to "Дата начала",

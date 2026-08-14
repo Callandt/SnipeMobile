@@ -56,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -93,9 +94,13 @@ import com.callandt.snipemobile.ui.util.AuditListFilter
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.assetMatchesSearch
 import com.callandt.snipemobile.ui.util.maintenanceMatchesSearch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class HardwareSubtab { All, Audit, Maintenance }
+
+/** Sheet opened from the hardware + menu after the DropdownMenu popup is gone. */
+private enum class PendingHardwareSheet { Asset, Maintenance, Audit, Labels }
 
 /** Maintenance status filter for the hardware tab. */
 private enum class MaintenanceStatusFilter {
@@ -161,6 +166,8 @@ fun HardwareTab(
     var showBulkAudit by remember { mutableStateOf(false) }
     var showBulkLabels by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
+    var pendingHardwareSheet by remember { mutableStateOf<PendingHardwareSheet?>(null) }
+    var createdAssetId by remember { mutableStateOf<Int?>(null) }
     var dellPrefill by remember { mutableStateOf<DellAddPrefill?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -179,6 +186,28 @@ fun HardwareTab(
         if (pendingDellAdd != null) {
             dellPrefill = pendingDellAdd
         }
+    }
+
+    // Dialog + DropdownMenu in the same frame can leave a blank white window.
+    LaunchedEffect(showAddMenu) {
+        if (showAddMenu) return@LaunchedEffect
+        val sheet = pendingHardwareSheet ?: return@LaunchedEffect
+        pendingHardwareSheet = null
+        withFrameNanos { }
+        delay(50)
+        when (sheet) {
+            PendingHardwareSheet.Asset -> showAddAsset = true
+            PendingHardwareSheet.Maintenance -> showBulkMaintenance = true
+            PendingHardwareSheet.Audit -> showBulkAudit = true
+            PendingHardwareSheet.Labels -> showBulkLabels = true
+        }
+    }
+
+    LaunchedEffect(showAddAsset, createdAssetId) {
+        if (showAddAsset) return@LaunchedEffect
+        val id = createdAssetId ?: return@LaunchedEffect
+        createdAssetId = null
+        onAssetClick(id)
     }
 
     val filterOptions = remember(assets, statusLabels) {
@@ -283,8 +312,8 @@ fun HardwareTab(
                             text = { Text(L10n.string("add_asset")) },
                             leadingIcon = { Icon(Icons.Default.Laptop, contentDescription = null) },
                             onClick = {
+                                pendingHardwareSheet = PendingHardwareSheet.Asset
                                 showAddMenu = false
-                                showAddAsset = true
                             },
                         )
                         if (showMaintenance) {
@@ -292,8 +321,8 @@ fun HardwareTab(
                                 text = { Text(L10n.string("add_maintenance")) },
                                 leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) },
                                 onClick = {
+                                    pendingHardwareSheet = PendingHardwareSheet.Maintenance
                                     showAddMenu = false
-                                    showBulkMaintenance = true
                                 },
                             )
                         }
@@ -302,8 +331,8 @@ fun HardwareTab(
                                 text = { Text(L10n.string("add_audit")) },
                                 leadingIcon = { Icon(Icons.Default.Checklist, contentDescription = null) },
                                 onClick = {
+                                    pendingHardwareSheet = PendingHardwareSheet.Audit
                                     showAddMenu = false
-                                    showBulkAudit = true
                                 },
                             )
                         }
@@ -311,8 +340,8 @@ fun HardwareTab(
                             text = { Text(L10n.string("generate_labels")) },
                             leadingIcon = { Icon(Icons.Default.Sell, contentDescription = null) },
                             onClick = {
+                                pendingHardwareSheet = PendingHardwareSheet.Labels
                                 showAddMenu = false
-                                showBulkLabels = true
                             },
                         )
                     }
@@ -591,7 +620,7 @@ fun HardwareTab(
                 dellPrefill = null
                 onClearPendingDellAdd()
             },
-            onCreated = { id -> id?.let(onAssetClick) },
+            onCreated = { id -> createdAssetId = id },
             prefilledDellUrl = dellPrefill?.url,
             prefilledSerial = dellPrefill?.serial,
         )

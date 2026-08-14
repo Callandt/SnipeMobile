@@ -1,5 +1,7 @@
 package com.callandt.snipemobile.ui.asset
 
+import android.graphics.drawable.ColorDrawable
+import android.view.WindowManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -36,13 +39,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
-import android.view.WindowManager
 import com.callandt.snipemobile.data.model.CustomField
 import com.callandt.snipemobile.data.model.FieldDefinition
 import com.callandt.snipemobile.data.model.StatusLabel
@@ -184,6 +187,7 @@ internal fun AssetFullScreenSheet(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val configuration = LocalConfiguration.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -197,14 +201,19 @@ internal fun AssetFullScreenSheet(
         SideEffect {
             val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             // Full-screen dialog needs MATCH_PARENT on the window.
             window.setLayout(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
             )
         }
+        // WRAP_CONTENT dialog + fillMaxSize() can measure as 0 (blank white window).
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.requiredSize(
+                configuration.screenWidthDp.dp,
+                configuration.screenHeightDp.dp,
+            ),
             color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {

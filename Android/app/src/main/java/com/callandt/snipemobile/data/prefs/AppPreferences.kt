@@ -42,6 +42,8 @@ class AppPreferences(private val context: Context) {
     val useBiometrics: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_BIOMETRICS] ?: false }
     val autoFillAssetTag: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.AUTO_FILL_ASSET_TAG] ?: true }
+    val showPhotosInCardList: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.SHOW_PHOTOS_IN_CARD_LIST] ?: false }
     val enableDellQrScan: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.ENABLE_DELL_QR_SCAN] ?: true }
     val useCloudSync: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_CLOUD_SYNC] ?: true }
@@ -154,6 +156,10 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[Keys.AUTO_FILL_ASSET_TAG] = value }
     }
 
+    suspend fun setShowPhotosInCardList(value: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_PHOTOS_IN_CARD_LIST] = value }
+    }
+
     suspend fun setEnableDellQrScan(value: Boolean) {
         context.dataStore.edit { it[Keys.ENABLE_DELL_QR_SCAN] = value }
     }
@@ -206,6 +212,7 @@ class AppPreferences(private val context: Context) {
         val APP_THEME = stringPreferencesKey("appTheme")
         val USE_BIOMETRICS = booleanPreferencesKey("useBiometrics")
         val AUTO_FILL_ASSET_TAG = booleanPreferencesKey("autoFillAssetTag")
+        val SHOW_PHOTOS_IN_CARD_LIST = booleanPreferencesKey("showPhotosInCardList")
         val ENABLE_DELL_QR_SCAN = booleanPreferencesKey("enableDellQrScan")
         val USE_CLOUD_SYNC = booleanPreferencesKey("useCloudSync")
         val SETTINGS_LANGUAGE = stringPreferencesKey("settingsLanguage")
