@@ -5,7 +5,6 @@ struct LicenseCardView: View {
     var useExplicitBackground: Bool = true
     // Off for assigned rows, where the license-wide seat count is misleading.
     var showSeats: Bool = true
-    @EnvironmentObject var appSettings: AppSettings
 
     private var totalSeats: Int? { license.seats }
     private var freeSeats: Int? { license.freeSeatsCount ?? license.remaining }
@@ -28,7 +27,7 @@ struct LicenseCardView: View {
                             .foregroundStyle(.secondary)
                     }
                     if let expiration = license.expirationDate?.formatted, !expiration.isEmpty {
-                        Text(String(format: L10n.string("expires_value"), expiration))
+                        Text(verbatim: L10n.string("expires_value", expiration))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }

@@ -10,6 +10,7 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DesktopWindows
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
@@ -44,13 +47,14 @@ import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -101,7 +105,6 @@ import kotlinx.coroutines.launch
 
 private object SettingsRoutes {
     const val Root = "settings_root"
-    const val Appearance = "appearance"
     const val Modules = "modules"
     const val Management = "management"
     const val ManagementEntity = "management/{entity}"
@@ -131,9 +134,6 @@ fun SettingsScreen(
                 onWiped = onWiped,
                 onNavigate = { navController.navigate(it) },
             )
-        }
-        composable(SettingsRoutes.Appearance) {
-            AppearanceSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
         composable(SettingsRoutes.Modules) {
             ModulesSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
@@ -199,6 +199,7 @@ private fun SettingsRootScreen(
     val appMode by viewModel.appMode.collectAsState()
     val isAdminCapable by viewModel.isAdminCapable.collectAsState()
     val showPhotosInCardList by viewModel.showPhotosInCardList.collectAsState()
+    val appLanguage by viewModel.appLanguage.collectAsState()
     val isUserMode = appMode == AppMode.User
 
     val context = LocalContext.current
@@ -209,11 +210,6 @@ private fun SettingsRootScreen(
     var isExportingDebug by remember { mutableStateOf(false) }
     var pendingBiometrics by remember { mutableStateOf<Boolean?>(null) }
 
-    val themeLabel = when (appTheme) {
-        "light" -> L10n.string("light")
-        "dark" -> L10n.string("dark")
-        else -> L10n.string("system")
-    }
     val enabledModuleCount = listOf(showAccessories, showLicenses, showConsumables, showComponents).count { it }
     val apiStatusLabel = if (!isConfigured || baseUrl.isBlank()) {
         L10n.string("settings_not_configured")
@@ -288,12 +284,14 @@ private fun SettingsRootScreen(
             item {
                 SettingsSectionHeader(L10n.string("settings_general"))
                 SettingsGroupedCard {
-                    SettingsRow(
-                        icon = Icons.Default.Brush,
-                        iconColor = Color(0xFFAF52DE),
-                        title = L10n.string("appearance"),
-                        value = themeLabel,
-                        onClick = { onNavigate(SettingsRoutes.Appearance) },
+                    SettingsAppearancePickerRow(
+                        selectedTheme = appTheme,
+                        onSelect = viewModel::setAppTheme,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                    SettingsLanguagePickerRow(
+                        selectedCode = appLanguage,
+                        onSelect = viewModel::setAppLanguage,
                     )
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
                     SettingsToggleRow(
@@ -584,52 +582,94 @@ private fun SettingsRootScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppearanceSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
-    val appTheme by viewModel.appTheme.collectAsState()
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(L10n.string("appearance")) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+private fun SettingsAppearancePickerRow(
+    selectedTheme: String,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = listOf("system", "light", "dark")
+    val label = when (selectedTheme) {
+        "light" -> L10n.string("light")
+        "dark" -> L10n.string("dark")
+        else -> L10n.string("system")
+    }
+    Box {
+        SettingsRow(
+            icon = Icons.Default.Brush,
+            iconColor = Color(0xFFAF52DE),
+            title = L10n.string("appearance"),
+            value = label,
+            showChevron = false,
+            onClick = { expanded = true },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
         ) {
-            SettingsSectionHeader(L10n.string("theme"))
-            SettingsGroupedCard {
-                ThemeOption(L10n.string("system"), appTheme == "system") { viewModel.setAppTheme("system") }
-                HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
-                ThemeOption(L10n.string("light"), appTheme == "light") { viewModel.setAppTheme("light") }
-                HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
-                ThemeOption(L10n.string("dark"), appTheme == "dark") { viewModel.setAppTheme("dark") }
+            options.forEach { theme ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            when (theme) {
+                                "light" -> L10n.string("light")
+                                "dark" -> L10n.string("dark")
+                                else -> L10n.string("system")
+                            },
+                        )
+                    },
+                    onClick = {
+                        onSelect(theme)
+                        expanded = false
+                    },
+                    trailingIcon = if (theme == selectedTheme) {
+                        { Icon(Icons.Default.Check, contentDescription = null) }
+                    } else {
+                        null
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ThemeOption(label: String, selected: Boolean, onSelect: () -> Unit) {
-    androidx.compose.foundation.layout.Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp)
-            .then(Modifier),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = onSelect)
-        Text(text = label, modifier = Modifier.padding(end = 16.dp))
+private fun SettingsLanguagePickerRow(
+    selectedCode: String,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = listOf(L10n.SYSTEM_LANGUAGE) + L10n.languagePickerCodes
+    val effectiveSelected =
+        if (selectedCode == L10n.deviceLanguageCode) L10n.SYSTEM_LANGUAGE else selectedCode
+    Box {
+        SettingsRow(
+            icon = Icons.Default.Language,
+            iconColor = Color(0xFF007AFF),
+            title = L10n.string("app_language"),
+            value = L10n.languageDisplayName(effectiveSelected),
+            showChevron = false,
+            onClick = { expanded = true },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { code ->
+                DropdownMenuItem(
+                    text = { Text(L10n.languageDisplayName(code)) },
+                    onClick = {
+                        onSelect(code)
+                        expanded = false
+                    },
+                    trailingIcon = if (code == effectiveSelected) {
+                        { Icon(Icons.Default.Check, contentDescription = null) }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
     }
 }
 

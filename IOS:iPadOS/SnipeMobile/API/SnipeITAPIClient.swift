@@ -48,9 +48,6 @@ class SnipeITAPIClient: ObservableObject {
     /// Asset ids to re-fetch by id after bulk list sync (avoids stale status/assignment).
     private var assetsPendingDetailRefresh: Set<Int> = []
 
-    /// Progress of an ongoing paginated fetch. `total` is -1 if unknown.
-    @Published var loadingProgress: (current: Int, total: Int)? = nil
-
     var baseURL: String {
         normalizeBaseURL(UserDefaults.standard.string(forKey: "baseURL") ?? "")
     }
@@ -59,7 +56,8 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     private var fetchAssetsTask: Task<Void, Never>? = nil
-    private var fetchAssetsGeneration: Int = 0
+    var fetchAssetsGeneration: Int = 0
+    var listApplyGeneration: Int = 0
 
     // MARK: - Local disk cache
 
@@ -68,8 +66,10 @@ class SnipeITAPIClient: ObservableObject {
     // Set while reading from disk so the didSet hooks don't re-save what we just read.
     private var isApplyingCache: Bool = false
 
-    private var cacheKey: String {
-        LocalCacheStore.key(forBaseURL: baseURL)
+    private func cacheKey(for mode: AppMode? = AppModeStore.current) -> String {
+        let base = LocalCacheStore.key(forBaseURL: baseURL)
+        if mode == .user { return "\(base)-user" }
+        return "\(base)-admin"
     }
 
     private func scheduleCacheSave() {
@@ -83,7 +83,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     // Write the current lists to disk; encoding runs off the main thread.
-    private func persistCacheNow() async {
+    func persistCacheNow(for mode: AppMode? = AppModeStore.current) async {
         guard isConfigured, !baseURL.isEmpty else { return }
         let snapshot = SnipeDataCacheSnapshot(
             assets: assets,
@@ -100,37 +100,56 @@ class SnipeITAPIClient: ObservableObject {
             statusLabels: statusLabels,
             maintenances: maintenances
         )
-        let key = cacheKey
+        let key = cacheKey(for: mode)
         await Task.detached(priority: .utility) {
             LocalCacheStore.save(snapshot, key: key)
         }.value
-        WidgetSnapshotBuilder.update(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)
-        WidgetBackgroundRefreshService.scheduleNextRefresh()
+        if mode != .user {
+            WidgetSnapshotBuilder.update(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)
+            WidgetBackgroundRefreshService.scheduleNextRefresh()
+        }
+    }
+
+    func loadSnapshot(for mode: AppMode?) -> SnipeDataCacheSnapshot? {
+        if let snapshot = LocalCacheStore.load(key: cacheKey(for: mode)) {
+            return snapshot
+        }
+        // Pre-split cache file (one file per server, no mode suffix).
+        if mode != .user {
+            return LocalCacheStore.load(key: LocalCacheStore.key(forBaseURL: baseURL))
+        }
+        return nil
+    }
+
+    func applyCachedSnapshot(_ snapshot: SnipeDataCacheSnapshot, replacing: Bool) {
+        isApplyingCache = true
+        defer { isApplyingCache = false }
+        if !snapshot.assets.isEmpty { hasCompletedInitialLoad = true }
+        if replacing || assets.isEmpty { assets = snapshot.assets.uniquedByID() }
+        if replacing || users.isEmpty { users = snapshot.users }
+        if currentUser == nil || replacing, let cached = snapshot.currentUser {
+            currentUser = snapshot.users.first(where: { $0.id == cached.id }) ?? cached
+        }
+        if replacing || accessories.isEmpty { accessories = snapshot.accessories }
+        if replacing || licenses.isEmpty { licenses = snapshot.licenses }
+        if replacing || consumables.isEmpty { consumables = snapshot.consumables }
+        if replacing || components.isEmpty { components = snapshot.components }
+        if replacing || locations.isEmpty { locations = snapshot.locations }
+        if replacing || companies.isEmpty { companies = snapshot.companies }
+        if replacing || manufacturers.isEmpty { manufacturers = snapshot.manufacturers }
+        if replacing || suppliers.isEmpty { suppliers = snapshot.suppliers }
+        if replacing || statusLabels.isEmpty { statusLabels = snapshot.statusLabels }
+        if replacing || maintenances.isEmpty { maintenances = snapshot.maintenances }
+        if AppModeStore.current != .user {
+            WidgetSnapshotBuilder.update(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)
+        }
     }
 
     // Fill empty lists from disk so the UI renders instantly on launch.
     func loadCachedDataIfAvailable() {
         guard isConfigured, !baseURL.isEmpty else { return }
-        guard let snapshot = LocalCacheStore.load(key: cacheKey) else { return }
-        isApplyingCache = true
-        defer { isApplyingCache = false }
-        if !snapshot.assets.isEmpty { hasCompletedInitialLoad = true }
-        if assets.isEmpty { assets = snapshot.assets }
-        if users.isEmpty { users = snapshot.users }
-        if currentUser == nil, let cached = snapshot.currentUser {
-            currentUser = snapshot.users.first(where: { $0.id == cached.id }) ?? cached
-        }
-        if accessories.isEmpty { accessories = snapshot.accessories }
-        if licenses.isEmpty { licenses = snapshot.licenses }
-        if consumables.isEmpty { consumables = snapshot.consumables }
-        if components.isEmpty { components = snapshot.components }
-        if locations.isEmpty { locations = snapshot.locations }
-        if companies.isEmpty { companies = snapshot.companies }
-        if manufacturers.isEmpty { manufacturers = snapshot.manufacturers }
-        if suppliers.isEmpty { suppliers = snapshot.suppliers }
-        if statusLabels.isEmpty { statusLabels = snapshot.statusLabels }
-        if maintenances.isEmpty { maintenances = snapshot.maintenances }
-        WidgetSnapshotBuilder.update(from: snapshot, baseURL: baseURL, isConfigured: isConfigured)
+        guard let snapshot = loadSnapshot(for: AppModeStore.current) else { return }
+        applyCachedSnapshot(snapshot, replacing: false)
     }
 
     // MARK: - Pagination
@@ -150,7 +169,6 @@ class SnipeITAPIClient: ObservableObject {
         path: String,
         as type: T.Type,
         extraQueryItems: [URLQueryItem] = [],
-        reportProgress: Bool = false,
         reportConnectionError: Bool = false,
         isCancelled: @escaping () -> Bool = { false }
     ) async throws -> [T]? {
@@ -160,16 +178,6 @@ class SnipeITAPIClient: ObservableObject {
         var offset = 0
         let limit = Self.apiPageSize
         var serverTotal: Int? = nil
-
-        if reportProgress {
-            await MainActor.run { self.loadingProgress = (current: 0, total: -1) }
-        }
-
-        defer {
-            if reportProgress {
-                Task { @MainActor in self.loadingProgress = nil }
-            }
-        }
 
         while true {
             if isCancelled() || Task.isCancelled { return nil }
@@ -233,11 +241,6 @@ class SnipeITAPIClient: ObservableObject {
             collected.append(contentsOf: rows)
 
             if let total = page.total { serverTotal = total }
-
-            if reportProgress {
-                let progress = (current: collected.count, total: serverTotal ?? -1)
-                await MainActor.run { self.loadingProgress = progress }
-            }
 
             if rows.count < limit { break }
             if let total = serverTotal, collected.count >= total { break }
@@ -472,7 +475,6 @@ class SnipeITAPIClient: ObservableObject {
         WidgetSnapshotBuilder.clear()
         hasCompletedInitialLoad = false
         isLoading = false
-        loadingProgress = nil
         errorMessage = nil
         lastApiMessage = nil
         refreshErrorMessage = nil
@@ -564,7 +566,7 @@ class SnipeITAPIClient: ObservableObject {
 
     // Reused so overlapping callers (e.g. two onAppear triggers) await the same
     // sync instead of starting a second one that cancels the first mid-flight.
-    private var primaryFetchTask: Task<Void, Never>? = nil
+    var primaryFetchTask: Task<Void, Never>? = nil
 
     /// - Parameter clearRefreshError: true for pull-to-refresh / user refresh.
     func fetchPrimaryThenBackground(clearRefreshError: Bool = false) async {
@@ -789,7 +791,6 @@ class SnipeITAPIClient: ObservableObject {
                 let result = try await fetchAllPaginated(
                     path: "/api/v1/hardware",
                     as: Asset.self,
-                    reportProgress: true,
                     reportConnectionError: true,
                     isCancelled: {
                         myGen != self.fetchAssetsGeneration
@@ -806,7 +807,7 @@ class SnipeITAPIClient: ObservableObject {
                                 merged[idx] = existing
                             }
                         }
-                        self.assets = merged
+                        self.assets = merged.uniquedByID()
                     }
                 }
                 if myGen == fetchAssetsGeneration {
@@ -1106,6 +1107,24 @@ class SnipeITAPIClient: ObservableObject {
             return Self.decodeUser(from: data)
         } catch {
             return nil
+        }
+    }
+
+    @MainActor
+    func upsertCachedUser(_ user: User) {
+        if let idx = users.firstIndex(where: { $0.id == user.id }) {
+            users[idx] = user
+        } else {
+            users.append(user)
+        }
+    }
+
+    @MainActor
+    func upsertCachedMaintenance(_ record: AssetMaintenance) {
+        if let idx = maintenances.firstIndex(where: { $0.id == record.id }) {
+            maintenances[idx] = record
+        } else {
+            maintenances.append(record)
         }
     }
 
@@ -2860,6 +2879,50 @@ class SnipeITAPIClient: ObservableObject {
         return !actual.isEmpty && actual == wanted
     }
 
+    /// GET /locations/{id} and merge into the cached list.
+    func fetchLocationDetails(locationId: Int) async -> Location? {
+        guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/v1/locations/\(locationId)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return nil
+            }
+            let location: Location?
+            if let decoded = try? JSONDecoder().decode(Location.self, from: data) {
+                location = decoded
+            } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let payload = json["payload"] as? [String: Any],
+                      let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+                      let decoded = try? JSONDecoder().decode(Location.self, from: payloadData) {
+                location = decoded
+            } else {
+                location = nil
+            }
+            guard let location, location.id == locationId else { return nil }
+            await MainActor.run { upsertCachedLocation(location) }
+            return location
+        } catch {
+            return nil
+        }
+    }
+
+    @MainActor
+    private func upsertCachedLocation(_ location: Location) {
+        if let idx = locations.firstIndex(where: { $0.id == location.id }) {
+            locations[idx] = location
+        } else {
+            locations.append(location)
+            locations.sort { $0.decodedName.lowercased() < $1.decodedName.lowercased() }
+        }
+    }
+
     func fetchLocations() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else {
             // No error message needed for background fetch
@@ -3345,9 +3408,11 @@ class SnipeITAPIClient: ObservableObject {
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let rows = json["rows"] as? [[String: Any]] {
                 let decoder = JSONDecoder()
-                let fieldsetData = try JSONSerialization.data(withJSONObject: rows)
-                let fs = try decoder.decode([Fieldset].self, from: fieldsetData)
-                await MainActor.run { self.fieldsets = fs }
+                let fs = rows.compactMap { row -> Fieldset? in
+                    guard let data = try? JSONSerialization.data(withJSONObject: row) else { return nil }
+                    return try? decoder.decode(Fieldset.self, from: data)
+                }
+                await MainActor.run { self.fieldsets = fs.filter { $0.id > 0 } }
             }
         } catch {
             print("Error fetching fieldsets: \(error)")
@@ -4409,6 +4474,23 @@ class SnipeITAPIClient: ObservableObject {
         let modelsDirect: [FieldsetModelRow]?
         struct FieldsetFields: Codable {
             let rows: [FieldsetField]
+            init(rows: [FieldsetField] = []) { self.rows = rows }
+
+            init(from decoder: Decoder) throws {
+                if let array = try? decoder.singleValueContainer().decode([FieldsetField].self) {
+                    rows = array
+                    return
+                }
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                rows = (try? c.decode([FieldsetField].self, forKey: .rows)) ?? []
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(rows, forKey: .rows)
+            }
+
+            enum CodingKeys: String, CodingKey { case rows }
         }
         struct FieldsetModels: Codable {
             let rows: [FieldsetModelRow]
@@ -4422,11 +4504,18 @@ class SnipeITAPIClient: ObservableObject {
         }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            id = try c.decode(Int.self, forKey: .id)
-            name = try c.decode(String.self, forKey: .name)
-            fields = try c.decode(FieldsetFields.self, forKey: .fields)
+            id = Self.decodeFlexibleInt(c, forKey: .id) ?? 0
+            name = (try? c.decode(String.self, forKey: .name)) ?? ""
+            fields = (try? c.decode(FieldsetFields.self, forKey: .fields)) ?? FieldsetFields()
             models = try? c.decode(FieldsetModels.self, forKey: .models)
             modelsDirect = try? c.decode([FieldsetModelRow].self, forKey: .models)
+        }
+
+        private static func decodeFlexibleInt(_ c: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Int? {
+            if let i = try? c.decode(Int.self, forKey: key) { return i }
+            if let s = try? c.decode(String.self, forKey: key) { return Int(s) }
+            if let d = try? c.decode(Double.self, forKey: key) { return Int(d) }
+            return nil
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
@@ -4447,7 +4536,26 @@ class SnipeITAPIClient: ObservableObject {
         let name: String
         let type: String
         let field_values_array: [String]?
-        // Extend as needed
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let i = try? c.decode(Int.self, forKey: .id) {
+                id = i
+            } else if let s = try? c.decode(String.self, forKey: .id), let i = Int(s) {
+                id = i
+            } else if let d = try? c.decode(Double.self, forKey: .id) {
+                id = Int(d)
+            } else {
+                throw DecodingError.dataCorruptedError(forKey: .id, in: c, debugDescription: "Invalid field id")
+            }
+            name = (try? c.decode(String.self, forKey: .name)) ?? ""
+            type = (try? c.decode(String.self, forKey: .type)) ?? "text"
+            field_values_array = try? c.decodeIfPresent([String].self, forKey: .field_values_array)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, type, field_values_array
+        }
     }
 
     @MainActor
@@ -5466,7 +5574,7 @@ extension SnipeITAPIClient {
                let row = payload as? [String: Any] {
                 return row
             }
-            if json["id"] as? Int != nil { return json }
+            if ManagementValue.intId(json["id"]) != nil { return json }
             return nil
         } catch {
             return nil

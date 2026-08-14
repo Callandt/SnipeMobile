@@ -39,7 +39,9 @@ import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.ListCountHeader
 import com.callandt.snipemobile.ui.components.ListFilterMenuButton
+import com.callandt.snipemobile.ui.components.ListHeaderActions
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
+import com.callandt.snipemobile.ui.components.ListSortMenuButton
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
@@ -47,9 +49,13 @@ import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.ListSort
+import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.accessoryMatchesSearch
 import com.callandt.snipemobile.ui.util.listFilterOptions
+import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.sortedByListSort
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +75,7 @@ fun AccessoriesTab(
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var listFilter by remember { mutableStateOf(ListFilter()) }
+    var listSort by remember { mutableStateOf(ListSort.updatedDescending) }
     var showAddAccessory by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -102,6 +109,7 @@ fun AccessoriesTab(
     val filtered = items
         .filter { listFilter.matches(it, dimensions) }
         .filter { accessoryMatchesSearch(it, searchQuery) }
+        .sortedByListSort(listSort, ListSortCatalog.accessories) { it.id }
 
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
@@ -150,12 +158,19 @@ fun AccessoriesTab(
                     count = filtered.size,
                     icon = Icons.Default.Usb,
                     trailing = {
-                        ListFilterMenuButton(
-                            filter = listFilter,
-                            options = filterOptions,
-                            onFilterChange = { listFilter = it },
-                            showLabel = true,
-                        )
+                        ListHeaderActions {
+                            ListSortMenuButton(
+                                sort = listSort,
+                                keys = ListSortCatalog.accessories,
+                                onSortChange = { listSort = it },
+                            )
+                            ListFilterMenuButton(
+                                filter = listFilter,
+                                options = filterOptions,
+                                onFilterChange = { listFilter = it },
+                                showLabel = true,
+                            )
+                        }
                     },
                 )
                 Box(modifier = Modifier.weight(1f)) {
@@ -170,7 +185,11 @@ fun AccessoriesTab(
                             )
                         }
                         else -> {
+                            val listState = rememberResettingLazyListState(
+                                Triple(searchQuery, listFilter, listSort),
+                            )
                             LazyColumn(
+                                state = listState,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {

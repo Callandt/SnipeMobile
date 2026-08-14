@@ -199,7 +199,7 @@ struct ManagementListView: View {
         isLoading = false
         if let rows = result.rows {
             items = rows.compactMap { row in
-                guard let id = row["id"] as? Int else { return nil }
+                guard let id = ManagementValue.rowId(row) else { return nil }
                 return ManagementItem(id: id, raw: row)
             }
             .sorted { config.titleReader($0.raw).localizedCaseInsensitiveCompare(config.titleReader($1.raw)) == .orderedAscending }
@@ -210,17 +210,17 @@ struct ManagementListView: View {
 
     private func delete(_ item: ManagementItem) async {
         isDeleting = true
-        let result = await apiClient.managementDelete(path: config.path, id: item.id)
+        let write = await apiClient.managementDelete(path: config.path, id: item.id)
         isDeleting = false
         pendingDelete = nil
-        if result.success {
+        if write.success {
             items.removeAll { $0.id == item.id }
             await showNotice(L10n.string("mgmt_deleted"))
         } else {
             deleteErrorMessage = SnipeITAPIClient.userFacingDeleteMessage(
-                result.message,
+                write.message,
                 kind: .management
-            ) ?? result.message ?? L10n.string("mgmt_delete_still_in_use")
+            ) ?? write.message ?? L10n.string("mgmt_delete_still_in_use")
             showDeleteError = true
         }
     }

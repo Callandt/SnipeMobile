@@ -143,7 +143,7 @@ fun ManagementListScreen(
         isLoading = false
         if (rows != null) {
             items = rows.mapNotNull { row ->
-                row["id"]?.jsonPrimitive?.intOrNull?.let { ManagementItem(it, row) }
+                (row["id"] as? JsonPrimitive)?.intOrNull?.let { ManagementItem(it, row) }
             }.sortedBy { config.titleReader(it.raw).lowercase() }
         } else {
             loadError = error

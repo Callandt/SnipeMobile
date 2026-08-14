@@ -3,7 +3,6 @@ import SwiftUI
 struct LocationCardView: View {
     let location: Location
     var useExplicitBackground: Bool = true
-    @EnvironmentObject var appSettings: AppSettings
 
     private var cardTitle: String {
         let name = location.decodedName.trimmingCharacters(in: .whitespacesAndNewlines)

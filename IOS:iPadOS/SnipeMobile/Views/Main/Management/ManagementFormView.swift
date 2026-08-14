@@ -139,31 +139,17 @@ struct ManagementFormView: View {
         let items = pickerItems(for: field, source: source)
         let emptyOption = (value: "", label: L10n.string("mgmt_none"))
         let selection = stringBinding(field.bodyKey)
-        let useSearchable = items.count + 1 > 12
 
-        if useSearchable {
-            CreatableSearchablePickerRow(
-                title: label,
-                items: items,
-                selection: selection,
-                emptyOption: emptyOption,
-                apiClient: apiClient,
-                creatableEntity: source.creatableEntity,
-                creatableLocation: source.creatableLocation,
-                createDefaults: source.createDefaultValues()
-            )
-        } else {
-            CreatableAdaptivePickerRow(
-                title: label,
-                items: items,
-                selection: selection,
-                emptyOption: emptyOption,
-                apiClient: apiClient,
-                creatableEntity: source.creatableEntity,
-                creatableLocation: source.creatableLocation,
-                createDefaults: source.createDefaultValues()
-            )
-        }
+        CreatableSearchablePickerRow(
+            title: label,
+            items: items,
+            selection: selection,
+            emptyOption: emptyOption,
+            apiClient: apiClient,
+            creatableEntity: source.creatableEntity,
+            creatableLocation: source.creatableLocation,
+            createDefaults: source.createDefaultValues()
+        )
     }
 
     // Keep the current value selectable while its list is still loading.

@@ -30,6 +30,7 @@ import com.callandt.snipemobile.ui.AuditNavigationIntent
 import com.callandt.snipemobile.ui.components.PrivacyBlurOverlay
 import com.callandt.snipemobile.ui.navigation.AppNav
 import com.callandt.snipemobile.ui.theme.SnipeMobileTheme
+import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.widget.WidgetDestination
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -90,7 +91,12 @@ class MainActivity : FragmentActivity() {
                 deliverLaunchExtras(viewModel, launchIntent)
             }
             val appTheme by viewModel.appTheme.collectAsState()
+            val appLanguage by viewModel.appLanguage.collectAsState()
             val shouldLock = privacyEnabled && !unlocked
+
+            LaunchedEffect(appLanguage) {
+                L10n.overrideLanguageCode = appLanguage
+            }
 
             SnipeMobileTheme(themeMode = appTheme) {
                 Surface(

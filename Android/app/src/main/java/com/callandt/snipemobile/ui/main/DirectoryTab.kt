@@ -41,7 +41,9 @@ import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.ListCountHeader
 import com.callandt.snipemobile.ui.components.ListFilterMenuButton
+import com.callandt.snipemobile.ui.components.ListHeaderActions
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
+import com.callandt.snipemobile.ui.components.ListSortMenuButton
 import com.callandt.snipemobile.ui.components.LocationCard
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
@@ -53,9 +55,15 @@ import com.callandt.snipemobile.ui.user.AddUserSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.ListSort
+import com.callandt.snipemobile.ui.util.ListSortCatalog
+import com.callandt.snipemobile.ui.util.ListSortField
+import com.callandt.snipemobile.ui.util.ListSortOrder
 import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.listFilterOptions
 import com.callandt.snipemobile.ui.util.locationMatchesSearch
+import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.sortedByListSort
 import com.callandt.snipemobile.ui.util.userMatchesSearch
 import com.callandt.snipemobile.ui.util.usersSortedWithCurrentFirst
 
@@ -81,6 +89,8 @@ fun DirectoryTab(
 
     var searchQuery by remember { mutableStateOf("") }
     var userFilter by remember { mutableStateOf(ListFilter()) }
+    var userSort by remember { mutableStateOf(ListSort.nameAscending) }
+    var locationSort by remember { mutableStateOf(ListSort.nameAscending) }
     var subtab by remember { mutableIntStateOf(0) }
     var showAddUser by remember { mutableStateOf(false) }
     var showAddLocation by remember { mutableStateOf(false) }
@@ -175,22 +185,34 @@ fun DirectoryTab(
                     onSelect = { subtab = it },
                 )
                 if (currentSubtab == DirectorySubtab.Users) {
-                    val filtered = usersSortedWithCurrentFirst(
-                        users
-                            .filter { userFilter.matches(it, userDimensions) }
-                            .filter { userMatchesSearch(it, searchQuery) },
-                        currentUser,
-                    )
+                    val sorted = users
+                        .filter { userFilter.matches(it, userDimensions) }
+                        .filter { userMatchesSearch(it, searchQuery) }
+                        .sortedByListSort(userSort, ListSortCatalog.users) { it.id }
+                    val filtered = if (userSort.field == ListSortField.Name &&
+                        userSort.order == ListSortOrder.Ascending
+                    ) {
+                        usersSortedWithCurrentFirst(sorted, currentUser)
+                    } else {
+                        sorted
+                    }
                     ListCountHeader(
                         count = filtered.size,
                         icon = Icons.Outlined.Groups,
                         trailing = {
-                            ListFilterMenuButton(
-                                filter = userFilter,
-                                options = userFilterOptions,
-                                onFilterChange = { userFilter = it },
-                                showLabel = true,
-                            )
+                            ListHeaderActions {
+                                ListSortMenuButton(
+                                    sort = userSort,
+                                    keys = ListSortCatalog.users,
+                                    onSortChange = { userSort = it },
+                                )
+                                ListFilterMenuButton(
+                                    filter = userFilter,
+                                    options = userFilterOptions,
+                                    onFilterChange = { userFilter = it },
+                                    showLabel = true,
+                                )
+                            }
                         },
                     )
                     Box(modifier = Modifier.weight(1f)) {
@@ -205,7 +227,11 @@ fun DirectoryTab(
                                 )
                             }
                             else -> {
+                                val listState = rememberResettingLazyListState(
+                                    Triple(searchQuery, userFilter, userSort),
+                                )
                                 LazyColumn(
+                                    state = listState,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
@@ -227,10 +253,22 @@ fun DirectoryTab(
                         }
                     }
                 } else {
-                    val filtered = locations.filter {
-                        locationMatchesSearch(it, searchQuery)
-                    }
-                    ListCountHeader(count = filtered.size, icon = Icons.Outlined.Place)
+                    val filtered = locations
+                        .filter { locationMatchesSearch(it, searchQuery) }
+                        .sortedByListSort(locationSort, ListSortCatalog.locations) { it.id }
+                    ListCountHeader(
+                        count = filtered.size,
+                        icon = Icons.Outlined.Place,
+                        trailing = {
+                            ListHeaderActions {
+                                ListSortMenuButton(
+                                    sort = locationSort,
+                                    keys = ListSortCatalog.locations,
+                                    onSortChange = { locationSort = it },
+                                )
+                            }
+                        },
+                    )
                     Box(modifier = Modifier.weight(1f)) {
                         when {
                             filtered.isEmpty() && isLoading && !hasCompletedInitialLoad -> {
@@ -243,7 +281,11 @@ fun DirectoryTab(
                                 )
                             }
                             else -> {
+                                val listState = rememberResettingLazyListState(
+                                    Triple(searchQuery, locationSort, subtab),
+                                )
                                 LazyColumn(
+                                    state = listState,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {

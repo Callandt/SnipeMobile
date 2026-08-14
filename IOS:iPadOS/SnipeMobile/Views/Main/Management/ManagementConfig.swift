@@ -24,12 +24,22 @@ enum ManagementValue {
     // id from a nested object or a flat value
     static func nestedId(_ row: [String: Any], _ key: String) -> String {
         if let dict = row[key] as? [String: Any] {
-            if let id = dict["id"] as? Int { return String(id) }
-            if let id = dict["id"] as? String { return id }
+            if let id = rowId(dict) { return String(id) }
         }
-        if let id = row[key] as? Int { return String(id) }
-        if let id = row[key] as? String { return id }
+        if let id = rowId(["id": row[key] as Any]) { return String(id) }
         return ""
+    }
+
+    static func rowId(_ row: [String: Any]) -> Int? {
+        intId(row["id"])
+    }
+
+    static func intId(_ any: Any?) -> Int? {
+        if let i = any as? Int { return i }
+        if let n = any as? NSNumber { return n.intValue }
+        if let s = any as? String { return Int(s) }
+        if let d = any as? Double { return Int(d) }
+        return nil
     }
 
     // name from a nested object

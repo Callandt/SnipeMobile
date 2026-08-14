@@ -386,6 +386,10 @@ private fun TabletDetailPane(
                 onTabSelected(MainTab.Accessories)
                 onSelectionChange(TabletDetailSelection.Accessory(it))
             },
+            onOpenLocation = {
+                onTabSelected(MainTab.Directory)
+                onSelectionChange(TabletDetailSelection.Location(it))
+            },
         )
         is TabletDetailSelection.Maintenance -> MaintenanceDetailScreen(
             maintenanceId = current.id,

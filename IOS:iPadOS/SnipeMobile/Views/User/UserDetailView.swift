@@ -275,11 +275,6 @@ struct UserDetailView: View {
                 isDetailViewActive = true
             }
         }
-        .onDisappear {
-            if !isReadOnly {
-                isDetailViewActive = false
-            }
-        }
         .hidesTabBarWhenPushed(if: !isReadOnly)
         .task(id: user.id) {
             if isReadOnly {
@@ -317,27 +312,7 @@ struct UserDetailView: View {
                     Text(L10n.string("image"))
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .center)
-                    AsyncImage(url: imageURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxHeight: 220)
-                                .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        case .failure(_):
-                            Image(systemName: "photo")
-                                .font(.system(size: 36))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, minHeight: 140)
-                        case .empty:
-                            ProgressView()
-                                .frame(maxWidth: .infinity, minHeight: 140)
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
+                    TappableDetailImage(url: imageURL)
                 }
                 .padding()
                 .background(Color(.systemGray6))

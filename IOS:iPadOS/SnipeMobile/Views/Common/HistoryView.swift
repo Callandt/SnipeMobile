@@ -16,7 +16,6 @@ struct HistoryView: View {
     @State private var isShowingPreview = false
     @State private var downloadingActivityId: Int?
     @State private var ephemeralNotice: EphemeralNotice?
-    @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
         Group {

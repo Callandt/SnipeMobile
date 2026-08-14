@@ -34,4 +34,19 @@ extension View {
             .frame(maxWidth: .infinity)
             .background(.bar, ignoresSafeAreaEdges: .bottom)
     }
+
+    /// Shrink the gap under the search field.
+    func compactLayoutWhileSearching() -> some View {
+        modifier(CompactLayoutWhileSearching())
+    }
+}
+
+private struct CompactLayoutWhileSearching: ViewModifier {
+    @Environment(\.isSearching) private var isSearching
+
+    func body(content: Content) -> some View {
+        content
+            .navigationBarTitleDisplayMode(isSearching ? .inline : .large)
+            .contentMargins(.top, isSearching ? 0 : nil, for: .scrollContent)
+    }
 }

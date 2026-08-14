@@ -162,6 +162,22 @@ struct AssetDetailView: View {
         return apiClient.assets.first { $0.id == id }
     }
 
+    private var resolvedLocation: Location? {
+        if let id = currentAsset.location?.id,
+           let cached = apiClient.locations.first(where: { $0.id == id }) {
+            return cached
+        }
+        return currentAsset.location
+    }
+
+    private var resolvedDefaultLocation: Location? {
+        if let id = currentAsset.rtdLocation?.id,
+           let cached = apiClient.locations.first(where: { $0.id == id }) {
+            return cached
+        }
+        return currentAsset.rtdLocation
+    }
+
     /// Prefer API `warranty_expires`; fall back to purchase date + warranty months.
     private var warrantyExpiresDate: Date? {
         if let raw = currentAsset.warrantyExpires?.date
@@ -203,49 +219,18 @@ struct AssetDetailView: View {
     }
 
     private func displayDate(_ dateInfo: DateInfo?, includeTimeWhenAvailable: Bool) -> String? {
-        guard let dateInfo = dateInfo else { return nil }
+        guard let dateInfo else { return nil }
+        if let parsed = dateInfo.parsedDate {
+            let hasTime = includeTimeWhenAvailable && (
+                (dateInfo.datetime?.count ?? 0) > 10 || (dateInfo.formatted?.contains(":") == true)
+            )
+            let datePart = parsed.formatted(date: .abbreviated, time: .omitted)
+            guard hasTime else { return datePart }
+            let timePart = parsed.formatted(date: .omitted, time: .shortened)
+            return "\(datePart) \(L10n.string("date_time_connector")) \(timePart)"
+        }
         let sourceValue = (dateInfo.date?.isEmpty == false ? dateInfo.date : dateInfo.formatted) ?? ""
-        guard !sourceValue.isEmpty else { return nil }
-
-        let dateFormats = [
-            "yyyy-MM-dd",
-            "yyyy-MM-dd HH:mm",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
-            "yyyy-MM-dd'T'HH:mm:ssZ"
-        ]
-
-        let inputFormatter = DateFormatter()
-        inputFormatter.locale = Locale(identifier: "en_US_POSIX")
-        inputFormatter.timeZone = TimeZone(secondsFromGMT: 0)
-
-        var parsedDate: Date?
-        var includesTime = false
-        for format in dateFormats {
-            inputFormatter.dateFormat = format
-            if let date = inputFormatter.date(from: sourceValue) {
-                parsedDate = date
-                includesTime = format.contains("H")
-                break
-            }
-        }
-
-        guard let parsedDate = parsedDate else {
-            return dateInfo.formatted ?? sourceValue
-        }
-
-        let outputFormatter = DateFormatter()
-        outputFormatter.dateStyle = .medium
-        outputFormatter.timeStyle = .none
-        let datePart = outputFormatter.string(from: parsedDate)
-
-        guard includesTime, includeTimeWhenAvailable else { return datePart }
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateStyle = .none
-        timeFormatter.timeStyle = .short
-        let timePart = timeFormatter.string(from: parsedDate)
-        return "\(datePart) \(L10n.string("date_time_connector")) \(timePart)"
+        return sourceValue.isEmpty ? nil : (dateInfo.formatted ?? sourceValue)
     }
 
     private var editSheet: some View {
@@ -348,7 +333,6 @@ struct AssetDetailView: View {
             }
         }
         .onAppear { isDetailViewActive = true }
-        .onDisappear { isDetailViewActive = false }
         .hidesTabBarWhenPushed()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -473,7 +457,7 @@ struct AssetDetailView: View {
                 await refreshAfterCheckInOut()
             })
         }
-        .onChange(of: currentAsset.id) { _, _ in
+        .onChange(of: asset.id) { _, _ in
             Task { await reloadAssignedRelations() }
         }
         .onChange(of: apiClient.assets.count) { _, _ in
@@ -574,7 +558,7 @@ struct AssetDetailView: View {
         assetLicenses = await licenses
         assetAccessories = await accessories
         assetComponents = await components
-        assignedChildAssets = await childAssets
+        assignedChildAssets = (await childAssets).uniquedByID()
     }
 
     private func prepareAndShowEditSheet() {
@@ -639,273 +623,332 @@ struct AssetDetailView: View {
     }
 
     private var detailsView: some View {
-        ZStack {
+        let asset = currentAsset
+        return ZStack {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                ScrollView {
-                    VStack(spacing: 15) {
-                        if let imageURL = resolvedImageURL {
-                            VStack(spacing: 10) {
-                                Text(L10n.string("image"))
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                                AsyncImage(url: imageURL) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(maxHeight: 220)
-                                            .frame(maxWidth: .infinity)
-                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    case .failure(_):
-                                        Image(systemName: "photo")
-                                            .font(.system(size: 36))
-                                            .foregroundStyle(.secondary)
-                                            .frame(maxWidth: .infinity, minHeight: 140)
-                                    case .empty:
-                                        ProgressView()
-                                            .frame(maxWidth: .infinity, minHeight: 140)
-                                    @unknown default:
-                                        EmptyView()
-                                    }
-                                }
-                                .id(imageDisplayToken)
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                        }
-                        Text(L10n.string("device_info"))
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        VStack(spacing: 10) {
-                            if !currentAsset.decodedAssetTag.isEmpty {
-                                copyableDetailRow(label: L10n.string("asset_tag"), value: currentAsset.decodedAssetTag)
-                            }
-                            if !currentAsset.decodedSerial.isEmpty {
-                                copyableDetailRow(label: L10n.string("serial_number"), value: currentAsset.decodedSerial)
-                            }
-                            if !currentAsset.decodedName.isEmpty,
-                               currentAsset.decodedName != currentAsset.decodedModelName {
-                                copyableDetailRow(label: L10n.string("name"), value: currentAsset.decodedName)
-                            }
-                            if !currentAsset.decodedModelName.isEmpty {
-                                copyableDetailRow(label: L10n.string("model"), value: currentAsset.decodedModelName)
-                            }
-                            if !currentAsset.decodedManufacturerName.isEmpty {
-                                copyableDetailRow(label: L10n.string("manufacturer"), value: currentAsset.decodedManufacturerName)
-                            }
-                            if !currentAsset.decodedSupplierName.isEmpty {
-                                copyableDetailRow(label: L10n.string("supplier_optional"), value: currentAsset.decodedSupplierName)
-                            }
-                            if let statusLabel = resolvedStatusLabel {
-                                copyableDetailRow(label: L10n.string("status"), value: statusLabel)
-                            }
-                            if !currentAsset.decodedCategoryName.isEmpty {
-                                copyableDetailRow(label: L10n.string("category"), value: currentAsset.decodedCategoryName)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
+            ScrollView {
+                VStack(spacing: 15) {
+                    imageSection
+                    deviceInfoSection(asset)
+                    locationSection(asset)
+                    assignedSection(asset)
+                    relatedLicensesSection
+                    relatedAccessoriesSection
+                    relatedComponentsSection
+                    datesSection(asset)
+                    valueSection(asset)
+                    customFieldsSection(asset)
+                }
+                .padding(.top, 16)
+                .padding(.horizontal)
+            }
+        }
+    }
 
-                        // Assigned To.
-                        if let assignedTo = currentAsset.assignedTo,
-                           currentAsset.statusLabel.statusMeta?.lowercased() == "deployed"
-                           || !currentAsset.decodedAssignedToName.isEmpty {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text(L10n.string("assigned_to"))
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                if let user = assignedUser {
-                                    Button { onOpenUser?(user) } label: {
-                                        AssignedUserCard(user: user)
-                                    }
-                                    .buttonStyle(.plain)
-                                } else if let loc = assignedLocation {
-                                    Button { onOpenLocation?(loc) } label: {
-                                        AssignedLocationCard(location: loc)
-                                    }
-                                    .buttonStyle(.plain)
-                                } else if let assignedAsset {
-                                    Button { onOpenAsset?(assignedAsset) } label: {
-                                        AssignedAssetCard(asset: assignedAsset)
-                                    }
-                                    .buttonStyle(.plain)
-                                } else if assignedTo.isLocation {
-                                    AssignedLocationCard(location: Location(id: assignedTo.id, name: currentAsset.decodedAssignedToName))
-                                } else if assignedTo.isAsset {
-                                    AssignedAssetCard(asset: nil, fallbackTitle: currentAsset.decodedAssignedToName)
-                                } else {
-                                    AssignedUserCard(user: nil, fallbackName: currentAsset.decodedAssignedToName)
-                                }
-                            }
-                            .padding(.top, 5)
-                        }
+    @ViewBuilder
+    private var imageSection: some View {
+        if let imageURL = resolvedImageURL {
+            VStack(spacing: 10) {
+                Text(L10n.string("image"))
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                TappableDetailImage(url: imageURL)
+                    .id(imageDisplayToken)
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+    }
 
-                        if !assignedChildAssets.isEmpty {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text(L10n.string("assigned_assets"))
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                VStack(spacing: 12) {
-                                    ForEach(assignedChildAssets) { childAsset in
-                                        Button { onOpenAsset?(childAsset) } label: {
-                                            AssignedAssetCard(asset: childAsset)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                            .padding(.top, 5)
-                        }
+    @ViewBuilder
+    private func deviceInfoSection(_ asset: Asset) -> some View {
+        VStack(spacing: 15) {
+            Text(L10n.string("device_info"))
+                .font(.headline)
+                .foregroundColor(.primary)
+            VStack(spacing: 10) {
+            if !asset.decodedAssetTag.isEmpty {
+                copyableDetailRow(label: L10n.string("asset_tag"), value: asset.decodedAssetTag)
+            }
+            if !asset.decodedSerial.isEmpty {
+                copyableDetailRow(label: L10n.string("serial_number"), value: asset.decodedSerial)
+            }
+            if !asset.decodedName.isEmpty,
+               asset.decodedName != asset.decodedModelName {
+                copyableDetailRow(label: L10n.string("name"), value: asset.decodedName)
+            }
+            if !asset.decodedModelName.isEmpty {
+                copyableDetailRow(label: L10n.string("model"), value: asset.decodedModelName)
+            }
+            if !asset.decodedManufacturerName.isEmpty {
+                copyableDetailRow(label: L10n.string("manufacturer"), value: asset.decodedManufacturerName)
+            }
+            if !asset.decodedSupplierName.isEmpty {
+                copyableDetailRow(label: L10n.string("supplier_optional"), value: asset.decodedSupplierName)
+            }
+            if let statusLabel = resolvedStatusLabel {
+                copyableDetailRow(label: L10n.string("status"), value: statusLabel)
+            }
+            if !asset.decodedCategoryName.isEmpty {
+                copyableDetailRow(label: L10n.string("category"), value: asset.decodedCategoryName)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        }
+    }
 
-                        if !assetLicenses.isEmpty {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text(L10n.string("tab_licenses"))
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                VStack(spacing: 12) {
-                                    ForEach(assetLicenses) { license in
-                                        Button { onOpenLicense?(license) } label: {
-                                            AssignedLicenseCard(license: license)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                            .padding(.top, 5)
+    @ViewBuilder
+    private func locationSection(_ asset: Asset) -> some View {
+        let currentLoc = resolvedLocation
+        let defaultLoc = resolvedDefaultLocation
+        if currentLoc != nil || defaultLoc != nil || !asset.decodedCompanyName.isEmpty {
+            Text(L10n.string("location_details"))
+                .font(.headline)
+                .foregroundColor(.primary)
+                .padding(.top, 5)
+            VStack(spacing: 10) {
+                if let loc = currentLoc {
+                    if onOpenLocation != nil {
+                        Button { onOpenLocation?(loc) } label: {
+                            tappableDetailRow(label: L10n.string("location"), value: loc.decodedName)
                         }
-
-                        if !assetAccessories.isEmpty {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text(L10n.string("tab_accessories"))
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                VStack(spacing: 12) {
-                                    ForEach(assetAccessories) { accessory in
-                                        Button { onOpenAccessory?(accessory) } label: {
-                                            AssignedAccessoryCard(accessory: accessory)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                            .padding(.top, 5)
-                        }
-
-                        if !assetComponents.isEmpty {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text(L10n.string("tab_components"))
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                VStack(spacing: 12) {
-                                    ForEach(assetComponents) { row in
-                                        Button { onOpenComponent?(row.component) } label: {
-                                            AssignedComponentCard(component: row.component, quantity: row.assignedQty)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                            .padding(.top, 5)
-                        }
-
-                        // Date fields
-                        let hasAnyDate =
-                            (currentAsset.purchaseDate?.formatted?.isEmpty == false) ||
-                            (currentAsset.nextAuditDate?.formatted?.isEmpty == false) ||
-                            (currentAsset.expectedCheckin?.formatted?.isEmpty == false) ||
-                            (currentAsset.assetEolDate?.formatted?.isEmpty == false) ||
-                            (computedWarrantyExpires?.isEmpty == false) ||
-                            (currentAsset.lastAuditDate?.formatted?.isEmpty == false) ||
-                            (currentAsset.lastCheckout?.formatted?.isEmpty == false) ||
-                            (currentAsset.lastCheckin?.formatted?.isEmpty == false)
-                        if hasAnyDate {
-                            Text(L10n.string("dates"))
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                                .padding(.top, 5)
-                            VStack(spacing: 10) {
-                                if let v = displayDate(currentAsset.purchaseDate), !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("purchase_date"), value: v)
-                                }
-                                if let v = currentAsset.nextAuditDate?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("next_audit_date"), value: v)
-                                }
-                                if let v = currentAsset.expectedCheckin?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("expected_checkin"), value: v)
-                                }
-                                if warrantyExpiresDate != nil {
-                                    warrantyExpiresRow()
-                                }
-                                if let v = displayDate(currentAsset.assetEolDate), !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("eol_date"), value: v)
-                                }
-                                if let v = currentAsset.lastAuditDate?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("last_audit_date"), value: v)
-                                }
-                                if let v = displayDate(currentAsset.lastCheckout, includeTimeWhenAvailable: false), !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("last_checkout"), value: v)
-                                }
-                                if let v = currentAsset.lastCheckin?.formatted, !v.isEmpty {
-                                    copyableDetailRow(label: L10n.string("last_checkin"), value: v)
-                                }
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                        }
-
-                        // Value Info if any
-                        let hasPurchaseCost = (currentAsset.purchaseCost?.isEmpty == false)
-                        let hasValueInfo = hasPurchaseCost || (currentAsset.orderNumber?.isEmpty == false)
-                        if hasValueInfo {
-                            Text(L10n.string("value_info"))
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                                .padding(.top, 5)
-                            VStack(spacing: 10) {
-                                if let purchaseCost = currentAsset.purchaseCost, !purchaseCost.isEmpty {
-                                    copyableDetailRow(label: L10n.string("purchase_cost"), value: purchaseCost, copyValue: normalizeDecimalForCopy(purchaseCost))
-                                }
-                                if hasPurchaseCost, let bookValue = currentAsset.bookValue, !bookValue.isEmpty {
-                                    copyableDetailRow(label: L10n.string("book_value"), value: bookValue, copyValue: normalizeDecimalForCopy(bookValue))
-                                }
-                                if let orderNumber = currentAsset.orderNumber, !orderNumber.isEmpty {
-                                    copyableDetailRow(label: L10n.string("order_number"), value: orderNumber)
-                                }
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                        }
-
-                        if let customFields = currentAsset.customFields,
-                           customFields.contains(where: { ($0.value.value ?? "").isEmpty == false }) {
-                            Text(L10n.string("custom_fields"))
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                                .padding(.top, 5)
-                            VStack(spacing: 10) {
-                                ForEach(customFields.keys.sorted(), id: \.self) { key in
-                                    if let value = customFields[key]?.value, !value.isEmpty {
-                                        copyableDetailRow(label: key, value: value)
-                                    }
-                                }
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        copyableDetailRow(label: L10n.string("location"), value: loc.decodedName)
                     }
-                    .padding(.top, 16)
-                    .padding(.horizontal)
+                } else if !asset.decodedLocationName.isEmpty {
+                    copyableDetailRow(label: L10n.string("location"), value: asset.decodedLocationName)
+                }
+                if let defaultLoc, defaultLoc.id != currentLoc?.id {
+                    if onOpenLocation != nil {
+                        Button { onOpenLocation?(defaultLoc) } label: {
+                            tappableDetailRow(label: L10n.string("default_location"), value: defaultLoc.decodedName)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        copyableDetailRow(label: L10n.string("default_location"), value: defaultLoc.decodedName)
+                    }
+                }
+                if !asset.decodedCompanyName.isEmpty {
+                    copyableDetailRow(label: L10n.string("company"), value: asset.decodedCompanyName)
                 }
             }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+    }
+
+    @ViewBuilder
+    private func assignedSection(_ asset: Asset) -> some View {
+        if let assignedTo = asset.assignedTo,
+           asset.statusLabel.statusMeta?.lowercased() == "deployed"
+           || !asset.decodedAssignedToName.isEmpty {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(L10n.string("assigned_to"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                if let user = assignedUser {
+                    Button { onOpenUser?(user) } label: {
+                        AssignedUserCard(user: user)
+                    }
+                    .buttonStyle(.plain)
+                } else if let loc = assignedLocation {
+                    Button { onOpenLocation?(loc) } label: {
+                        AssignedLocationCard(location: loc)
+                    }
+                    .buttonStyle(.plain)
+                } else if let assignedAsset {
+                    Button { onOpenAsset?(assignedAsset) } label: {
+                        AssignedAssetCard(asset: assignedAsset)
+                    }
+                    .buttonStyle(.plain)
+                } else if assignedTo.isLocation {
+                    AssignedLocationCard(location: Location(id: assignedTo.id, name: asset.decodedAssignedToName))
+                } else if assignedTo.isAsset {
+                    AssignedAssetCard(asset: nil, fallbackTitle: asset.decodedAssignedToName)
+                } else {
+                    AssignedUserCard(user: nil, fallbackName: asset.decodedAssignedToName)
+                }
+            }
+            .padding(.top, 5)
+        }
+
+        if !assignedChildAssets.isEmpty {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(L10n.string("assigned_assets"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                VStack(spacing: 12) {
+                    ForEach(assignedChildAssets.uniquedByID()) { childAsset in
+                        Button { onOpenAsset?(childAsset) } label: {
+                            AssignedAssetCard(asset: childAsset)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.top, 5)
+        }
+    }
+
+    @ViewBuilder
+    private var relatedLicensesSection: some View {
+        if !assetLicenses.isEmpty {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(L10n.string("tab_licenses"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                VStack(spacing: 12) {
+                    ForEach(assetLicenses) { license in
+                        Button { onOpenLicense?(license) } label: {
+                            AssignedLicenseCard(license: license)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.top, 5)
+        }
+    }
+
+    @ViewBuilder
+    private var relatedAccessoriesSection: some View {
+        if !assetAccessories.isEmpty {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(L10n.string("tab_accessories"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                VStack(spacing: 12) {
+                    ForEach(assetAccessories) { accessory in
+                        Button { onOpenAccessory?(accessory) } label: {
+                            AssignedAccessoryCard(accessory: accessory)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.top, 5)
+        }
+    }
+
+    @ViewBuilder
+    private var relatedComponentsSection: some View {
+        if !assetComponents.isEmpty {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(L10n.string("tab_components"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                VStack(spacing: 12) {
+                    ForEach(assetComponents) { row in
+                        Button { onOpenComponent?(row.component) } label: {
+                            AssignedComponentCard(component: row.component, quantity: row.assignedQty)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.top, 5)
+        }
+    }
+
+    @ViewBuilder
+    private func datesSection(_ asset: Asset) -> some View {
+        let hasAnyDate =
+            (asset.purchaseDate?.formatted?.isEmpty == false) ||
+            (asset.nextAuditDate?.formatted?.isEmpty == false) ||
+            (asset.expectedCheckin?.formatted?.isEmpty == false) ||
+            (asset.assetEolDate?.formatted?.isEmpty == false) ||
+            (computedWarrantyExpires?.isEmpty == false) ||
+            (asset.lastAuditDate?.formatted?.isEmpty == false) ||
+            (asset.lastCheckout?.formatted?.isEmpty == false) ||
+            (asset.lastCheckin?.formatted?.isEmpty == false)
+        if hasAnyDate {
+            Text(L10n.string("dates"))
+                .font(.headline)
+                .foregroundColor(.primary)
+                .padding(.top, 5)
+            VStack(spacing: 10) {
+                if let v = displayDate(asset.purchaseDate), !v.isEmpty {
+                    copyableDetailRow(label: L10n.string("purchase_date"), value: v)
+                }
+                if let v = asset.nextAuditDate?.formatted, !v.isEmpty {
+                    copyableDetailRow(label: L10n.string("next_audit_date"), value: v)
+                }
+                if let v = asset.expectedCheckin?.formatted, !v.isEmpty {
+                    copyableDetailRow(label: L10n.string("expected_checkin"), value: v)
+                }
+                if warrantyExpiresDate != nil {
+                    warrantyExpiresRow()
+                }
+                if let v = displayDate(asset.assetEolDate), !v.isEmpty {
+                    copyableDetailRow(label: L10n.string("eol_date"), value: v)
+                }
+                if let v = asset.lastAuditDate?.formatted, !v.isEmpty {
+                    copyableDetailRow(label: L10n.string("last_audit_date"), value: v)
+                }
+                if let v = displayDate(asset.lastCheckout, includeTimeWhenAvailable: false), !v.isEmpty {
+                    copyableDetailRow(label: L10n.string("last_checkout"), value: v)
+                }
+                if let v = asset.lastCheckin?.formatted, !v.isEmpty {
+                    copyableDetailRow(label: L10n.string("last_checkin"), value: v)
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+    }
+
+    @ViewBuilder
+    private func valueSection(_ asset: Asset) -> some View {
+        let hasPurchaseCost = (asset.purchaseCost?.isEmpty == false)
+        let hasValueInfo = hasPurchaseCost || (asset.orderNumber?.isEmpty == false)
+        if hasValueInfo {
+            Text(L10n.string("value_info"))
+                .font(.headline)
+                .foregroundColor(.primary)
+                .padding(.top, 5)
+            VStack(spacing: 10) {
+                if let purchaseCost = asset.purchaseCost, !purchaseCost.isEmpty {
+                    copyableDetailRow(label: L10n.string("purchase_cost"), value: purchaseCost, copyValue: normalizeDecimalForCopy(purchaseCost))
+                }
+                if hasPurchaseCost, let bookValue = asset.bookValue, !bookValue.isEmpty {
+                    copyableDetailRow(label: L10n.string("book_value"), value: bookValue, copyValue: normalizeDecimalForCopy(bookValue))
+                }
+                if let orderNumber = asset.orderNumber, !orderNumber.isEmpty {
+                    copyableDetailRow(label: L10n.string("order_number"), value: orderNumber)
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+    }
+
+    @ViewBuilder
+    private func customFieldsSection(_ asset: Asset) -> some View {
+        if let customFields = asset.customFields,
+           customFields.contains(where: { ($0.value.value ?? "").isEmpty == false }) {
+            Text(L10n.string("custom_fields"))
+                .font(.headline)
+                .foregroundColor(.primary)
+                .padding(.top, 5)
+            VStack(spacing: 10) {
+                ForEach(customFields.keys.sorted(), id: \.self) { key in
+                    if let value = customFields[key]?.value, !value.isEmpty {
+                        copyableDetailRow(label: key, value: value)
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
         }
     }
     
@@ -935,6 +978,25 @@ struct AssetDetailView: View {
                 Label(L10n.string("copy"), systemImage: "doc.on.doc")
             }
         }
+    }
+
+    @ViewBuilder
+    private func tappableDetailRow(label: String, value: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).bold()
+                Text(value)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     /// Date + status badge (active/expired), similar to Snipe-IT web.
@@ -1326,4 +1388,4 @@ private struct AssetDetailTabBar: View {
                 .fill(Color(.systemBackground))
         }
     }
-} 
+}

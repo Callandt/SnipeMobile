@@ -48,6 +48,7 @@ class AppPreferences(private val context: Context) {
         context.dataStore.data.map { it[Keys.ENABLE_DELL_QR_SCAN] ?: true }
     val useCloudSync: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_CLOUD_SYNC] ?: true }
     val settingsLanguage: Flow<String> = context.dataStore.data.map { it[Keys.SETTINGS_LANGUAGE] ?: "en" }
+    val appLanguage: Flow<String> = context.dataStore.data.map { it[Keys.APP_LANGUAGE] ?: "system" }
     val auditNotificationsEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.AUDIT_NOTIFICATIONS_ENABLED] ?: false }
     val auditNotificationHour: Flow<Int> =
@@ -134,6 +135,10 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[Keys.APP_THEME] = value }
     }
 
+    suspend fun setAppLanguage(value: String) {
+        context.dataStore.edit { it[Keys.APP_LANGUAGE] = value }
+    }
+
     suspend fun setUseBiometrics(value: Boolean) {
         context.dataStore.edit { it[Keys.USE_BIOMETRICS] = value }
     }
@@ -210,6 +215,7 @@ class AppPreferences(private val context: Context) {
         val ENABLE_AUDIT_SUBTAB = booleanPreferencesKey("enableAuditSubtab")
         val SHOW_MAINTENANCE = booleanPreferencesKey("showMaintenance")
         val APP_THEME = stringPreferencesKey("appTheme")
+        val APP_LANGUAGE = stringPreferencesKey("appLanguage")
         val USE_BIOMETRICS = booleanPreferencesKey("useBiometrics")
         val AUTO_FILL_ASSET_TAG = booleanPreferencesKey("autoFillAssetTag")
         val SHOW_PHOTOS_IN_CARD_LIST = booleanPreferencesKey("showPhotosInCardList")

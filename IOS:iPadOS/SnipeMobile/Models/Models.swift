@@ -130,32 +130,25 @@ struct Asset: Identifiable, Codable, Hashable {
         case id, name, assetTag = "asset_tag", serial, model, byod, requestable, modelNumber = "model_number", eol, assetEolDate = "asset_eol_date", statusLabel = "status_label", status, category, manufacturer, supplier, notes, orderNumber = "order_number", company, location, rtdLocation = "rtd_location", image, qr, altBarcode = "alt_barcode", assignedTo = "assigned_to", jobtitle, warrantyMonths = "warranty_months", warrantyExpires = "warranty_expires", createdBy = "created_by", createdAt = "created_at", updatedAt = "updated_at", lastAuditDate = "last_audit_date", nextAuditDate = "next_audit_date", deletedAt = "deleted_at", purchaseDate = "purchase_date", age, lastCheckout = "last_checkout", lastCheckin = "last_checkin", expectedCheckin = "expected_checkin", purchaseCost = "purchase_cost", checkinCounter = "checkin_counter", checkoutCounter = "checkout_counter", requestsCounter = "requests_counter", userCanCheckout = "user_can_checkout", bookValue = "book_value", customFields = "custom_fields", availableActions = "available_actions"
     }
 
-    // compare shown content so views refresh after a checkout/checkin/edit
+    // Identity only: `NavigationPath` uses Hashable as dictionary keys.
     static func == (lhs: Asset, rhs: Asset) -> Bool {
-        lhs.id == rhs.id &&
-        lhs.decodedName == rhs.decodedName &&
-        lhs.decodedAssetTag == rhs.decodedAssetTag &&
-        lhs.decodedSerial == rhs.decodedSerial &&
-        lhs.decodedModelName == rhs.decodedModelName &&
-        lhs.statusLabel.id == rhs.statusLabel.id &&
-        lhs.statusLabel.statusMeta == rhs.statusLabel.statusMeta &&
-        lhs.decodedStatusLabelName == rhs.decodedStatusLabelName &&
-        lhs.userCanCheckout == rhs.userCanCheckout &&
-        lhs.assignedTo?.id == rhs.assignedTo?.id &&
-        lhs.decodedAssignedToName == rhs.decodedAssignedToName &&
-        lhs.decodedLocationName == rhs.decodedLocationName &&
-        lhs.decodedCategoryName == rhs.decodedCategoryName &&
-        lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
-        lhs.image == rhs.image &&
-        lhs.updatedAt?.datetime == rhs.updatedAt?.datetime &&
-        lhs.nextAuditDate?.date == rhs.nextAuditDate?.date &&
-        lhs.lastAuditDate?.date == rhs.lastAuditDate?.date &&
-        lhs.expectedCheckin?.date == rhs.expectedCheckin?.date
+        lhs.id == rhs.id
     }
 
-    // keep hashing id-based for stable navigation
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+}
+
+/// `NavigationPath` stores this instead of a full `Asset`.
+struct AssetNavID: Hashable {
+    let id: Int
+}
+
+extension Array where Element: Identifiable, Element.ID: Hashable {
+    func uniquedByID() -> [Element] {
+        var seen = Set<Element.ID>()
+        return filter { seen.insert($0.id).inserted }
     }
 }
 
@@ -299,9 +292,10 @@ extension Asset {
     }
 }
 
-struct Model: Codable {
+struct Model: Codable, Hashable, Identifiable {
     let id: Int
     let name: String
+    var decodedName: String { HTMLDecoder.decode(name) }
 }
 
 struct StatusLabel: Codable {
@@ -393,10 +387,18 @@ struct Location: Codable, Identifiable, Hashable {
     let zip: String?
     let currency: String?
     let parent: LocationParent?
+    let createdAt: DateInfo?
+    let updatedAt: DateInfo?
 
     /// Some API fields contain HTML entities (e.g. `&#039;` for `'`).
     /// Use this everywhere we display the location name.
     var decodedName: String { HTMLDecoder.decode(name) }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, address, address2, city, state, country, zip, currency, parent
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
 
     init(
         id: Int,
@@ -408,7 +410,9 @@ struct Location: Codable, Identifiable, Hashable {
         country: String? = nil,
         zip: String? = nil,
         currency: String? = nil,
-        parent: LocationParent? = nil
+        parent: LocationParent? = nil,
+        createdAt: DateInfo? = nil,
+        updatedAt: DateInfo? = nil
     ) {
         self.id = id
         self.name = name
@@ -420,19 +424,12 @@ struct Location: Codable, Identifiable, Hashable {
         self.zip = zip
         self.currency = currency
         self.parent = parent
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 
     static func == (lhs: Location, rhs: Location) -> Bool {
-        lhs.id == rhs.id &&
-        lhs.name == rhs.name &&
-        lhs.address == rhs.address &&
-        lhs.address2 == rhs.address2 &&
-        lhs.city == rhs.city &&
-        lhs.state == rhs.state &&
-        lhs.country == rhs.country &&
-        lhs.zip == rhs.zip &&
-        lhs.currency == rhs.currency &&
-        lhs.parent?.id == rhs.parent?.id
+        lhs.id == rhs.id
     }
 
     func hash(into hasher: inout Hasher) {
@@ -440,34 +437,68 @@ struct Location: Codable, Identifiable, Hashable {
     }
 }
 
-struct DateInfo: Codable {
+struct DateInfo: Codable, Hashable {
     let date: String?
     let formatted: String?
     let datetime: String?
+    let parsedDate: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case date, formatted, datetime
+    }
+
+    init(date: String? = nil, formatted: String? = nil, datetime: String? = nil) {
+        self.date = date
+        self.formatted = formatted
+        self.datetime = datetime
+        self.parsedDate = Self.parseAPIDate(datetime) ?? Self.parseAPIDate(date) ?? Self.parseAPIDate(formatted)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decodeIfPresent(String.self, forKey: .date)
+        formatted = try container.decodeIfPresent(String.self, forKey: .formatted)
+        datetime = try container.decodeIfPresent(String.self, forKey: .datetime)
+        parsedDate = Self.parseAPIDate(datetime) ?? Self.parseAPIDate(date) ?? Self.parseAPIDate(formatted)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(date, forKey: .date)
+        try container.encodeIfPresent(formatted, forKey: .formatted)
+        try container.encodeIfPresent(datetime, forKey: .datetime)
+    }
+
+    static func == (lhs: DateInfo, rhs: DateInfo) -> Bool {
+        lhs.date == rhs.date && lhs.formatted == rhs.formatted && lhs.datetime == rhs.datetime
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(date)
+        hasher.combine(formatted)
+        hasher.combine(datetime)
+    }
 
     /// Parses Snipe-IT date strings (`yyyy-MM-dd` or `yyyy-MM-dd HH:mm:ss`).
     static func parseAPIDate(_ raw: String?) -> Date? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let formats = ["yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSZ"]
-        for format in formats {
-            let input = DateFormatter()
-            input.locale = Locale(identifier: "en_US_POSIX")
-            input.dateFormat = format
-            input.timeZone = TimeZone(secondsFromGMT: 0)
-            if let date = input.date(from: trimmed) {
+        if let date = parseISOLike(trimmed) { return date }
+        apiDateParseLock.lock()
+        defer { apiDateParseLock.unlock() }
+        for formatter in apiDateParsers {
+            if let date = formatter.date(from: trimmed) {
                 return date
             }
+            let format = formatter.dateFormat ?? ""
             if format == "yyyy-MM-dd HH:mm:ss", trimmed.count >= 19 {
-                let prefix = String(trimmed.prefix(19))
-                if let date = input.date(from: prefix) {
+                if let date = formatter.date(from: String(trimmed.prefix(19))) {
                     return date
                 }
             }
             if format == "yyyy-MM-dd", trimmed.count >= 10 {
-                let prefix = String(trimmed.prefix(10))
-                if let date = input.date(from: prefix) {
+                if let date = formatter.date(from: String(trimmed.prefix(10))) {
                     return date
                 }
             }
@@ -475,54 +506,65 @@ struct DateInfo: Codable {
         return nil
     }
 
+    private static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? TimeZone.current
+        return calendar
+    }()
+
+    private static func parseISOLike(_ raw: String) -> Date? {
+        guard raw.count >= 10, raw[raw.index(raw.startIndex, offsetBy: 4)] == "-",
+              raw[raw.index(raw.startIndex, offsetBy: 7)] == "-" else { return nil }
+        let year = Int(raw.prefix(4))
+        let month = Int(raw.dropFirst(5).prefix(2))
+        let day = Int(raw.dropFirst(8).prefix(2))
+        guard let year, let month, let day,
+              year >= 1, (1...12).contains(month), (1...31).contains(day) else { return nil }
+
+        var hour = 0
+        var minute = 0
+        var second = 0
+        if raw.count >= 19 {
+            let separator = raw[raw.index(raw.startIndex, offsetBy: 10)]
+            if separator == " " || separator == "T" {
+                if raw.contains("T"), raw.count > 19 { return nil }
+                hour = Int(raw.dropFirst(11).prefix(2)) ?? 0
+                minute = Int(raw.dropFirst(14).prefix(2)) ?? 0
+                second = Int(raw.dropFirst(17).prefix(2)) ?? 0
+            }
+        }
+
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.second = second
+        return utcCalendar.date(from: components)
+    }
+
+    private static let apiDateParseLock = NSLock()
+    private static let apiDateParsers: [DateFormatter] = {
+        ["yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSZ"].map { format in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = format
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.isLenient = false
+            return formatter
+        }
+    }()
+
     /// Locale-aware display (e.g. NL: `21 jul 2026 om 14:48`). Falls back to `formatted`.
     func localizedDisplay(includeTime: Bool = true) -> String? {
         let source = (date?.isEmpty == false ? date : nil)
             ?? (datetime?.isEmpty == false ? datetime : nil)
             ?? formatted
         guard let source, !source.isEmpty else { return nil }
-
-        let formats = [
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-dd HH:mm",
-            "yyyy-MM-dd",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
-            "yyyy-MM-dd'T'HH:mm:ssZ"
-        ]
-        let input = DateFormatter()
-        input.locale = Locale(identifier: "en_US_POSIX")
-        input.timeZone = TimeZone(secondsFromGMT: 0)
-
-        var parsed: Date?
-        var hasTime = false
-        for format in formats {
-            input.dateFormat = format
-            if let date = input.date(from: source) {
-                parsed = date
-                hasTime = format.contains("H")
-                break
-            }
-            if format.contains("HH:mm:ss"), source.count >= 19,
-               let date = input.date(from: String(source.prefix(19))) {
-                parsed = date
-                hasTime = true
-                break
-            }
-            if format == "yyyy-MM-dd", source.count >= 10,
-               let date = input.date(from: String(source.prefix(10))) {
-                parsed = date
-                hasTime = false
-                break
-            }
-        }
-
-        guard let parsed else { return formatted ?? source }
-
-        let output = DateFormatter()
-        output.locale = .current
-        output.dateStyle = .medium
-        output.timeStyle = (includeTime && hasTime) ? .short : .none
-        return output.string(from: parsed)
+        guard let parsed = parsedDate else { return formatted ?? source }
+        let hasTime = source.count > 10 && (source.contains("T") || source.contains(" "))
+        return parsed.formatted(date: .abbreviated, time: (includeTime && hasTime) ? .shortened : .omitted)
     }
 }
 
@@ -644,6 +686,8 @@ struct User: Identifiable, Codable, Hashable {
     let notes: String?
     let activated: Bool?
     let groups: [UserGroup]
+    let createdAt: DateInfo?
+    let updatedAt: DateInfo?
 
     let decodedName: String
     let decodedFirstName: String
@@ -668,7 +712,7 @@ struct User: Identifiable, Codable, Hashable {
         return trimmed
     }
 
-    init(id: Int, name: String, first_name: String, lastName: String? = nil, username: String? = nil, email: String? = nil, phone: String? = nil, image: String? = nil, location: Location? = nil, company: Company? = nil, employeeNumber: String? = nil, jobtitle: String? = nil, notes: String? = nil, activated: Bool? = nil, groups: [UserGroup] = []) {
+    init(id: Int, name: String, first_name: String, lastName: String? = nil, username: String? = nil, email: String? = nil, phone: String? = nil, image: String? = nil, location: Location? = nil, company: Company? = nil, employeeNumber: String? = nil, jobtitle: String? = nil, notes: String? = nil, activated: Bool? = nil, groups: [UserGroup] = [], createdAt: DateInfo? = nil, updatedAt: DateInfo? = nil) {
         self.id = id
         self.name = name
         self.first_name = first_name
@@ -684,6 +728,8 @@ struct User: Identifiable, Codable, Hashable {
         self.notes = notes
         self.activated = activated
         self.groups = groups
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
 
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedFirstName = HTMLDecoder.decode(first_name)
@@ -702,6 +748,8 @@ struct User: Identifiable, Codable, Hashable {
         case id, name, first_name, username, email, phone, image, avatar, location, company, jobtitle, notes, activated, groups
         case lastName = "last_name"
         case employeeNumber = "employee_num"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
     
     init(from decoder: Decoder) throws {
@@ -728,8 +776,10 @@ struct User: Identifiable, Codable, Hashable {
         } else if let array = try? container.decodeIfPresent([UserGroup].self, forKey: .groups) {
             groups = array
         }
+        let createdAt = try? container.decodeIfPresent(DateInfo.self, forKey: .createdAt)
+        let updatedAt = try? container.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
 
-        self.init(id: id, name: name, first_name: first_name, lastName: lastName, username: username, email: email, phone: phone, image: image, location: location, company: company, employeeNumber: employeeNumber, jobtitle: jobtitle, notes: notes, activated: activated, groups: groups)
+        self.init(id: id, name: name, first_name: first_name, lastName: lastName, username: username, email: email, phone: phone, image: image, location: location, company: company, employeeNumber: employeeNumber, jobtitle: jobtitle, notes: notes, activated: activated, groups: groups, createdAt: createdAt, updatedAt: updatedAt)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -751,6 +801,8 @@ struct User: Identifiable, Codable, Hashable {
         if !groups.isEmpty {
             try container.encode(groups, forKey: .groups)
         }
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
     }
 
     static func == (lhs: User, rhs: User) -> Bool {
@@ -801,6 +853,8 @@ struct Accessory: Identifiable, Codable, Hashable {
     let modelNumber: String?
     let image: String?
     let notes: String?
+    let createdAt: DateInfo?
+    let updatedAt: DateInfo?
 
     let decodedName: String
     let decodedAssetTag: String
@@ -831,7 +885,9 @@ struct Accessory: Identifiable, Codable, Hashable {
         purchaseDate: String? = nil,
         modelNumber: String? = nil,
         image: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        createdAt: DateInfo? = nil,
+        updatedAt: DateInfo? = nil
     ) {
         self.id = id
         self.name = name
@@ -853,6 +909,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         self.modelNumber = modelNumber
         self.image = image
         self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedAssetTag = HTMLDecoder.decode(assetTag)
         self.decodedStatusLabelName = HTMLDecoder.decode(statusLabel?.name ?? "Unknown")
@@ -882,6 +940,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         case modelNumber = "model_number"
         case image
         case notes
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     static func == (lhs: Accessory, rhs: Accessory) -> Bool {
@@ -905,7 +965,9 @@ struct Accessory: Identifiable, Codable, Hashable {
         lhs.remaining == rhs.remaining &&
         lhs.checkoutsCount == rhs.checkoutsCount &&
         lhs.image == rhs.image &&
-        lhs.notes == rhs.notes
+        lhs.notes == rhs.notes &&
+        lhs.createdAt?.datetime == rhs.createdAt?.datetime &&
+        lhs.updatedAt?.datetime == rhs.updatedAt?.datetime
     }
 
     func hash(into hasher: inout Hasher) {
@@ -936,6 +998,8 @@ extension Accessory {
         let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
         let image = try? container.decodeIfPresent(String.self, forKey: .image)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+        let createdAt = try? container.decodeIfPresent(DateInfo.self, forKey: .createdAt)
+        let updatedAt = try? container.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
 
         self.init(
             id: id,
@@ -957,7 +1021,9 @@ extension Accessory {
             purchaseDate: purchaseDate,
             modelNumber: modelNumber,
             image: image,
-            notes: notes
+            notes: notes,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 
@@ -1035,6 +1101,8 @@ struct Consumable: Identifiable, Codable, Hashable {
     let purchaseCost: String?
     let purchaseDate: String?
     let notes: String?
+    let createdAt: DateInfo?
+    let updatedAt: DateInfo?
 
     let decodedName: String
     let decodedItemNo: String
@@ -1061,7 +1129,9 @@ struct Consumable: Identifiable, Codable, Hashable {
         orderNumber: String? = nil,
         purchaseCost: String? = nil,
         purchaseDate: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        createdAt: DateInfo? = nil,
+        updatedAt: DateInfo? = nil
     ) {
         self.id = id
         self.name = name
@@ -1080,6 +1150,8 @@ struct Consumable: Identifiable, Codable, Hashable {
         self.purchaseCost = purchaseCost
         self.purchaseDate = purchaseDate
         self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedItemNo = HTMLDecoder.decode(itemNo ?? "")
         self.decodedModelNumber = HTMLDecoder.decode(modelNumber ?? "")
@@ -1101,6 +1173,8 @@ struct Consumable: Identifiable, Codable, Hashable {
         case purchaseCost = "purchase_cost"
         case purchaseDate = "purchase_date"
         case notes
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     static func == (lhs: Consumable, rhs: Consumable) -> Bool {
@@ -1119,7 +1193,9 @@ struct Consumable: Identifiable, Codable, Hashable {
         lhs.qty == rhs.qty &&
         lhs.minAmt == rhs.minAmt &&
         lhs.remaining == rhs.remaining &&
-        lhs.image == rhs.image
+        lhs.image == rhs.image &&
+        lhs.createdAt?.datetime == rhs.createdAt?.datetime &&
+        lhs.updatedAt?.datetime == rhs.updatedAt?.datetime
     }
 
     func hash(into hasher: inout Hasher) {
@@ -1147,6 +1223,8 @@ extension Consumable {
         let purchaseCost = Self.decodeOptionalStringOrNumber(from: container, forKey: .purchaseCost)
         let purchaseDate = Self.decodeOptionalPurchaseDate(from: container)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+        let createdAt = try? container.decodeIfPresent(DateInfo.self, forKey: .createdAt)
+        let updatedAt = try? container.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
 
         self.init(
             id: id,
@@ -1165,7 +1243,9 @@ extension Consumable {
             orderNumber: orderNumber ?? nil,
             purchaseCost: purchaseCost ?? nil,
             purchaseDate: purchaseDate ?? nil,
-            notes: notes ?? nil
+            notes: notes ?? nil,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 
@@ -1226,6 +1306,8 @@ struct Component: Identifiable, Codable, Hashable {
     let purchaseCost: String?
     let purchaseDate: String?
     let notes: String?
+    let createdAt: DateInfo?
+    let updatedAt: DateInfo?
 
     let decodedName: String
     let decodedSerial: String
@@ -1252,7 +1334,9 @@ struct Component: Identifiable, Codable, Hashable {
         orderNumber: String? = nil,
         purchaseCost: String? = nil,
         purchaseDate: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        createdAt: DateInfo? = nil,
+        updatedAt: DateInfo? = nil
     ) {
         self.id = id
         self.name = name
@@ -1271,6 +1355,8 @@ struct Component: Identifiable, Codable, Hashable {
         self.purchaseCost = purchaseCost
         self.purchaseDate = purchaseDate
         self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.decodedName = HTMLDecoder.decode(name)
         self.decodedSerial = HTMLDecoder.decode(serial ?? "")
         self.decodedModelNumber = HTMLDecoder.decode(modelNumber ?? "")
@@ -1291,6 +1377,8 @@ struct Component: Identifiable, Codable, Hashable {
         case purchaseCost = "purchase_cost"
         case purchaseDate = "purchase_date"
         case notes
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     static func == (lhs: Component, rhs: Component) -> Bool {
@@ -1309,7 +1397,9 @@ struct Component: Identifiable, Codable, Hashable {
         lhs.qty == rhs.qty &&
         lhs.minAmt == rhs.minAmt &&
         lhs.remaining == rhs.remaining &&
-        lhs.image == rhs.image
+        lhs.image == rhs.image &&
+        lhs.createdAt?.datetime == rhs.createdAt?.datetime &&
+        lhs.updatedAt?.datetime == rhs.updatedAt?.datetime
     }
 
     func hash(into hasher: inout Hasher) {
@@ -1337,6 +1427,8 @@ extension Component {
         let purchaseCost = Self.decodeOptionalStringOrNumber(from: container, forKey: .purchaseCost)
         let purchaseDate = Self.decodeOptionalPurchaseDate(from: container)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+        let createdAt = try? container.decodeIfPresent(DateInfo.self, forKey: .createdAt)
+        let updatedAt = try? container.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
 
         self.init(
             id: id,
@@ -1355,7 +1447,9 @@ extension Component {
             orderNumber: orderNumber ?? nil,
             purchaseCost: purchaseCost ?? nil,
             purchaseDate: purchaseDate ?? nil,
-            notes: notes ?? nil
+            notes: notes ?? nil,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 

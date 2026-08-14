@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -131,32 +134,45 @@ fun StatusChip(text: String) {
     )
 }
 
-/** Tap to copy value. */
+/** Copy on tap, or open a screen when onClick is set. */
 @Composable
 fun DetailRow(
     label: String,
     value: String?,
     copyValue: String? = null,
+    onClick: (() -> Unit)? = null,
 ) {
     if (value.isNullOrBlank()) return
     val context = LocalContext.current
     val toCopy = copyValue ?: value
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { copyDetailValue(context, toCopy) }
+            .clickable {
+                if (onClick != null) onClick() else copyDetailValue(context, toCopy)
+            }
             .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        if (onClick != null) {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

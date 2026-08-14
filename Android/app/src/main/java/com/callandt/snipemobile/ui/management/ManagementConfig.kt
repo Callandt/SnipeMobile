@@ -8,8 +8,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.util.Locale
 
 enum class ManagementFieldKind {
@@ -94,14 +92,23 @@ object ManagementValue {
     fun displayString(element: JsonElement?): String = HtmlDecoder.decode(scalarString(element))
 
     fun nestedId(row: JsonObject, key: String): String {
-        row[key]?.jsonObject?.get("id")?.jsonPrimitive?.intOrNull?.let { return it.toString() }
-        row[key]?.jsonPrimitive?.intOrNull?.let { return it.toString() }
-        row[key]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return it }
-        return ""
+        val element = row[key] ?: return ""
+        if (element is JsonNull) return ""
+        val obj = element as? JsonObject
+        if (obj != null) {
+            val id = obj["id"] as? JsonPrimitive ?: return ""
+            id.intOrNull?.let { return it.toString() }
+            return id.contentOrNull?.takeIf { it.isNotEmpty() && it != "false" }.orEmpty()
+        }
+        val primitive = element as? JsonPrimitive ?: return ""
+        if (primitive.contentOrNull == "false" || primitive.contentOrNull == "true") return ""
+        primitive.intOrNull?.let { return it.toString() }
+        return primitive.contentOrNull?.takeIf { it.isNotEmpty() }.orEmpty()
     }
 
     fun nestedName(row: JsonObject, key: String): String? {
-        val name = row[key]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+        val obj = row[key] as? JsonObject ?: return null
+        val name = (obj["name"] as? JsonPrimitive)?.contentOrNull
         return name?.takeIf { it.isNotEmpty() }?.let { HtmlDecoder.decode(it) }
     }
 

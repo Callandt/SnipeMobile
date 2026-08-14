@@ -3,7 +3,6 @@ import SwiftUI
 struct UserCardView: View {
     let user: User
     var useExplicitBackground: Bool = true
-    @EnvironmentObject var appSettings: AppSettings
 
     private var cardTitle: String {
         let name = user.decodedName.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -9,7 +9,6 @@ struct AssetCardView<Footer: View>: View {
     /// Optional tap on the info section.
     var onSelect: (() -> Void)? = nil
     @ViewBuilder private var footer: () -> Footer
-    @EnvironmentObject var appSettings: AppSettings
 
     init(
         asset: Asset,
@@ -62,23 +61,22 @@ struct AssetCardView<Footer: View>: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(String(format: L10n.string("tag_label"), asset.decodedAssetTag))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        if !asset.decodedSerial.isEmpty {
-                            HStack(spacing: 4) {
-                                Text(L10n.string("sn_label"))
-                                Text(asset.decodedSerial)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    Text(verbatim: L10n.string("tag_label", asset.decodedAssetTag))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    if !asset.decodedSerial.isEmpty {
+                        HStack(spacing: 4) {
+                            Text(verbatim: L10n.string("sn_label"))
+                            Text(verbatim: asset.decodedSerial)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     }
                     if let status = resolvedStatusLabel, !status.isEmpty {
-                        Text(status)
+                        Text(verbatim: status)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -86,7 +84,7 @@ struct AssetCardView<Footer: View>: View {
                     if showNextAuditDate,
                        let nextAudit = asset.nextAuditDate?.formatted,
                        !nextAudit.isEmpty {
-                        Text("\(L10n.string("next_audit_date")): \(nextAudit)")
+                        Text(verbatim: "\(L10n.string("next_audit_date")): \(nextAudit)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

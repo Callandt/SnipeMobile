@@ -164,14 +164,10 @@ data class DateInfo(
         fun parseAPIDate(raw: String?): Date? {
             val trimmed = raw?.trim().orEmpty()
             if (trimmed.isEmpty()) return null
-            val utc = TimeZone.getTimeZone("UTC")
-            for (format in API_FORMATS) {
-                val parser = SimpleDateFormat(format, Locale.US).apply {
-                    timeZone = utc
-                    isLenient = false
-                }
-                // DateFormat.parse throws on mismatch.
+            val parsers = apiDateParsers.get() ?: return null
+            for (parser in parsers) {
                 runCatching { parser.parse(trimmed) }.getOrNull()?.let { return it }
+                val format = parser.toPattern()
                 if (format == "yyyy-MM-dd HH:mm:ss" && trimmed.length >= 19) {
                     runCatching { parser.parse(trimmed.take(19)) }.getOrNull()?.let { return it }
                 }
@@ -180,6 +176,16 @@ data class DateInfo(
                 }
             }
             return null
+        }
+
+        private val apiDateParsers = ThreadLocal.withInitial {
+            val utc = TimeZone.getTimeZone("UTC")
+            API_FORMATS.map { format ->
+                SimpleDateFormat(format, Locale.US).apply {
+                    timeZone = utc
+                    isLenient = false
+                }
+            }
         }
     }
 
@@ -201,6 +207,9 @@ data class DateInfo(
         (formatter as SimpleDateFormat).timeZone = TimeZone.getDefault()
         return formatter.format(parsed)
     }
+
+    val parsedDate: Date?
+        get() = parseAPIDate(datetime) ?: parseAPIDate(date) ?: parseAPIDate(formatted)
 }
 
 /** Accepts Snipe-IT date objects, plain strings, or false/empty. */
@@ -397,6 +406,8 @@ data class Location(
     val zip: String? = null,
     val currency: String? = null,
     val parent: LocationParent? = null,
+    @SerialName("created_at") val createdAt: DateInfo? = null,
+    @SerialName("updated_at") val updatedAt: DateInfo? = null,
 ) {
     val decodedName: String get() = HtmlDecoder.decode(name)
 }
@@ -786,6 +797,8 @@ data class User(
     val notes: String? = null,
     val activated: Boolean? = null,
     val groups: List<UserGroup> = emptyList(),
+    val createdAt: DateInfo? = null,
+    val updatedAt: DateInfo? = null,
 ) {
     val decodedName: String get() = HtmlDecoder.decode(name)
     val decodedFirstName: String get() = HtmlDecoder.decode(firstName)
@@ -830,6 +843,8 @@ object UserSerializer : KSerializer<User> {
             notes = obj["notes"]?.jsonPrimitive?.contentOrNull,
             activated = obj["activated"]?.jsonPrimitive?.booleanOrNull,
             groups = SnipeDecoders.decodeUserGroups(obj["groups"]),
+            createdAt = SnipeDecoders.flexibleDateInfo(obj["created_at"]),
+            updatedAt = SnipeDecoders.flexibleDateInfo(obj["updated_at"]),
         )
     }
 
@@ -853,6 +868,8 @@ object UserSerializer : KSerializer<User> {
             if (value.groups.isNotEmpty()) {
                 put("groups", SnipeJson.encodeToJsonElement(value.groups))
             }
+            value.createdAt?.let { put("created_at", SnipeJson.encodeToJsonElement(it)) }
+            value.updatedAt?.let { put("updated_at", SnipeJson.encodeToJsonElement(it)) }
         }
         output.encodeJsonElement(JsonObject(obj))
     }
@@ -883,8 +900,9 @@ data class Accessory(
     val modelNumber: String? = null,
     val image: String? = null,
     val notes: String? = null,
+    val createdAt: DateInfo? = null,
+    val updatedAt: DateInfo? = null,
 ) {
-    /** Snipe-IT accessories have no asset_tag; use id instead. */
     val assetTag: String get() = id.toString()
 
     val decodedName: String get() = HtmlDecoder.decode(name)
@@ -921,6 +939,8 @@ object AccessorySerializer : KSerializer<Accessory> {
             modelNumber = SnipeDecoders.flexibleStringOrNumber(obj["model_number"]),
             image = SnipeDecoders.flexibleStringOrNumber(obj["image"]),
             notes = SnipeDecoders.flexibleStringOrNumber(obj["notes"]),
+            createdAt = SnipeDecoders.flexibleDateInfo(obj["created_at"]),
+            updatedAt = SnipeDecoders.flexibleDateInfo(obj["updated_at"]),
         )
     }
 
@@ -947,6 +967,8 @@ object AccessorySerializer : KSerializer<Accessory> {
                     modelNumber = value.modelNumber,
                     image = value.image,
                     notes = value.notes,
+                    createdAt = value.createdAt,
+                    updatedAt = value.updatedAt,
                 ),
             ),
         )
@@ -973,6 +995,8 @@ object AccessorySerializer : KSerializer<Accessory> {
         @SerialName("model_number") val modelNumber: String? = null,
         val image: String? = null,
         val notes: String? = null,
+        @SerialName("created_at") val createdAt: DateInfo? = null,
+        @SerialName("updated_at") val updatedAt: DateInfo? = null,
     )
 }
 
@@ -995,6 +1019,8 @@ data class Consumable(
     val purchaseCost: String? = null,
     val purchaseDate: String? = null,
     val notes: String? = null,
+    val createdAt: DateInfo? = null,
+    val updatedAt: DateInfo? = null,
 ) {
     val decodedName: String get() = HtmlDecoder.decode(name)
     val decodedItemNo: String get() = HtmlDecoder.decode(itemNo ?: "")
@@ -1038,6 +1064,8 @@ object ConsumableSerializer : KSerializer<Consumable> {
             purchaseCost = SnipeDecoders.flexibleStringOrNumber(obj["purchase_cost"]),
             purchaseDate = SnipeDecoders.purchaseDateString(obj["purchase_date"]),
             notes = obj["notes"]?.jsonPrimitive?.contentOrNull,
+            createdAt = SnipeDecoders.flexibleDateInfo(obj["created_at"]),
+            updatedAt = SnipeDecoders.flexibleDateInfo(obj["updated_at"]),
         )
     }
 
@@ -1064,6 +1092,8 @@ object ConsumableSerializer : KSerializer<Consumable> {
         @SerialName("purchase_cost") val purchaseCost: String? = null,
         @SerialName("purchase_date") val purchaseDate: String? = null,
         val notes: String? = null,
+        @SerialName("created_at") val createdAt: DateInfo? = null,
+        @SerialName("updated_at") val updatedAt: DateInfo? = null,
     )
 
     private fun Consumable.toWire() = ConsumableWire(
@@ -1084,6 +1114,8 @@ object ConsumableSerializer : KSerializer<Consumable> {
         purchaseCost = purchaseCost,
         purchaseDate = purchaseDate,
         notes = notes,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
     )
 }
 
@@ -1106,6 +1138,8 @@ data class Component(
     val purchaseCost: String? = null,
     val purchaseDate: String? = null,
     val notes: String? = null,
+    val createdAt: DateInfo? = null,
+    val updatedAt: DateInfo? = null,
 ) {
     val decodedName: String get() = HtmlDecoder.decode(name)
     val decodedSerial: String get() = HtmlDecoder.decode(serial ?: "")
@@ -1149,6 +1183,8 @@ object ComponentSerializer : KSerializer<Component> {
             purchaseCost = SnipeDecoders.flexibleStringOrNumber(obj["purchase_cost"]),
             purchaseDate = SnipeDecoders.purchaseDateString(obj["purchase_date"]),
             notes = obj["notes"]?.jsonPrimitive?.contentOrNull,
+            createdAt = SnipeDecoders.flexibleDateInfo(obj["created_at"]),
+            updatedAt = SnipeDecoders.flexibleDateInfo(obj["updated_at"]),
         )
     }
 
@@ -1175,6 +1211,8 @@ object ComponentSerializer : KSerializer<Component> {
         @SerialName("purchase_cost") val purchaseCost: String? = null,
         @SerialName("purchase_date") val purchaseDate: String? = null,
         val notes: String? = null,
+        @SerialName("created_at") val createdAt: DateInfo? = null,
+        @SerialName("updated_at") val updatedAt: DateInfo? = null,
     )
 
     private fun Component.toWire() = ComponentWire(
@@ -1195,6 +1233,8 @@ object ComponentSerializer : KSerializer<Component> {
         purchaseCost = purchaseCost,
         purchaseDate = purchaseDate,
         notes = notes,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
     )
 }
 

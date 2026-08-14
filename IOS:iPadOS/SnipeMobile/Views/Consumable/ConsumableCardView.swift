@@ -3,7 +3,6 @@ import SwiftUI
 struct ConsumableCardView: View {
     let consumable: Consumable
     var useExplicitBackground: Bool = true
-    @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

@@ -3,6 +3,8 @@ import Foundation
 /// Strip HTML. Decode entities.
 class HTMLDecoder {
     static func decode(_ htmlString: String) -> String {
+        if htmlString.isEmpty { return htmlString }
+        if !htmlString.contains(where: { $0 == "<" || $0 == "&" }) { return htmlString }
         var result = htmlString.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression, range: nil)
         let entities: [String: String] = [
             "&quot;": "\"",
@@ -16,21 +18,18 @@ class HTMLDecoder {
         for (entity, character) in entities {
             result = result.replacingOccurrences(of: entity, with: character)
         }
-        let pattern = "&#(\\d+);"
-        let regex = try? NSRegularExpression(pattern: pattern)
-        let nsrange = NSRange(result.startIndex..<result.endIndex, in: result)
-        var offset = 0
-        regex?.enumerateMatches(in: result, options: [], range: nsrange) { match, _, _ in
-            guard let match = match, match.numberOfRanges == 2,
-                  let range = Range(match.range(at: 0), in: result),
+        guard result.contains("&#"),
+              let regex = try? NSRegularExpression(pattern: #"&#(\d+);"#) else {
+            return result
+        }
+        let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
+        for match in matches.reversed() {
+            guard match.numberOfRanges == 2,
+                  let full = Range(match.range(at: 0), in: result),
                   let numRange = Range(match.range(at: 1), in: result),
                   let code = Int(result[numRange]),
-                  let scalar = UnicodeScalar(code) else { return }
-            let replacement = String(scalar)
-            let start = result.distance(from: result.startIndex, to: range.lowerBound) + offset
-            let end = result.distance(from: result.startIndex, to: range.upperBound) + offset
-            result.replaceSubrange(result.index(result.startIndex, offsetBy: start)..<result.index(result.startIndex, offsetBy: end), with: replacement)
-            offset += replacement.count - (end - start)
+                  let scalar = Unicode.Scalar(code) else { continue }
+            result.replaceSubrange(full, with: String(scalar))
         }
         return result
     }

@@ -122,7 +122,6 @@ struct LicenseDetailView: View {
             )
         }
         .onAppear { isDetailViewActive = true }
-        .onDisappear { isDetailViewActive = false }
         .hidesTabBarWhenPushed()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)

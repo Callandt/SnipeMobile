@@ -10,10 +10,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Laptop
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -30,6 +35,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.data.model.Asset
@@ -45,6 +52,7 @@ import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
+import com.callandt.snipemobile.ui.components.LocationCard
 import com.callandt.snipemobile.ui.components.UserCard
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
 import com.callandt.snipemobile.ui.components.locationCardTitle
@@ -65,6 +73,7 @@ fun LocationDetailScreen(
     onOpenUser: ((Int) -> Unit)? = null,
     onOpenAsset: ((Int) -> Unit)? = null,
     onOpenAccessory: ((Int) -> Unit)? = null,
+    onOpenLocation: ((Int) -> Unit)? = null,
 ) {
     val locations by viewModel.locations.collectAsState()
     val users by viewModel.users.collectAsState()
@@ -82,6 +91,15 @@ fun LocationDetailScreen(
 
     val usersAtLocation = remember(users, locationId) {
         users.filter { it.location?.id == locationId }
+    }
+    val childLocations = remember(locations, locationId) {
+        locations.filter { it.parent?.id == locationId }
+            .sortedBy { it.decodedName.lowercase() }
+    }
+    val parentLocation = remember(locations, location) {
+        val parentId = location?.parent?.id ?: return@remember null
+        locations.firstOrNull { it.id == parentId }
+            ?: location.parent?.let { Location(id = it.id ?: return@remember null, name = it.name.orEmpty()) }
     }
 
     fun reloadAssigned() {
@@ -106,31 +124,41 @@ fun LocationDetailScreen(
         reloadAssigned()
     }
 
-    val assetsTabTitle = if (hasLoadedAssigned) {
-        L10n.string("assets_count", locationAssets.size)
-    } else {
-        L10n.string("tab_assets")
-    }
-    val accessoriesTabTitle = if (hasLoadedAssigned) {
-        L10n.string("accessories_count", locationAccessories.size)
-    } else {
-        L10n.string("tab_accessories")
-    }
-    val tabs = listOf(
-        L10n.string("users_count", usersAtLocation.size),
-        assetsTabTitle,
-        accessoriesTabTitle,
+    val locationTabs = listOf(
+        LocationAssignedTab(
+            icon = Icons.Default.People,
+            count = usersAtLocation.size,
+            contentDescription = L10n.string("users_count", usersAtLocation.size),
+        ),
+        LocationAssignedTab(
+            icon = Icons.Default.Laptop,
+            count = if (hasLoadedAssigned) locationAssets.size else null,
+            contentDescription = if (hasLoadedAssigned) {
+                L10n.string("assets_count", locationAssets.size)
+            } else {
+                L10n.string("tab_assets")
+            },
+        ),
+        LocationAssignedTab(
+            icon = Icons.Default.Usb,
+            count = if (hasLoadedAssigned) locationAccessories.size else null,
+            contentDescription = if (hasLoadedAssigned) {
+                L10n.string("accessories_count", locationAccessories.size)
+            } else {
+                L10n.string("tab_accessories")
+            },
+        ),
+        LocationAssignedTab(
+            icon = Icons.Default.Place,
+            count = childLocations.size,
+            contentDescription = L10n.string("child_locations_count", childLocations.size),
+        ),
     )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        location?.let { locationCardTitle(it) } ?: L10n.string("location"),
-                        maxLines = 1,
-                    )
-                },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
@@ -169,14 +197,21 @@ fun LocationDetailScreen(
         Column(
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            LocationAddressSection(location = location)
+            LocationAddressSection(
+                location = location,
+                parentLocation = parentLocation,
+                onOpenLocation = onOpenLocation,
+            )
 
             TabRow(selectedTabIndex = subtab) {
-                tabs.forEachIndexed { index, label ->
+                locationTabs.forEachIndexed { index, tab ->
                     Tab(
                         selected = subtab == index,
                         onClick = { subtab = index },
-                        text = { Text(label, maxLines = 1) },
+                        icon = {
+                            Icon(tab.icon, contentDescription = tab.contentDescription)
+                        },
+                        text = { Text(tab.count?.toString() ?: "–") },
                     )
                 }
             }
@@ -191,10 +226,14 @@ fun LocationDetailScreen(
                     isLoading = loadingAssets,
                     onOpenAsset = onOpenAsset,
                 )
-                else -> LocationAccessoriesTab(
+                2 -> LocationAccessoriesTab(
                     accessories = locationAccessories,
                     isLoading = loadingAccessories,
                     onOpenAccessory = onOpenAccessory,
+                )
+                else -> LocationChildrenTab(
+                    children = childLocations,
+                    onOpenLocation = onOpenLocation,
                 )
             }
         }
@@ -226,11 +265,20 @@ fun LocationDetailScreen(
 }
 
 @Composable
-private fun LocationAddressSection(location: Location) {
-    val rows = buildList {
-        location.parent?.name?.takeIf { it.isNotBlank() }?.let {
-            add(L10n.string("parent_location") to HtmlDecoder.decode(it))
+private fun LocationAddressSection(
+    location: Location,
+    parentLocation: Location?,
+    onOpenLocation: ((Int) -> Unit)?,
+) {
+    val parentName = parentLocation?.decodedName
+        ?: location.parent?.name?.takeIf { it.isNotBlank() }?.let { HtmlDecoder.decode(it) }
+    val parentForCard = parentLocation
+        ?: location.parent?.let { info ->
+            val id = info.id ?: return@let null
+            val name = info.name?.takeIf { it.isNotBlank() } ?: return@let null
+            Location(id = id, name = name)
         }
+    val rows = buildList {
         location.address?.takeIf { it.isNotBlank() }?.let { add(L10n.string("address") to it) }
         location.address2?.takeIf { it.isNotBlank() }?.let { add(L10n.string("address2") to it) }
         location.zip?.takeIf { it.isNotBlank() }?.let { add(L10n.string("zip") to it) }
@@ -239,14 +287,43 @@ private fun LocationAddressSection(location: Location) {
         location.country?.takeIf { it.isNotBlank() }?.let { add(L10n.string("country") to it) }
         location.currency?.takeIf { it.isNotBlank() }?.let { add(L10n.string("currency") to it) }
     }
-    if (rows.isEmpty()) return
 
-    DetailSectionCard(
-        title = L10n.string("location_details"),
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 12.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        rows.forEach { (label, value) ->
-            DetailRow(label, value)
+        Text(
+            text = locationCardTitle(location),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+
+        if (parentForCard != null && !parentName.isNullOrBlank()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = L10n.string("parent_location"),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LocationCard(
+                    location = parentForCard,
+                    onClick = {
+                        val id = parentForCard.id
+                        if (id > 0) onOpenLocation?.invoke(id)
+                    },
+                )
+            }
+        }
+
+        if (rows.isNotEmpty()) {
+            DetailSectionCard(title = L10n.string("location_details")) {
+                rows.forEach { (label, value) ->
+                    DetailRow(label, value)
+                }
+            }
         }
     }
 }
@@ -337,3 +414,37 @@ private fun LocationAccessoriesTab(
         }
     }
 }
+
+@Composable
+private fun LocationChildrenTab(
+    children: List<Location>,
+    onOpenLocation: ((Int) -> Unit)?,
+) {
+    if (children.isEmpty()) {
+        EmptyState(
+            title = L10n.string("no_child_locations"),
+            message = L10n.string("no_child_locations_desc"),
+        )
+        return
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        children.forEach { child ->
+            LocationCard(
+                location = child,
+                onClick = { onOpenLocation?.invoke(child.id) },
+            )
+        }
+    }
+}
+
+private data class LocationAssignedTab(
+    val icon: ImageVector,
+    val count: Int?,
+    val contentDescription: String,
+)

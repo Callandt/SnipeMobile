@@ -17,6 +17,8 @@ import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.AppSecret
 import com.callandt.snipemobile.data.secure.SecureStore
+import com.callandt.snipemobile.ui.util.L10n
+import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -65,7 +67,6 @@ class AppViewModel(
     val refreshErrorMessage = apiClient.refreshErrorMessage
     val pendingUnauthorizedSessionWipe = apiClient.pendingUnauthorizedSessionWipe
     val lastApiMessage = apiClient.lastApiMessage
-    val loadingProgress = apiClient.loadingProgress
 
     val appMode: StateFlow<AppMode?> = appModeStore.current
     val isAdminCapable: StateFlow<Boolean> = appModeStore.isAdminCapable
@@ -87,6 +88,9 @@ class AppViewModel(
 
     val appTheme: StateFlow<String> =
         preferences.appTheme.stateIn(viewModelScope, SharingStarted.Eagerly, "system")
+
+    val appLanguage: StateFlow<String> =
+        preferences.appLanguage.stateIn(viewModelScope, SharingStarted.Eagerly, "system")
 
     val useBiometrics: StateFlow<Boolean> =
         preferences.useBiometrics.stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -199,6 +203,11 @@ class AppViewModel(
 
     fun setAppTheme(theme: String) {
         viewModelScope.launch { preferences.setAppTheme(theme) }
+    }
+
+    fun setAppLanguage(language: String) {
+        L10n.overrideLanguageCode = language
+        viewModelScope.launch { preferences.setAppLanguage(language) }
     }
 
     fun setUseBiometrics(enabled: Boolean, justConfirmed: Boolean = false) {
@@ -355,6 +364,7 @@ class AppViewModel(
         _pendingDellAdd.value = null
     }
 
+    @OptIn(ExperimentalCoilApi::class)
     fun wipeAllData() {
         apiClient.clearPendingUnauthorizedSessionWipe()
         apiClient.clearSessionData(resetConfigured = true, resetAppMode = true, fullWipe = true)

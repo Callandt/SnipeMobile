@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
@@ -46,9 +48,24 @@ fun ListFilterMenuButton(
         MaterialTheme.colorScheme.onSurface
     }
 
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    fun openMenu() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        expanded = true
+    }
+
+    fun applyFilter(newFilter: ListFilter) {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        onFilterChange(newFilter)
+    }
+
     Box {
         if (showLabel) {
-            TextButton(onClick = { expanded = true }) {
+            TextButton(onClick = { openMenu() }) {
                 Text(label, color = tint)
                 Icon(
                     Icons.Default.FilterList,
@@ -58,7 +75,7 @@ fun ListFilterMenuButton(
                 )
             }
         } else {
-            IconButton(onClick = { expanded = true }) {
+            IconButton(onClick = { openMenu() }) {
                 Icon(Icons.Default.FilterList, contentDescription = label, tint = tint)
             }
         }
@@ -79,7 +96,7 @@ fun ListFilterMenuButton(
                 DropdownMenuItem(
                     text = { Text(L10n.string("filter_clear")) },
                     onClick = {
-                        onFilterChange(filter.clear())
+                        applyFilter(filter.clear())
                         expanded = false
                     },
                 )
@@ -94,7 +111,7 @@ fun ListFilterMenuButton(
                 DropdownMenuItem(
                     text = { Text(L10n.string("filter_all")) },
                     onClick = {
-                        onFilterChange(filter.withSelection(option.title, null))
+                        applyFilter(filter.withSelection(option.title, null))
                         openDimension = null
                         expanded = false
                     },
@@ -103,7 +120,7 @@ fun ListFilterMenuButton(
                     DropdownMenuItem(
                         text = { Text(value) },
                         onClick = {
-                            onFilterChange(filter.withSelection(option.title, value))
+                            applyFilter(filter.withSelection(option.title, value))
                             openDimension = null
                             expanded = false
                         },

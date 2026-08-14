@@ -7,6 +7,7 @@ struct LocationDetailView: View {
     var onOpenUser: ((User) -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
     var onOpenAccessory: ((Accessory) -> Void)? = nil
+    var onOpenLocation: ((Location) -> Void)? = nil
     @State private var selectedTab = 0
     @State private var showEditSheet = false
     @State private var locationAccessories: [Accessory] = []
@@ -29,17 +30,33 @@ struct LocationDetailView: View {
         apiClient.locations.first { $0.id == location.id } ?? location
     }
 
+    private var childLocations: [Location] {
+        apiClient.locations
+            .filter { $0.parent?.id == location.id }
+            .sorted { $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending }
+    }
+
+    private var parentLocation: Location? {
+        guard let parentId = currentLocation.parent?.id else { return nil }
+        return apiClient.locations.first { $0.id == parentId }
+    }
+
     private func cleaned(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
         return trimmed
     }
 
-    private var detailRows: [(label: String, value: String)] {
+    private var displayParent: Location? {
+        if let parent = parentLocation { return parent }
+        guard let info = currentLocation.parent, let id = info.id else { return nil }
+        let name = cleaned(info.name) ?? ""
+        guard !name.isEmpty else { return nil }
+        return Location(id: id, name: name)
+    }
+
+    private var addressRows: [(label: String, value: String)] {
         let loc = currentLocation
         var rows: [(String, String)] = []
-        if let parentName = cleaned(loc.parent?.name) {
-            rows.append((L10n.string("parent_location"), HTMLDecoder.decode(parentName)))
-        }
         if let address = cleaned(loc.address) {
             rows.append((L10n.string("address"), address))
         }
@@ -64,47 +81,20 @@ struct LocationDetailView: View {
         return rows
     }
 
-    private var assetsTabTitle: String {
-        hasLoadedAssignedItems
-            ? L10n.string("assets_count", locationAssets.count)
-            : L10n.string("tab_assets")
-    }
-
-    private var accessoriesTabTitle: String {
-        hasLoadedAssignedItems
-            ? L10n.string("accessories_count", locationAccessories.count)
-            : L10n.string("tab_accessories")
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            if !detailRows.isEmpty {
-                Text(L10n.string("location_details"))
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 16)
-                    .padding(.bottom, 8)
+            locationHeader
 
-                VStack(alignment: .leading, spacing: 15) {
-                    ForEach(detailRows, id: \.label) { row in
-                        copyableDetailRow(label: row.label, value: row.value)
-                    }
-                }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-                .padding(.horizontal)
-            }
-
-            Picker("Select a tab", selection: $selectedTab) {
-                Text(L10n.string("users_count", usersAtLocation.count)).tag(0)
-                Text(assetsTabTitle).tag(1)
-                Text(accessoriesTabTitle).tag(2)
-            }
-            .pickerStyle(SegmentedPickerStyle())
+            LocationDetailTabBar(
+                selection: $selectedTab,
+                userCount: usersAtLocation.count,
+                assetCount: hasLoadedAssignedItems ? locationAssets.count : nil,
+                accessoryCount: hasLoadedAssignedItems ? locationAccessories.count : nil,
+                locationCount: childLocations.count
+            )
             .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
+            .padding(.top, 16)
+            .padding(.bottom, 4)
 
             if selectedTab == 0 {
                 if usersAtLocation.isEmpty {
@@ -152,7 +142,7 @@ struct LocationDetailView: View {
                     }
                     .background(Color(.systemBackground))
                 }
-            } else {
+            } else if selectedTab == 2 {
                 if isLoadingAccessories {
                     ProgressView(L10n.string("loading_accessories"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -181,19 +171,37 @@ struct LocationDetailView: View {
                     }
                     .background(Color(.systemBackground))
                 }
+            } else {
+                if childLocations.isEmpty {
+                    ContentUnavailableView(
+                        L10n.string("no_child_locations"),
+                        systemImage: "mappin.and.ellipse",
+                        description: Text(L10n.string("no_child_locations_desc"))
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 16)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(childLocations) { child in
+                                Button { onOpenLocation?(child) } label: {
+                                    AssignedLocationCard(location: child)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 16)
+                        .padding(.bottom, 16)
+                    }
+                    .background(Color(.systemBackground))
+                }
             }
         }
         .background(Color(.systemBackground))
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(currentLocation.decodedName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showEditSheet = true } label: {
                     Image(systemName: "pencil")
@@ -242,12 +250,72 @@ struct LocationDetailView: View {
             )
         }
         .onAppear { isDetailViewActive = true }
-        .onDisappear { isDetailViewActive = false }
         .hidesTabBarWhenPushed()
         .task(id: location.id) {
             selectedTab = 0
             hasLoadedAssignedItems = false
             await reloadAssignedItems()
+        }
+    }
+
+    @ViewBuilder
+    private var locationHeader: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(currentLocation.decodedName)
+                .font(.title2.weight(.semibold))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.top, 12)
+
+            if let parent = displayParent {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.string("parent_location"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    parentLocationCard(parent)
+                }
+                .padding(.horizontal)
+            }
+
+            if !addressRows.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.string("location_details"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(addressRows, id: \.label) { row in
+                            copyableDetailRow(label: row.label, value: row.value)
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .padding(.horizontal)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private func parentLocationCard(_ parent: Location) -> some View {
+        let card = HStack(spacing: 0) {
+            LocationCardView(location: parent, useExplicitBackground: false)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.trailing, 16)
+        }
+        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(Rectangle())
+
+        if onOpenLocation != nil, parent.id > 0 {
+            Button { onOpenLocation?(parent) } label: { card }
+                .buttonStyle(.plain)
+        } else {
+            card
         }
     }
 
@@ -299,3 +367,111 @@ struct LocationDetailView: View {
         locationAccessories = await accessories
     }
 }
+
+/// Icon + count tabs so long labels like "Accessories" still fit.
+private struct LocationDetailTabBar: View {
+    @Binding var selection: Int
+    let userCount: Int
+    let assetCount: Int?
+    let accessoryCount: Int?
+    let locationCount: Int
+
+    private struct TabItem: Identifiable {
+        let id: Int
+        let systemImage: String
+        let count: Int?
+        let accessibilityLabel: String
+    }
+
+    private var tabs: [TabItem] {
+        [
+            TabItem(
+                id: 0,
+                systemImage: "person.2",
+                count: userCount,
+                accessibilityLabel: L10n.string("users_count", userCount)
+            ),
+            TabItem(
+                id: 1,
+                systemImage: "laptopcomputer",
+                count: assetCount,
+                accessibilityLabel: assetCount.map { L10n.string("assets_count", $0) } ?? L10n.string("tab_assets")
+            ),
+            TabItem(
+                id: 2,
+                systemImage: "mediastick",
+                count: accessoryCount,
+                accessibilityLabel: accessoryCount.map { L10n.string("accessories_count", $0) } ?? L10n.string("tab_accessories")
+            ),
+            TabItem(
+                id: 3,
+                systemImage: "mappin.and.ellipse",
+                count: locationCount,
+                accessibilityLabel: L10n.string("child_locations_count", locationCount)
+            ),
+        ]
+    }
+
+    var body: some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                tabRow
+                    .padding(3)
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+            } else {
+                tabRow
+                    .padding(3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+            }
+        }
+    }
+
+    private var tabRow: some View {
+        HStack(spacing: 3) {
+            ForEach(tabs) { tab in
+                let isSelected = selection == tab.id
+                Button {
+                    selection = tab.id
+                } label: {
+                    VStack(alignment: .center, spacing: 2) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 22, height: 18)
+                        Text(tab.count.map(String.init) ?? "–")
+                            .font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                            .monospacedDigit()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                    .background {
+                        if isSelected {
+                            selectedThumb
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(tab.accessibilityLabel)
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var selectedThumb: some View {
+        if #available(iOS 26.0, *) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.12))
+        } else {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(.systemBackground))
+        }
+    }
+}
+

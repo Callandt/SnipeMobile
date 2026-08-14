@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -51,11 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.data.model.AssetAssignedComponent
@@ -81,6 +78,7 @@ import com.callandt.snipemobile.ui.components.LicenseCard
 import com.callandt.snipemobile.ui.components.LocationCard
 import com.callandt.snipemobile.ui.components.MaintenanceCard
 import com.callandt.snipemobile.ui.components.SearchablePickerField
+import com.callandt.snipemobile.ui.components.TappableDetailImage
 import com.callandt.snipemobile.ui.components.UserCard
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
 import com.callandt.snipemobile.ui.maintenance.AddMaintenanceSheet
@@ -431,14 +429,9 @@ private fun AssetDetailsTab(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                AsyncImage(
-                    model = imageUrl,
+                TappableDetailImage(
+                    url = imageUrl,
                     contentDescription = L10n.string("image"),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 220.dp)
-                        .clip(RoundedCornerShape(12.dp)),
-                    contentScale = ContentScale.Fit,
                 )
             }
         }
@@ -457,7 +450,24 @@ private fun AssetDetailsTab(
         }
 
         DetailSectionCard(title = L10n.string("location_details")) {
-            DetailRow(L10n.string("location"), locationName ?: asset.decodedLocationName)
+            val currentLocation = asset.location
+            val defaultLocation = asset.rtdLocation
+            DetailRow(
+                L10n.string("location"),
+                currentLocation?.decodedName ?: locationName ?: asset.decodedLocationName,
+                onClick = onOpenLocation?.let { open ->
+                    currentLocation?.id?.takeIf { it > 0 }?.let { id -> { open(id) } }
+                },
+            )
+            if (defaultLocation != null && defaultLocation.id != currentLocation?.id) {
+                DetailRow(
+                    L10n.string("default_location"),
+                    defaultLocation.decodedName,
+                    onClick = onOpenLocation?.let { open ->
+                        defaultLocation.id.takeIf { it > 0 }?.let { id -> { open(id) } }
+                    },
+                )
+            }
             DetailRow(L10n.string("company"), asset.decodedCompanyName)
         }
 

@@ -78,7 +78,9 @@ import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.ListCountHeader
+import com.callandt.snipemobile.ui.components.ListHeaderActions
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
+import com.callandt.snipemobile.ui.components.ListSortMenuButton
 import com.callandt.snipemobile.ui.components.MaintenanceCard
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
@@ -92,8 +94,12 @@ import com.callandt.snipemobile.ui.util.AuditDateHelper
 import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.AuditListFilter
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.ListSort
+import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.assetMatchesSearch
+import com.callandt.snipemobile.ui.util.sortedByListSort
 import com.callandt.snipemobile.ui.util.maintenanceMatchesSearch
+import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -159,6 +165,8 @@ fun HardwareTab(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var subtabIndex by rememberSaveable { mutableIntStateOf(0) }
     var assetFilter by remember { mutableStateOf(AssetFilter()) }
+    var listSort by remember { mutableStateOf(ListSort.assetTagDescending) }
+    var maintenanceSort by remember { mutableStateOf(ListSort.startDateDescending) }
     var maintenanceFilter by remember { mutableStateOf(MaintenanceStatusFilter.All) }
     var showMaintenanceFilterMenu by remember { mutableStateOf(false) }
     var showAddAsset by remember { mutableStateOf(false) }
@@ -259,9 +267,9 @@ fun HardwareTab(
             .filter { assetMatchesSearch(it, searchQuery) }
     }
 
-    val filteredAssets = remember(searchableAssets, currentSubtab) {
+    val filteredAssets = remember(searchableAssets, currentSubtab, listSort) {
         when (currentSubtab) {
-            HardwareSubtab.All -> searchableAssets
+            HardwareSubtab.All -> searchableAssets.sortedByListSort(listSort, ListSortCatalog.assets) { it.id }
             HardwareSubtab.Audit -> AuditDateHelper.filterAssets(searchableAssets, AuditListFilter.All)
             HardwareSubtab.Maintenance -> emptyList()
         }
@@ -278,10 +286,11 @@ fun HardwareTab(
         }
     }
 
-    val displayedMaintenances = remember(maintenances, maintenanceFilter, searchQuery) {
+    val displayedMaintenances = remember(maintenances, maintenanceFilter, searchQuery, maintenanceSort) {
         maintenances
             .filter { maintenanceFilter.matches(it) }
             .filter { maintenanceMatchesSearch(it, searchQuery) }
+            .sortedByListSort(maintenanceSort, ListSortCatalog.maintenances) { it.id }
     }
     val selectableMaintenances = remember(displayedMaintenances) {
         displayedMaintenances.filter { !it.isCompleted }
@@ -468,17 +477,22 @@ fun HardwareTab(
                         HardwareSubtab.All -> ListCountHeader(
                             count = searchableAssets.size,
                             icon = Icons.Default.Laptop,
-                            trailing = if (filterOptions.hasFilterOptions) {
-                                {
-                                    AssetFilterMenuButton(
-                                        filter = assetFilter,
-                                        options = filterOptions,
-                                        onFilterChange = { assetFilter = it },
-                                        showLabel = true,
+                            trailing = {
+                                ListHeaderActions {
+                                    ListSortMenuButton(
+                                        sort = listSort,
+                                        keys = ListSortCatalog.assets,
+                                        onSortChange = { listSort = it },
                                     )
+                                    if (filterOptions.hasFilterOptions) {
+                                        AssetFilterMenuButton(
+                                            filter = assetFilter,
+                                            options = filterOptions,
+                                            onFilterChange = { assetFilter = it },
+                                            showLabel = true,
+                                        )
+                                    }
                                 }
-                            } else {
-                                null
                             },
                         )
                         HardwareSubtab.Audit -> ListCountHeader(
@@ -488,37 +502,46 @@ fun HardwareTab(
                         HardwareSubtab.Maintenance -> ListCountHeader(
                             count = displayedMaintenances.size,
                             icon = Icons.Default.Build,
-                            trailing = if (!isSelectingMaintenances && maintenanceChoices.size > 1) {
+                            trailing = if (!isSelectingMaintenances) {
                                 {
-                                    Box {
-                                        TextButton(onClick = { showMaintenanceFilterMenu = true }) {
-                                            Text(
-                                                if (maintenanceFilter == MaintenanceStatusFilter.All) {
-                                                    L10n.string("filter")
-                                                } else {
-                                                    maintenanceFilter.title()
-                                                },
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                            Icon(
-                                                Icons.Default.FilterList,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(start = 4.dp),
-                                            )
-                                        }
-                                        DropdownMenu(
-                                            expanded = showMaintenanceFilterMenu,
-                                            onDismissRequest = { showMaintenanceFilterMenu = false },
-                                        ) {
-                                            maintenanceChoices.forEach { choice ->
-                                                DropdownMenuItem(
-                                                    text = { Text(choice.title()) },
-                                                    onClick = {
-                                                        maintenanceFilter = choice
-                                                        showMaintenanceFilterMenu = false
-                                                    },
-                                                )
+                                    ListHeaderActions {
+                                        ListSortMenuButton(
+                                            sort = maintenanceSort,
+                                            keys = ListSortCatalog.maintenances,
+                                            onSortChange = { maintenanceSort = it },
+                                        )
+                                        if (maintenanceChoices.size > 1) {
+                                            Box {
+                                                TextButton(onClick = { showMaintenanceFilterMenu = true }) {
+                                                    Text(
+                                                        if (maintenanceFilter == MaintenanceStatusFilter.All) {
+                                                            L10n.string("filter")
+                                                        } else {
+                                                            maintenanceFilter.title()
+                                                        },
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                    )
+                                                    Icon(
+                                                        Icons.Default.FilterList,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.padding(start = 4.dp),
+                                                    )
+                                                }
+                                                DropdownMenu(
+                                                    expanded = showMaintenanceFilterMenu,
+                                                    onDismissRequest = { showMaintenanceFilterMenu = false },
+                                                ) {
+                                                    maintenanceChoices.forEach { choice ->
+                                                        DropdownMenuItem(
+                                                            text = { Text(choice.title()) },
+                                                            onClick = {
+                                                                maintenanceFilter = choice
+                                                                showMaintenanceFilterMenu = false
+                                                            },
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -539,7 +562,11 @@ fun HardwareTab(
                                         icon = Icons.Default.Settings,
                                     )
                                 } else {
+                                    val listState = rememberResettingLazyListState(
+                                        Triple(searchQuery, maintenanceFilter, maintenanceSort),
+                                    )
                                     LazyColumn(
+                                        state = listState,
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                         verticalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
@@ -580,6 +607,7 @@ fun HardwareTab(
                                     dueToday = dueTodayAssets,
                                     dueSoon = dueSoonAssets,
                                     onAssetClick = onAssetClick,
+                                    listResetKey = searchQuery,
                                 )
                             }
                             HardwareSubtab.All -> AssetList(
@@ -593,6 +621,7 @@ fun HardwareTab(
                                 isFiltered = searchQuery.isNotBlank() || assetFilter.isActive,
                                 showLoadingPlaceholder = isLoading && filteredAssets.isEmpty() &&
                                     !hasCompletedInitialLoad,
+                                listResetKey = Triple(searchQuery, assetFilter, listSort),
                             )
                         }
                     }
@@ -909,6 +938,7 @@ private fun AuditOverviewList(
     dueToday: List<Asset>,
     dueSoon: List<Asset>,
     onAssetClick: (Int) -> Unit,
+    listResetKey: Any?,
 ) {
     if (overdue.isEmpty() && dueToday.isEmpty() && dueSoon.isEmpty()) {
         EmptyState(
@@ -919,7 +949,9 @@ private fun AuditOverviewList(
         return
     }
 
+    val listState = rememberResettingLazyListState(listResetKey)
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -975,6 +1007,7 @@ private fun AssetList(
     showNextAudit: Boolean,
     isFiltered: Boolean,
     showLoadingPlaceholder: Boolean = false,
+    listResetKey: Any? = null,
 ) {
     if (assets.isEmpty()) {
         if (showLoadingPlaceholder) {
@@ -988,7 +1021,9 @@ private fun AssetList(
         )
         return
     }
+    val listState = rememberResettingLazyListState(listResetKey)
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

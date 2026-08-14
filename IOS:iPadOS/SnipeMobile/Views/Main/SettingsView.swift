@@ -10,6 +10,7 @@ struct SettingsView: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     /// Shown as tab. No close button.
     var isPresentedAsTab: Bool = false
+    @EnvironmentObject var appSettings: AppSettings
 
     @AppStorage("useBiometrics") private var useBiometrics: Bool = false
     @AppStorage("appTheme") private var appTheme: String = "system"
@@ -50,14 +51,6 @@ struct SettingsView: View {
         FileManager.default.ubiquityIdentityToken != nil
     }
 
-    private var themeLabel: String {
-        switch appTheme {
-        case "light": return L10n.string("light")
-        case "dark":  return L10n.string("dark")
-        default:      return L10n.string("system")
-        }
-    }
-
     private var apiStatusLabel: String {
         guard apiClient.isConfigured, !apiClient.baseURL.isEmpty else {
             return L10n.string("settings_not_configured")
@@ -79,204 +72,162 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Form {
-                if apiIsAdminCapable {
-                    modeSwitcherSection
-                }
-                generalSection
-                if appModeRaw != AppMode.user.rawValue {
-                    modulesSection
-                    managementSection
-                }
-                privacySection
-                if appModeRaw != AppMode.user.rawValue {
-                    featuresSection
-                }
-                connectionSection
-                aboutAndResetSection
-            }
-            .formStyle(.grouped)
-            .navigationTitle(L10n.string("settings"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { closeToolbar }
-            .navigationDestination(for: SettingsRoute.self) { route in
-                switch route {
-                case .appearance:
-                    AppearanceSettingsView(appTheme: $appTheme)
-                case .security:
-                    SecuritySettingsView(useBiometrics: $useBiometrics)
-                case .api:
-                    APISettingsView(
-                        apiClient: apiClient,
-                        baseURL: $baseURL,
-                        apiToken: $apiToken,
-                        appModeRaw: $appModeRaw,
-                        apiIsAdminCapable: $apiIsAdminCapable
-                    )
-                case .audit:
-                    AuditSettingsView(
-                        enableAuditSubtab: $enableAuditSubtab,
-                        auditNotificationsEnabled: $auditNotificationsEnabled,
-                        notificationTime: $notificationTime
-                    )
-                case .dell:
-                    DellSettingsView()
-                case .assets:
-                    AssetSettingsView(autoFillAssetTag: $autoFillAssetTag)
-                case .modules:
-                    ModulesSettingsView(
-                        showAccessoriesTab: $showAccessoriesTab,
-                        showLicensesTab: $showLicensesTab,
-                        showConsumablesSub: $showConsumablesSub,
-                        showComponentsSub: $showComponentsSub
-                    )
-                case .management:
-                    ManagementSettingsView()
-                case .activityLog:
-                    ActivityLogView(apiClient: apiClient)
-                case .managementEntity(let entity):
-                    ManagementListView(entity: entity, apiClient: apiClient)
-                }
-            }
+        settingsNavigation
             .onAppear(perform: handleOnAppear)
-            .task {
-                let channel = await AppInfo.resolveChannel()
-                appChannel = channel
-                versionDisplay = AppInfo.versionAndBuild(channel: channel)
-            }
-            .onChange(of: appTheme) { _, newValue in
-                CloudSettingsStore.shared.setAppTheme(newValue)
-            }
-            .onChange(of: useBiometrics) { _, newValue in
-                CloudSettingsStore.shared.setUseBiometrics(newValue)
-            }
-            .onChange(of: settingsLanguage) { _, newValue in
-                CloudSettingsStore.shared.setSettingsLanguage(newValue)
-            }
-            .onChange(of: useCloudSync) { _, newValue in
-                CloudSettingsStore.shared.setUseCloudSync(newValue)
-            }
-            .onChange(of: autoFillAssetTag) { _, newValue in
-                CloudSettingsStore.shared.setAutoFillAssetTag(newValue)
-            }
-            .onChange(of: showPhotosInCardList) { _, newValue in
-                CloudSettingsStore.shared.setShowPhotosInCardList(newValue)
-            }
-            .onChange(of: enableAuditSubtab) { _, newValue in
-                // Notifications only make sense when the Audit subtab is visible.
-                if !newValue, auditNotificationsEnabled {
-                    auditNotificationsEnabled = false
-                    Task {
-                        await AuditNotificationManager.shared.updateSchedule(
-                            enabled: false,
-                            hour: auditNotificationHour,
-                            minute: auditNotificationMinute,
-                            assets: apiClient.assets
-                        )
-                    }
+            .task { await loadAppChannel() }
+            .modifier(settingsCloudObservers)
+            .modifier(settingsAuditObservers)
+            .modifier(settingsAlerts)
+    }
+
+    private var settingsNavigation: some View {
+        NavigationStack(path: $path) {
+            settingsForm
+                .formStyle(.grouped)
+                .navigationTitle(L10n.string("settings"))
+                .navigationBarTitleDisplayMode(.inline)
+                .id(appSettings.appLanguage)
+                .toolbar { closeToolbar }
+                .navigationDestination(for: SettingsRoute.self) { route in
+                    settingsDestination(for: route)
                 }
-            }
-            .onChange(of: notificationTime) { _, newValue in
-                let comps = Calendar.current.dateComponents([.hour, .minute], from: newValue)
-                auditNotificationHour = comps.hour ?? 9
-                auditNotificationMinute = comps.minute ?? 0
-            }
-            .onChange(of: auditNotificationsEnabled) { _, _ in
-                if !enableAuditSubtab, auditNotificationsEnabled {
-                    auditNotificationsEnabled = false
-                    return
-                }
-                Task {
-                    await ensureAssetsLoadedIfNeeded()
-                    await AuditNotificationManager.shared.updateSchedule(
-                        enabled: auditNotificationsEnabled,
-                        hour: auditNotificationHour,
-                        minute: auditNotificationMinute,
-                        assets: apiClient.assets
-                    )
-                }
-            }
-            .onChange(of: auditNotificationHour) { _, _ in
-                guard auditNotificationsEnabled else { return }
-                Task {
-                    await ensureAssetsLoadedIfNeeded()
-                    await AuditNotificationManager.shared.updateSchedule(
-                        enabled: true,
-                        hour: auditNotificationHour,
-                        minute: auditNotificationMinute,
-                        assets: apiClient.assets
-                    )
-                }
-            }
-            .onChange(of: auditNotificationMinute) { _, _ in
-                guard auditNotificationsEnabled else { return }
-                Task {
-                    await ensureAssetsLoadedIfNeeded()
-                    await AuditNotificationManager.shared.updateSchedule(
-                        enabled: true,
-                        hour: auditNotificationHour,
-                        minute: auditNotificationMinute,
-                        assets: apiClient.assets
-                    )
-                }
-            }
-            .alert(isPresented: $showAlert) {
-                Alert(title: Text(alertMessage))
-            }
-            .alert(
-                L10n.string("reset_data_confirm_title"),
-                isPresented: $showResetConfirm
-            ) {
-                Button(L10n.string("cancel"), role: .cancel) {}
-                Button(L10n.string("reset_data_confirm_action"), role: .destructive) {
-                    // SnipeITAPIClient reacts to `.appDataDidWipe` posted by wipeAllData.
-                    CloudSettingsStore.shared.wipeAllData()
-                }
-            } message: {
-                Text(L10n.string("reset_data_confirm_message"))
-            }
-            .alert(
-                L10n.string("settings_support"),
-                isPresented: $showSupportMailUnavailable
-            ) {
-                Button(L10n.string("ok"), role: .cancel) {}
-            } message: {
-                Text(L10n.string("settings_support_mail_unavailable"))
-            }
-            .alert(
-                L10n.string("debug_export_failed_title"),
-                isPresented: $showDebugExportError
-            ) {
-                Button(L10n.string("ok"), role: .cancel) {}
-            } message: {
-                Text(L10n.string("debug_export_failed"))
-            }
-            .alert(
-                L10n.string("debug_export_confirm_title"),
-                isPresented: $showDebugExportConfirm
-            ) {
-                Button(L10n.string("cancel"), role: .cancel) {}
-                Button(L10n.string("debug_export_confirm_action")) {
-                    exportDebugZip()
-                }
-            } message: {
-                Text(L10n.string("debug_export_confirm_message"))
-            }
         }
+    }
+
+    private var settingsForm: some View {
+        Form {
+            if apiIsAdminCapable {
+                modeSwitcherSection
+            }
+            generalSection
+            if appModeRaw != AppMode.user.rawValue {
+                modulesSection
+                managementSection
+            }
+            privacySection
+            if appModeRaw != AppMode.user.rawValue {
+                featuresSection
+            }
+            connectionSection
+            aboutAndResetSection
+        }
+    }
+
+    @ViewBuilder
+    private func settingsDestination(for route: SettingsRoute) -> some View {
+        switch route {
+        case .security:
+            SecuritySettingsView(useBiometrics: $useBiometrics)
+        case .api:
+            APISettingsView(
+                apiClient: apiClient,
+                baseURL: $baseURL,
+                apiToken: $apiToken,
+                appModeRaw: $appModeRaw,
+                apiIsAdminCapable: $apiIsAdminCapable
+            )
+        case .audit:
+            AuditSettingsView(
+                enableAuditSubtab: $enableAuditSubtab,
+                auditNotificationsEnabled: $auditNotificationsEnabled,
+                notificationTime: $notificationTime
+            )
+        case .dell:
+            DellSettingsView()
+        case .assets:
+            AssetSettingsView(autoFillAssetTag: $autoFillAssetTag)
+        case .modules:
+            ModulesSettingsView(
+                showAccessoriesTab: $showAccessoriesTab,
+                showLicensesTab: $showLicensesTab,
+                showConsumablesSub: $showConsumablesSub,
+                showComponentsSub: $showComponentsSub
+            )
+        case .management:
+            ManagementSettingsView()
+        case .activityLog:
+            ActivityLogView(apiClient: apiClient)
+        case .managementEntity(let entity):
+            ManagementListView(entity: entity, apiClient: apiClient)
+        }
+    }
+
+    private func loadAppChannel() async {
+        let channel = await AppInfo.resolveChannel()
+        appChannel = channel
+        versionDisplay = AppInfo.versionAndBuild(channel: channel)
+    }
+
+    private var settingsCloudObservers: SettingsCloudObservers {
+        SettingsCloudObservers(
+            appTheme: $appTheme,
+            useBiometrics: $useBiometrics,
+            appLanguage: $appSettings.appLanguage,
+            settingsLanguage: $settingsLanguage,
+            useCloudSync: $useCloudSync,
+            autoFillAssetTag: $autoFillAssetTag,
+            showPhotosInCardList: $showPhotosInCardList
+        )
+    }
+
+    private var settingsAuditObservers: SettingsAuditObservers {
+        SettingsAuditObservers(
+            apiClient: apiClient,
+            enableAuditSubtab: $enableAuditSubtab,
+            auditNotificationsEnabled: $auditNotificationsEnabled,
+            notificationTime: $notificationTime,
+            auditNotificationHour: $auditNotificationHour,
+            auditNotificationMinute: $auditNotificationMinute
+        )
+    }
+
+    private var settingsAlerts: SettingsAlertsModifier {
+        SettingsAlertsModifier(
+            showAlert: $showAlert,
+            alertMessage: alertMessage,
+            showResetConfirm: $showResetConfirm,
+            showSupportMailUnavailable: $showSupportMailUnavailable,
+            showDebugExportError: $showDebugExportError,
+            showDebugExportConfirm: $showDebugExportConfirm,
+            onExportDebug: exportDebugZip
+        )
     }
 
     // MARK: - Sections
 
+    private var languageSelection: Binding<String> {
+        Binding(
+            get: {
+                let stored = appSettings.appLanguage
+                if stored == L10n.deviceLanguageCode { return "system" }
+                return stored
+            },
+            set: { appSettings.appLanguage = $0 }
+        )
+    }
+
     private var generalSection: some View {
         Section {
-            NavigationLink(value: SettingsRoute.appearance) {
-                SettingsRow(
-                    icon: "paintbrush.fill",
-                    iconColor: .purple,
-                    title: L10n.string("appearance"),
-                    value: themeLabel
-                )
+            Picker(selection: $appTheme) {
+                Text(L10n.string("system")).tag("system")
+                Text(L10n.string("light")).tag("light")
+                Text(L10n.string("dark")).tag("dark")
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(symbol: "paintbrush.fill", color: .purple)
+                    Text(L10n.string("appearance"))
+                }
+            }
+            Picker(selection: languageSelection) {
+                Text(L10n.languageDisplayName(code: "system")).tag("system")
+                ForEach(L10n.languagePickerCodes, id: \.self) { code in
+                    Text(L10n.languageDisplayName(code: code)).tag(code)
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(symbol: "globe", color: .blue)
+                    Text(L10n.string("app_language"))
+                }
             }
             SettingsToggleRow(
                 icon: "photo.on.rectangle",
@@ -620,8 +571,175 @@ struct SettingsView: View {
     }
 }
 
+private struct SettingsCloudObservers: ViewModifier {
+    @Binding var appTheme: String
+    @Binding var useBiometrics: Bool
+    @Binding var appLanguage: String
+    @Binding var settingsLanguage: String
+    @Binding var useCloudSync: Bool
+    @Binding var autoFillAssetTag: Bool
+    @Binding var showPhotosInCardList: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: appTheme) { _, newValue in
+                CloudSettingsStore.shared.setAppTheme(newValue)
+            }
+            .onChange(of: useBiometrics) { _, newValue in
+                CloudSettingsStore.shared.setUseBiometrics(newValue)
+            }
+            .onChange(of: appLanguage) { _, newValue in
+                CloudSettingsStore.shared.setAppLanguage(newValue)
+            }
+            .onChange(of: settingsLanguage) { _, newValue in
+                CloudSettingsStore.shared.setSettingsLanguage(newValue)
+            }
+            .onChange(of: useCloudSync) { _, newValue in
+                CloudSettingsStore.shared.setUseCloudSync(newValue)
+            }
+            .onChange(of: autoFillAssetTag) { _, newValue in
+                CloudSettingsStore.shared.setAutoFillAssetTag(newValue)
+            }
+            .onChange(of: showPhotosInCardList) { _, newValue in
+                CloudSettingsStore.shared.setShowPhotosInCardList(newValue)
+            }
+    }
+}
+
+private struct SettingsAuditObservers: ViewModifier {
+    @ObservedObject var apiClient: SnipeITAPIClient
+    @Binding var enableAuditSubtab: Bool
+    @Binding var auditNotificationsEnabled: Bool
+    @Binding var notificationTime: Date
+    @Binding var auditNotificationHour: Int
+    @Binding var auditNotificationMinute: Int
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: enableAuditSubtab) { _, newValue in
+                if !newValue, auditNotificationsEnabled {
+                    auditNotificationsEnabled = false
+                    Task {
+                        await AuditNotificationManager.shared.updateSchedule(
+                            enabled: false,
+                            hour: auditNotificationHour,
+                            minute: auditNotificationMinute,
+                            assets: apiClient.assets
+                        )
+                    }
+                }
+            }
+            .onChange(of: notificationTime) { _, newValue in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+                auditNotificationHour = comps.hour ?? 9
+                auditNotificationMinute = comps.minute ?? 0
+            }
+            .onChange(of: auditNotificationsEnabled) { _, _ in
+                if !enableAuditSubtab, auditNotificationsEnabled {
+                    auditNotificationsEnabled = false
+                    return
+                }
+                Task {
+                    await ensureAssetsLoadedIfNeeded()
+                    await AuditNotificationManager.shared.updateSchedule(
+                        enabled: auditNotificationsEnabled,
+                        hour: auditNotificationHour,
+                        minute: auditNotificationMinute,
+                        assets: apiClient.assets
+                    )
+                }
+            }
+            .onChange(of: auditNotificationHour) { _, _ in
+                guard auditNotificationsEnabled else { return }
+                Task {
+                    await ensureAssetsLoadedIfNeeded()
+                    await AuditNotificationManager.shared.updateSchedule(
+                        enabled: true,
+                        hour: auditNotificationHour,
+                        minute: auditNotificationMinute,
+                        assets: apiClient.assets
+                    )
+                }
+            }
+            .onChange(of: auditNotificationMinute) { _, _ in
+                guard auditNotificationsEnabled else { return }
+                Task {
+                    await ensureAssetsLoadedIfNeeded()
+                    await AuditNotificationManager.shared.updateSchedule(
+                        enabled: true,
+                        hour: auditNotificationHour,
+                        minute: auditNotificationMinute,
+                        assets: apiClient.assets
+                    )
+                }
+            }
+    }
+
+    private func ensureAssetsLoadedIfNeeded() async {
+        guard apiClient.isConfigured else { return }
+        if apiClient.assets.isEmpty {
+            await apiClient.fetchPrimaryThenBackground()
+        }
+    }
+}
+
+private struct SettingsAlertsModifier: ViewModifier {
+    @Binding var showAlert: Bool
+    let alertMessage: String
+    @Binding var showResetConfirm: Bool
+    @Binding var showSupportMailUnavailable: Bool
+    @Binding var showDebugExportError: Bool
+    @Binding var showDebugExportConfirm: Bool
+    let onExportDebug: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .alert(isPresented: $showAlert) {
+                Alert(title: Text(alertMessage))
+            }
+            .alert(
+                L10n.string("reset_data_confirm_title"),
+                isPresented: $showResetConfirm
+            ) {
+                Button(L10n.string("cancel"), role: .cancel) {}
+                Button(L10n.string("reset_data_confirm_action"), role: .destructive) {
+                    CloudSettingsStore.shared.wipeAllData()
+                }
+            } message: {
+                Text(L10n.string("reset_data_confirm_message"))
+            }
+            .alert(
+                L10n.string("settings_support"),
+                isPresented: $showSupportMailUnavailable
+            ) {
+                Button(L10n.string("ok"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("settings_support_mail_unavailable"))
+            }
+            .alert(
+                L10n.string("debug_export_failed_title"),
+                isPresented: $showDebugExportError
+            ) {
+                Button(L10n.string("ok"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("debug_export_failed"))
+            }
+            .alert(
+                L10n.string("debug_export_confirm_title"),
+                isPresented: $showDebugExportConfirm
+            ) {
+                Button(L10n.string("cancel"), role: .cancel) {}
+                Button(L10n.string("debug_export_confirm_action")) {
+                    onExportDebug()
+                }
+            } message: {
+                Text(L10n.string("debug_export_confirm_message"))
+            }
+    }
+}
+
 enum SettingsRoute: Hashable {
-    case appearance, security, api, audit, dell, modules, assets
+    case security, api, audit, dell, modules, assets
     case management, activityLog
     case managementEntity(ManagementEntity)
 }
@@ -969,28 +1087,6 @@ private struct SettingsToggleRow: View {
 }
 
 // MARK: - Detail views
-
-struct AppearanceSettingsView: View {
-    @Binding var appTheme: String
-
-    var body: some View {
-        Form {
-            Section {
-                Picker(L10n.string("theme"), selection: $appTheme) {
-                    Text(L10n.string("system")).tag("system")
-                    Text(L10n.string("light")).tag("light")
-                    Text(L10n.string("dark")).tag("dark")
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            } header: {
-                Text(L10n.string("theme"))
-            }
-        }
-        .navigationTitle(L10n.string("appearance"))
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
 
 struct SecuritySettingsView: View {
     @Binding var useBiometrics: Bool

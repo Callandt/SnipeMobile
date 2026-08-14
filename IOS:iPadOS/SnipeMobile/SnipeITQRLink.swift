@@ -6,11 +6,10 @@ enum SnipeITQRLink: Equatable {
     case accessory(id: Int)
     case license(id: Int)
     case consumable(id: Int)
+    case location(id: Int)
+    case user(id: Int)
+    case maintenance(id: Int)
     case hardwareByTag(String)
-
-    static func parse(from url: URL) -> SnipeITQRLink? {
-        parse(url.absoluteString)
-    }
 
     /// Parse Snipe-IT item URLs.
     static func parse(_ raw: String) -> SnipeITQRLink? {
@@ -62,16 +61,22 @@ enum SnipeITQRLink: Equatable {
             }
 
             switch segment {
-            case "hardware":
+            case "hardware", "assets", "asset":
                 return hardwareToken(next)
-            case "components":
-                if let id = Int(next) { return .component(id: id) }
-            case "accessories":
-                if let id = Int(next) { return .accessory(id: id) }
-            case "licenses":
-                if let id = Int(next) { return .license(id: id) }
-            case "consumables":
-                if let id = Int(next) { return .consumable(id: id) }
+            case "components", "component":
+                if let id = entityId(next) { return .component(id: id) }
+            case "accessories", "accessory":
+                if let id = entityId(next) { return .accessory(id: id) }
+            case "licenses", "license":
+                if let id = entityId(next) { return .license(id: id) }
+            case "consumables", "consumable":
+                if let id = entityId(next) { return .consumable(id: id) }
+            case "locations", "location":
+                if let id = entityId(next) { return .location(id: id) }
+            case "users", "user":
+                if let id = entityId(next) { return .user(id: id) }
+            case "maintenances", "maintenance":
+                if let id = entityId(next) { return .maintenance(id: id) }
             default:
                 continue
             }
@@ -81,10 +86,15 @@ enum SnipeITQRLink: Equatable {
 
     /// Digits = id; anything else = asset tag.
     private static func hardwareToken(_ token: String) -> SnipeITQRLink {
-        if let id = Int(token), String(id) == token {
+        if let id = entityId(token) {
             return .hardware(id: id)
         }
         return .hardwareByTag(token)
+    }
+
+    private static func entityId(_ token: String) -> Int? {
+        guard let id = Int(token), String(id) == token else { return nil }
+        return id
     }
 
     private static func isReserved(_ token: String) -> Bool {
@@ -146,6 +156,12 @@ enum SnipeITQRLink: Equatable {
             return L10n.string("license_not_found_id", String(id))
         case .consumable:
             return L10n.string("consumable_not_found_id", String(id))
+        case .location:
+            return L10n.string("location_not_found_id", String(id))
+        case .user:
+            return L10n.string("user_not_found_id", String(id))
+        case .maintenance:
+            return L10n.string("maintenance_not_found_id", String(id))
         case .hardwareByTag:
             return L10n.string("asset_not_found_id", String(id))
         }

@@ -184,6 +184,21 @@ fun AppNav(viewModel: AppViewModel) {
                 if (isTablet) openTabletDetail(MainTab.Stock, TabletDetailSelection.Component(id))
                 else openPhoneDetail(route)
             }
+            route.startsWith("location/") -> {
+                val id = route.removePrefix("location/").toIntOrNull() ?: return
+                if (isTablet) openTabletDetail(MainTab.Directory, TabletDetailSelection.Location(id))
+                else openPhoneDetail(route)
+            }
+            route.startsWith("user/") -> {
+                val id = route.removePrefix("user/").toIntOrNull() ?: return
+                if (isTablet) openTabletDetail(MainTab.Directory, TabletDetailSelection.User(id))
+                else openPhoneDetail(route)
+            }
+            route.startsWith("maintenance/") -> {
+                val id = route.removePrefix("maintenance/").toIntOrNull() ?: return
+                if (isTablet) openTabletDetail(MainTab.Hardware, TabletDetailSelection.Maintenance(id))
+                else openPhoneDetail(route)
+            }
             else -> openPhoneDetail(route)
         }
     }
@@ -430,6 +445,7 @@ fun AppNav(viewModel: AppViewModel) {
                 onOpenUser = { navController.navigate(Routes.user(it)) },
                 onOpenAsset = { navController.navigate(Routes.asset(it)) },
                 onOpenAccessory = { navController.navigate(Routes.accessory(it)) },
+                onOpenLocation = { navController.navigate(Routes.location(it)) },
             )
         }
         detailRoute(Routes.MaintenanceDetail, "id") { id ->
@@ -467,6 +483,31 @@ private suspend fun navigateFromQrLink(
         is SnipeITQRLink.License -> Routes.license(link.id)
         is SnipeITQRLink.Consumable -> Routes.consumable(link.id)
         is SnipeITQRLink.Component -> Routes.component(link.id)
+        is SnipeITQRLink.Location -> {
+            val cached = viewModel.locations.value.firstOrNull { it.id == link.id }
+            if (cached != null) {
+                Routes.location(link.id)
+            } else {
+                if (viewModel.locations.value.isEmpty()) {
+                    viewModel.apiClient.fetchLocations()
+                }
+                viewModel.apiClient.fetchLocationDetails(link.id)?.let { Routes.location(it.id) }
+            }
+        }
+        is SnipeITQRLink.User -> {
+            val cached = viewModel.users.value.firstOrNull { it.id == link.id }
+            if (cached != null) {
+                Routes.user(link.id)
+            } else {
+                if (viewModel.users.value.isEmpty()) {
+                    viewModel.apiClient.fetchUsers()
+                }
+                viewModel.apiClient.fetchUserDetails(link.id)?.let { Routes.user(it.id) }
+            }
+        }
+        is SnipeITQRLink.Maintenance -> {
+            viewModel.apiClient.fetchMaintenance(link.id)?.let { Routes.maintenance(it.id) }
+        }
         is SnipeITQRLink.HardwareByTag -> {
             val asset = viewModel.apiClient.resolveScannedHardware(link.tag)
             asset?.let { Routes.asset(it.id) }
@@ -475,7 +516,18 @@ private suspend fun navigateFromQrLink(
     if (route != null) {
         openEntity(route)
     } else {
-        snackbarHostState.showSnackbar(L10n.string("asset_not_found"))
+        val message = when (link) {
+            is SnipeITQRLink.Hardware -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.Accessory -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.License -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.Consumable -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.Component -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.Location -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.User -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.Maintenance -> link.notFoundMessage(link.id)
+            is SnipeITQRLink.HardwareByTag -> L10n.string("asset_not_found_scanned_value", link.tag)
+        }
+        snackbarHostState.showSnackbar(message)
     }
 }
 

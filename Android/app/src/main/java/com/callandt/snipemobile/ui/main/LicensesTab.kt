@@ -38,7 +38,9 @@ import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.LicenseCard
 import com.callandt.snipemobile.ui.components.ListCountHeader
 import com.callandt.snipemobile.ui.components.ListFilterMenuButton
+import com.callandt.snipemobile.ui.components.ListHeaderActions
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
+import com.callandt.snipemobile.ui.components.ListSortMenuButton
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
@@ -47,9 +49,13 @@ import com.callandt.snipemobile.ui.license.AddLicenseSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.ListSort
+import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.licenseMatchesSearch
 import com.callandt.snipemobile.ui.util.listFilterOptions
+import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.sortedByListSort
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +76,7 @@ fun LicensesTab(
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var listFilter by remember { mutableStateOf(ListFilter()) }
+    var listSort by remember { mutableStateOf(ListSort.updatedDescending) }
     var showAddLicense by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -106,6 +113,7 @@ fun LicensesTab(
     val filtered = items
         .filter { listFilter.matches(it, dimensions) }
         .filter { licenseMatchesSearch(it, searchQuery) }
+        .sortedByListSort(listSort, ListSortCatalog.licenses) { it.id }
 
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
@@ -154,12 +162,19 @@ fun LicensesTab(
                     count = filtered.size,
                     icon = Icons.Default.Description,
                     trailing = {
-                        ListFilterMenuButton(
-                            filter = listFilter,
-                            options = filterOptions,
-                            onFilterChange = { listFilter = it },
-                            showLabel = true,
-                        )
+                        ListHeaderActions {
+                            ListSortMenuButton(
+                                sort = listSort,
+                                keys = ListSortCatalog.licenses,
+                                onSortChange = { listSort = it },
+                            )
+                            ListFilterMenuButton(
+                                filter = listFilter,
+                                options = filterOptions,
+                                onFilterChange = { listFilter = it },
+                                showLabel = true,
+                            )
+                        }
                     },
                 )
                 Box(modifier = Modifier.weight(1f)) {
@@ -174,7 +189,11 @@ fun LicensesTab(
                             )
                         }
                         else -> {
+                            val listState = rememberResettingLazyListState(
+                                Triple(searchQuery, listFilter, listSort),
+                            )
                             LazyColumn(
+                                state = listState,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {

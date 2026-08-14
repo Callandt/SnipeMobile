@@ -15,7 +15,7 @@ import UserNotifications
 private let pendingAuditIntentDefaultsKey = "pendingAuditIntent"
 
 class AppSettings: ObservableObject {
-    @AppStorage("appLanguage") var appLanguage: String = "en" { willSet { objectWillChange.send() } }
+    @AppStorage("appLanguage") var appLanguage: String = "system" { willSet { objectWillChange.send() } }
     @AppStorage("appTheme") var appTheme: String = "system" { willSet { objectWillChange.send() } }
     @AppStorage("useBiometrics") var useBiometrics: Bool = false { willSet { objectWillChange.send() } }
 }
@@ -270,6 +270,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                             ContentView()
                         }
                     }
+                    .modifier(CardListPhotoEnvironment())
+                    .environment(\.locale, L10n.locale)
                     .environmentObject(appSettings)
                     .environmentObject(auditNotificationRouter)
                     .environmentObject(widgetNavigationRouter)
@@ -1290,6 +1292,7 @@ struct MainSplitView: View {
         ipadContentColumn
             .navigationTitle(comboAwareSectionTitle)
             .navigationBarTitleDisplayMode(.large)
+            .compactLayoutWhileSearching()
             .searchable(text: $searchText, prompt: Text(ipadSearchPrompt))
             .toolbar {
                 if selectedSection == .stock, enabledStockSubmodules.count > 1 {
@@ -1813,6 +1816,11 @@ struct MainSplitView: View {
                         selectedAccessoryDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         selectedSection = .accessories
+                    },
+                    onOpenLocation: { [apiClient] location in
+                        let resolved = apiClient.locations.first(where: { $0.id == location.id }) ?? location
+                        selectedLocation = resolved
+                        selectedLocationDetailTab = 0
                     }
                 )
             } else {
@@ -2504,11 +2512,9 @@ struct MainSplitView: View {
                 }
             }
 
-            if scanResult.type == .qr {
-                if let link = SnipeITQRLink.parse(scannedValue) {
-                    Task { await openSnipeITQRLink(link) }
-                    return
-                }
+            if let link = SnipeITQRLink.parse(scannedValue) {
+                Task { await openSnipeITQRLink(link) }
+                return
             }
             if scanResult.type == .qr, let url = URL(string: scannedValue) {
 
@@ -2571,6 +2577,9 @@ struct MainSplitView: View {
             selectedLicense = nil
             selectedConsumable = nil
             selectedComponent = nil
+            selectedMaintenance = nil
+            selectedUser = nil
+            selectedLocation = nil
         }
 
         switch link {
@@ -2686,6 +2695,73 @@ struct MainSplitView: View {
                 apiClient.applyUpdatedLicense(detailed)
                 selectedLicense = detailed
                 selectedLicenseDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+
+        case .location(let id):
+            selectedAsset = nil
+            selectedAccessory = nil
+            selectedLicense = nil
+            selectedConsumable = nil
+            selectedComponent = nil
+            selectedUser = nil
+            directorySelectedRaw = DirectorySubmodule.locations.rawValue
+            selectedSection = .directory
+            if apiClient.locations.first(where: { $0.id == id }) == nil, apiClient.locations.isEmpty {
+                await apiClient.fetchLocations()
+            }
+            if let location = apiClient.locations.first(where: { $0.id == id }) {
+                selectedLocation = location
+                selectedLocationDetailTab = 0
+            } else if let detailed = await apiClient.fetchLocationDetails(locationId: id) {
+                selectedLocation = detailed
+                selectedLocationDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+
+        case .user(let id):
+            selectedAsset = nil
+            selectedAccessory = nil
+            selectedLicense = nil
+            selectedConsumable = nil
+            selectedComponent = nil
+            selectedLocation = nil
+            selectedMaintenance = nil
+            directorySelectedRaw = DirectorySubmodule.users.rawValue
+            selectedSection = .directory
+            if apiClient.users.first(where: { $0.id == id }) == nil, apiClient.users.isEmpty {
+                await apiClient.fetchUsers()
+            }
+            if let user = apiClient.users.first(where: { $0.id == id }) {
+                selectedUser = user
+                selectedUserDetailTab = 0
+            } else if let detailed = await apiClient.fetchUserDetails(userId: id) {
+                apiClient.upsertCachedUser(detailed)
+                selectedUser = detailed
+                selectedUserDetailTab = 0
+            } else {
+                scanErrorMessage = link.notFoundMessage(id: id)
+                showScanErrorAlert = true
+            }
+
+        case .maintenance(let id):
+            selectedAsset = nil
+            selectedAccessory = nil
+            selectedLicense = nil
+            selectedConsumable = nil
+            selectedComponent = nil
+            selectedUser = nil
+            selectedLocation = nil
+            selectedSection = .hardware
+            if let record = apiClient.maintenances.first(where: { $0.id == id }) {
+                selectedMaintenance = record
+            } else if let fetched = await apiClient.fetchMaintenance(id: id) {
+                apiClient.upsertCachedMaintenance(fetched)
+                selectedMaintenance = fetched
             } else {
                 scanErrorMessage = link.notFoundMessage(id: id)
                 showScanErrorAlert = true

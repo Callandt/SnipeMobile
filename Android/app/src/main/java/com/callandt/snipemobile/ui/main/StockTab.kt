@@ -44,7 +44,9 @@ import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
 import com.callandt.snipemobile.ui.components.ListCountHeader
 import com.callandt.snipemobile.ui.components.ListFilterMenuButton
+import com.callandt.snipemobile.ui.components.ListHeaderActions
 import com.callandt.snipemobile.ui.components.ListLoadingPlaceholder
+import com.callandt.snipemobile.ui.components.ListSortMenuButton
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
@@ -53,10 +55,14 @@ import com.callandt.snipemobile.ui.consumable.AddConsumableSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListFilter
+import com.callandt.snipemobile.ui.util.ListSort
+import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.componentMatchesSearch
 import com.callandt.snipemobile.ui.util.consumableMatchesSearch
 import com.callandt.snipemobile.ui.util.listFilterOptions
+import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.sortedByListSort
 
 private enum class StockSubtab { Consumables, Components }
 
@@ -85,6 +91,8 @@ fun StockTab(
     var searchQuery by remember { mutableStateOf("") }
     var consumableFilter by remember { mutableStateOf(ListFilter()) }
     var componentFilter by remember { mutableStateOf(ListFilter()) }
+    var consumableSort by remember { mutableStateOf(ListSort.updatedDescending) }
+    var componentSort by remember { mutableStateOf(ListSort.updatedDescending) }
     var subtab by remember { mutableIntStateOf(0) }
     var showAddConsumable by remember { mutableStateOf(false) }
     var showAddComponent by remember { mutableStateOf(false) }
@@ -217,16 +225,24 @@ fun StockTab(
                     val filtered = consumables
                         .filter { consumableFilter.matches(it, consumableDimensions) }
                         .filter { consumableMatchesSearch(it, searchQuery) }
+                        .sortedByListSort(consumableSort, ListSortCatalog.consumables) { it.id }
                     ListCountHeader(
                         count = filtered.size,
                         icon = Icons.Outlined.Inventory2,
                         trailing = {
-                            ListFilterMenuButton(
-                                filter = consumableFilter,
-                                options = consumableFilterOptions,
-                                onFilterChange = { consumableFilter = it },
-                                showLabel = true,
-                            )
+                            ListHeaderActions {
+                                ListSortMenuButton(
+                                    sort = consumableSort,
+                                    keys = ListSortCatalog.consumables,
+                                    onSortChange = { consumableSort = it },
+                                )
+                                ListFilterMenuButton(
+                                    filter = consumableFilter,
+                                    options = consumableFilterOptions,
+                                    onFilterChange = { consumableFilter = it },
+                                    showLabel = true,
+                                )
+                            }
                         },
                     )
                     Box(modifier = Modifier.weight(1f)) {
@@ -241,7 +257,11 @@ fun StockTab(
                                 )
                             }
                             else -> {
+                                val listState = rememberResettingLazyListState(
+                                    Triple(searchQuery, consumableFilter, consumableSort),
+                                )
                                 LazyColumn(
+                                    state = listState,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
@@ -266,16 +286,24 @@ fun StockTab(
                     val filtered = components
                         .filter { componentFilter.matches(it, componentDimensions) }
                         .filter { componentMatchesSearch(it, searchQuery) }
+                        .sortedByListSort(componentSort, ListSortCatalog.components) { it.id }
                     ListCountHeader(
                         count = filtered.size,
                         icon = Icons.Outlined.Memory,
                         trailing = {
-                            ListFilterMenuButton(
-                                filter = componentFilter,
-                                options = componentFilterOptions,
-                                onFilterChange = { componentFilter = it },
-                                showLabel = true,
-                            )
+                            ListHeaderActions {
+                                ListSortMenuButton(
+                                    sort = componentSort,
+                                    keys = ListSortCatalog.components,
+                                    onSortChange = { componentSort = it },
+                                )
+                                ListFilterMenuButton(
+                                    filter = componentFilter,
+                                    options = componentFilterOptions,
+                                    onFilterChange = { componentFilter = it },
+                                    showLabel = true,
+                                )
+                            }
                         },
                     )
                     Box(modifier = Modifier.weight(1f)) {
@@ -290,7 +318,11 @@ fun StockTab(
                                 )
                             }
                             else -> {
+                                val listState = rememberResettingLazyListState(
+                                    Triple(searchQuery, componentFilter, componentSort),
+                                )
                                 LazyColumn(
+                                    state = listState,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {

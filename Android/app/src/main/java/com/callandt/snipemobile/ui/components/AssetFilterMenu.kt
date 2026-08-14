@@ -16,6 +16,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.ui.util.AssetFilter
 import com.callandt.snipemobile.ui.util.AssetFilterOptions
@@ -55,9 +57,24 @@ fun AssetFilterMenuButton(
         androidx.compose.material3.MaterialTheme.colorScheme.onSurface
     }
 
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    fun openMenu() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        expanded = true
+    }
+
+    fun applyFilter(newFilter: AssetFilter) {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        onFilterChange(newFilter)
+    }
+
     Box {
         if (showLabel) {
-            TextButton(onClick = { expanded = true }) {
+            TextButton(onClick = { openMenu() }) {
                 Text(label, color = tint)
                 Icon(
                     Icons.Default.FilterList,
@@ -67,7 +84,7 @@ fun AssetFilterMenuButton(
                 )
             }
         } else {
-            IconButton(onClick = { expanded = true }) {
+            IconButton(onClick = { openMenu() }) {
                 Icon(
                     Icons.Default.FilterList,
                     contentDescription = label,
@@ -131,7 +148,7 @@ fun AssetFilterMenuButton(
                 DropdownMenuItem(
                     text = { Text(L10n.string("filter_clear")) },
                     onClick = {
-                        onFilterChange(filter.clear())
+                        applyFilter(filter.clear())
                         expanded = false
                     },
                 )
@@ -143,7 +160,7 @@ fun AssetFilterMenuButton(
             onDismiss = { statusExpanded = false },
             filter = filter,
             options = options,
-            onFilterChange = onFilterChange,
+            onFilterChange = { applyFilter(it) },
         )
         StringFilterSubmenu(
             expanded = categoryExpanded,
@@ -151,7 +168,7 @@ fun AssetFilterMenuButton(
             values = options.categories,
             current = filter.category,
             onDismiss = { categoryExpanded = false },
-            onSelect = { onFilterChange(filter.copy(category = it)) },
+            onSelect = { applyFilter(filter.copy(category = it)) },
         )
         StringFilterSubmenu(
             expanded = modelExpanded,
@@ -159,7 +176,7 @@ fun AssetFilterMenuButton(
             values = options.models,
             current = filter.model,
             onDismiss = { modelExpanded = false },
-            onSelect = { onFilterChange(filter.copy(model = it)) },
+            onSelect = { applyFilter(filter.copy(model = it)) },
         )
         StringFilterSubmenu(
             expanded = manufacturerExpanded,
@@ -167,7 +184,7 @@ fun AssetFilterMenuButton(
             values = options.manufacturers,
             current = filter.manufacturer,
             onDismiss = { manufacturerExpanded = false },
-            onSelect = { onFilterChange(filter.copy(manufacturer = it)) },
+            onSelect = { applyFilter(filter.copy(manufacturer = it)) },
         )
         StringFilterSubmenu(
             expanded = locationExpanded,
@@ -175,7 +192,7 @@ fun AssetFilterMenuButton(
             values = options.locations,
             current = filter.location,
             onDismiss = { locationExpanded = false },
-            onSelect = { onFilterChange(filter.copy(location = it)) },
+            onSelect = { applyFilter(filter.copy(location = it)) },
         )
     }
 }

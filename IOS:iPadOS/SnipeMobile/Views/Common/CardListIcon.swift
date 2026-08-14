@@ -2,6 +2,48 @@ import CryptoKit
 import SwiftUI
 import UIKit
 
+private struct ShowPhotosInCardListKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private struct SnipeServerBaseURLKey: EnvironmentKey {
+    static let defaultValue = ""
+}
+
+private struct CardPhotoCacheGenerationKey: EnvironmentKey {
+    static let defaultValue = 0
+}
+
+extension EnvironmentValues {
+    var showPhotosInCardList: Bool {
+        get { self[ShowPhotosInCardListKey.self] }
+        set { self[ShowPhotosInCardListKey.self] = newValue }
+    }
+
+    var snipeServerBaseURL: String {
+        get { self[SnipeServerBaseURLKey.self] }
+        set { self[SnipeServerBaseURLKey.self] = newValue }
+    }
+
+    var cardPhotoCacheGeneration: Int {
+        get { self[CardPhotoCacheGenerationKey.self] }
+        set { self[CardPhotoCacheGenerationKey.self] = newValue }
+    }
+}
+
+struct CardListPhotoEnvironment: ViewModifier {
+    @AppStorage("showPhotosInCardList") private var showPhotosInCardList = false
+    @AppStorage("baseURL") private var baseURL = ""
+    @ObservedObject private var cacheGeneration = SnipeCardPhotoCache.generation
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.showPhotosInCardList, showPhotosInCardList)
+            .environment(\.snipeServerBaseURL, baseURL)
+            .environment(\.cardPhotoCacheGeneration, cacheGeneration.value)
+    }
+}
+
 // Absolute or relative Snipe-IT image URL.
 enum SnipeImageURL {
     static func resolve(baseURL: String, path: String?, cacheBuster: String? = nil) -> URL? {
@@ -41,6 +83,7 @@ enum SnipeCardPhotoCache {
         return cache
     }()
     private static var keysByPath: [String: Set<String>] = [:]
+    private static let lock = NSLock()
     private static let folderName = "CardPhotos"
     static let generation = Generation()
 
@@ -62,7 +105,9 @@ enum SnipeCardPhotoCache {
     static func store(_ image: UIImage, for url: URL) {
         let key = key(for: url)
         memory.setObject(image, forKey: key as NSString)
+        lock.lock()
         keysByPath[pathKey(for: url), default: []].insert(key)
+        lock.unlock()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if let data = image.jpegData(compressionQuality: 0.82) {
             try? data.write(to: fileURL(for: key), options: .atomic)
@@ -72,6 +117,7 @@ enum SnipeCardPhotoCache {
     static func invalidate(path: String?) {
         let trimmed = path?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return }
+        lock.lock()
         let matches = keysByPath.filter { stored, _ in
             stored == trimmed || stored.hasSuffix(trimmed) || trimmed.hasSuffix(stored)
         }
@@ -82,12 +128,15 @@ enum SnipeCardPhotoCache {
             }
             keysByPath[stored] = nil
         }
+        lock.unlock()
         generation.bump()
     }
 
     static func clear() {
         memory.removeAllObjects()
+        lock.lock()
         keysByPath.removeAll()
+        lock.unlock()
         try? FileManager.default.removeItem(at: directory)
         generation.bump()
     }
@@ -122,9 +171,9 @@ struct CardListIcon: View {
     var iconColor: Color = Color(.tertiaryLabel)
     var iconBackground: Color? = nil
 
-    @AppStorage("showPhotosInCardList") private var showPhotosInCardList = false
-    @AppStorage("baseURL") private var baseURL = ""
-    @ObservedObject private var cacheGeneration = SnipeCardPhotoCache.generation
+    @Environment(\.showPhotosInCardList) private var showPhotosInCardList
+    @Environment(\.snipeServerBaseURL) private var baseURL
+    @Environment(\.cardPhotoCacheGeneration) private var cacheGeneration
     @State private var loadedImage: UIImage?
 
     var body: some View {
@@ -141,7 +190,7 @@ struct CardListIcon: View {
             }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .task(id: "\(url.absoluteString).\(cacheGeneration.value)") {
+            .task(id: "\(url.absoluteString).\(cacheGeneration)") {
                 await loadPhoto(from: url)
             }
         } else {
@@ -155,18 +204,27 @@ struct CardListIcon: View {
     }
 
     private func loadPhoto(from url: URL) async {
-        if let cached = SnipeCardPhotoCache.image(for: url) {
+        let cached = await Task.detached(priority: .utility) {
+            SnipeCardPhotoCache.image(for: url)
+        }.value
+        if Task.isCancelled { return }
+        if let cached {
             loadedImage = cached
             return
         }
         loadedImage = nil
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let full = UIImage(data: data) else { return }
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return }
         if Task.isCancelled { return }
-        let thumb = full.snipeThumbnail(maxDimension: 180)
-        SnipeCardPhotoCache.store(thumb, for: url)
+        let thumb = await Task.detached(priority: .utility) {
+            guard let full = UIImage(data: data) else { return nil as UIImage? }
+            return full.snipeThumbnail(maxDimension: 180)
+        }.value
+        guard let thumb, !Task.isCancelled else { return }
+        await Task.detached(priority: .utility) {
+            SnipeCardPhotoCache.store(thumb, for: url)
+        }.value
         loadedImage = thumb
     }
 

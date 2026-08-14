@@ -76,6 +76,8 @@ struct ListFilterMenu: View {
                 }
                 .font(.subheadline)
             }
+            .fixedSize()
+            .accessibilityLabel(L10n.string("filter"))
         }
     }
 

@@ -56,3 +56,14 @@ fun ListCountHeader(
         trailing?.invoke()
     }
 }
+
+@Composable
+fun ListHeaderActions(
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End,
+        content = content,
+    )
+}

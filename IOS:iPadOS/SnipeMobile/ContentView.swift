@@ -157,6 +157,7 @@ struct ContentView: View {
     @State private var showingScanner = false
     @State private var pendingQRLink: SnipeITQRLink?
     @AppStorage("stockSelectedSubmodule") private var stockSelectedSubmoduleRaw: String = StockSubmodule.consumables.rawValue
+    @AppStorage("directorySelectedSubmodule") private var directorySelectedSubmoduleRaw: String = DirectorySubmodule.users.rawValue
     @State private var searchText: String = ""
     @State private var isRefreshing: Bool = false
     @State private var hasLoadedInitialAssets: Bool = false
@@ -175,7 +176,17 @@ struct ContentView: View {
     @State private var stockPath = NavigationPath()
     @State private var directoryPath = NavigationPath()
     @State private var isDetailViewActive = false
-    /// True when a detail screen is pushed.
+    /// True when a detail screen is pushed on the selected tab.
+    /// Derived from the path so nested pushes don't flip parent state mid-transition.
+    private var isDetailPushedOnSelectedTab: Bool {
+        switch selectedTab {
+        case .hardware: return !hardwarePath.isEmpty
+        case .accessories: return !accessoriesPath.isEmpty
+        case .licenses: return !licensesPath.isEmpty
+        case .stock: return !stockPath.isEmpty
+        case .directory: return !directoryPath.isEmpty
+        }
+    }
     @State private var showScanErrorAlert = false
     @State private var scanErrorMessage: String?
     @State private var showAddDellAssetPrompt = false
@@ -227,6 +238,7 @@ struct ContentView: View {
         TabView(selection: $selectedTab) {
             ForEach(orderedVisibleTabs, id: \.self) { tab in
                 tabView(for: tab)
+                    .id("\(tab.rawValue)-\(appSettings.appLanguage)")
                     .tag(tab)
                     .tabItem { Label(displayTitle(for: tab), systemImage: displayIcon(for: tab)) }
             }
@@ -242,7 +254,6 @@ struct ContentView: View {
             // Reset search
             searchText = ""
             // Tab state from visible view
-            isDetailViewActive = false
             if !awaitingAuditNavigationResolution && !awaitingWidgetNavigation {
                 auditListFilter = .all
                 showTodayOnlyOverride = false
@@ -257,7 +268,7 @@ struct ContentView: View {
                 break
             }
         }
-        .modifier(TabBarMinimizeBehaviorModifier(isDetailVisible: isDetailViewActive))
+        .modifier(TabBarMinimizeBehaviorModifier(isDetailVisible: isDetailPushedOnSelectedTab))
         .sheet(isPresented: $showingScanner) {
             ZoomableQRScannerView(
                 completion: handleScanResult,
@@ -293,7 +304,7 @@ struct ContentView: View {
                     Task {
                         if let newId,
                            let detailed = await apiClient.fetchHardwareDetails(assetId: newId) {
-                            await MainActor.run { hardwarePath.append(detailed) }
+                            await MainActor.run { hardwarePath.append(AssetNavID(id: detailed.id)) }
                         }
                     }
                 }
@@ -457,7 +468,8 @@ struct ContentView: View {
                 showingSettings: $showingSettings,
                 showingScanner: $showingScanner,
                 navigationPath: $directoryPath,
-                isDetailViewActive: $isDetailViewActive
+                isDetailViewActive: $isDetailViewActive,
+                pendingQRLink: $pendingQRLink
             )
         }
     }
@@ -562,12 +574,10 @@ struct ContentView: View {
                 }
             }
 
-            // QR = Snipe-IT URL; 1D barcode = literal tag (keeps leading zeros).
-            if scanResult.type == .qr {
-                if let link = SnipeITQRLink.parse(scannedValue) {
-                    handleSnipeITQRLink(link)
-                    return
-                }
+            // Snipe-IT URLs from QR or other codes.
+            if let link = SnipeITQRLink.parse(scannedValue) {
+                handleSnipeITQRLink(link)
+                return
             }
             if scanResult.type == .qr, let url = URL(string: scannedValue) {
 
@@ -726,6 +736,43 @@ struct ContentView: View {
                     await resolveMissingQRLink(link, id: id)
                 }
             }
+
+        case .location(let id):
+            directorySelectedSubmoduleRaw = DirectorySubmodule.locations.rawValue
+            pendingQRLink = link
+            selectedTab = .directory
+            if apiClient.locations.first(where: { $0.id == id }) == nil {
+                Task {
+                    if apiClient.locations.isEmpty {
+                        await apiClient.fetchLocations()
+                    }
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
+
+        case .user(let id):
+            directorySelectedSubmoduleRaw = DirectorySubmodule.users.rawValue
+            selectedTab = .directory
+            if apiClient.users.first(where: { $0.id == id }) != nil {
+                pendingQRLink = link
+            } else {
+                Task {
+                    if apiClient.users.isEmpty {
+                        await apiClient.fetchUsers()
+                    }
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
+
+        case .maintenance(let id):
+            selectedTab = .hardware
+            if apiClient.maintenances.first(where: { $0.id == id }) != nil {
+                pendingQRLink = link
+            } else {
+                Task {
+                    await resolveMissingQRLink(link, id: id)
+                }
+            }
         }
     }
 
@@ -771,6 +818,32 @@ struct ContentView: View {
             } else {
                 resolved = false
             }
+        case .location:
+            if apiClient.locations.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if await apiClient.fetchLocationDetails(locationId: id) != nil {
+                resolved = true
+            } else {
+                resolved = false
+            }
+        case .user:
+            if apiClient.users.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if let detailed = await apiClient.fetchUserDetails(userId: id) {
+                apiClient.upsertCachedUser(detailed)
+                resolved = true
+            } else {
+                resolved = false
+            }
+        case .maintenance:
+            if apiClient.maintenances.first(where: { $0.id == id }) != nil {
+                resolved = true
+            } else if let fetched = await apiClient.fetchMaintenance(id: id) {
+                apiClient.upsertCachedMaintenance(fetched)
+                resolved = true
+            } else {
+                resolved = false
+            }
         case .hardwareByTag:
             resolved = true
         }
@@ -808,32 +881,42 @@ private struct AppNavigationDestinations: ViewModifier {
     @State private var consumableDetailTab = 0
     @State private var componentDetailTab = 0
 
+    /// Push after the current SwiftUI update so we don't preempt an in-flight transition.
+    private func enqueueNavigation(_ value: some Hashable) {
+        DispatchQueue.main.async {
+            navigationPath.append(value)
+        }
+    }
+
     func body(content: Content) -> some View {
         content
-            .navigationDestination(for: Asset.self) { asset in
-                AssetDetailView(
-                    asset: asset,
-                    apiClient: apiClient,
-                    selectedTab: $assetDetailTab,
-                    isDetailViewActive: $isDetailViewActive,
-                    onOpenUser: { navigationPath.append($0) },
-                    onOpenLocation: { navigationPath.append($0) },
-                    onOpenLicense: { navigationPath.append($0) },
-                    onOpenAccessory: { navigationPath.append($0) },
-                    onOpenComponent: { navigationPath.append($0) },
-                    onOpenAsset: { navigationPath.append($0) }
-                )
+            .navigationDestination(for: AssetNavID.self) { route in
+                if let asset = apiClient.assets.first(where: { $0.id == route.id }) {
+                    AssetDetailView(
+                        asset: asset,
+                        apiClient: apiClient,
+                        selectedTab: $assetDetailTab,
+                        isDetailViewActive: $isDetailViewActive,
+                        onOpenUser: { enqueueNavigation($0) },
+                        onOpenLocation: { enqueueNavigation($0) },
+                        onOpenLicense: { enqueueNavigation($0) },
+                        onOpenAccessory: { enqueueNavigation($0) },
+                        onOpenComponent: { enqueueNavigation($0) },
+                        onOpenAsset: { enqueueNavigation(AssetNavID(id: $0.id)) }
+                    )
+                    .id(route.id)
+                }
             }
             .navigationDestination(for: User.self) { user in
                 UserDetailView(
                     user: user,
                     apiClient: apiClient,
                     isDetailViewActive: $isDetailViewActive,
-                    onOpenAsset: { navigationPath.append($0) },
-                    onOpenAccessory: { navigationPath.append($0) },
-                    onOpenLocation: { navigationPath.append($0) },
-                    onOpenLicense: { navigationPath.append($0) },
-                    onOpenConsumable: { navigationPath.append($0) }
+                    onOpenAsset: { enqueueNavigation(AssetNavID(id: $0.id)) },
+                    onOpenAccessory: { enqueueNavigation($0) },
+                    onOpenLocation: { enqueueNavigation($0) },
+                    onOpenLicense: { enqueueNavigation($0) },
+                    onOpenConsumable: { enqueueNavigation($0) }
                 )
                 .id(user.id)
             }
@@ -842,9 +925,10 @@ private struct AppNavigationDestinations: ViewModifier {
                     location: location,
                     apiClient: apiClient,
                     isDetailViewActive: $isDetailViewActive,
-                    onOpenUser: { navigationPath.append($0) },
-                    onOpenAsset: { navigationPath.append($0) },
-                    onOpenAccessory: { navigationPath.append($0) }
+                    onOpenUser: { enqueueNavigation($0) },
+                    onOpenAsset: { enqueueNavigation(AssetNavID(id: $0.id)) },
+                    onOpenAccessory: { enqueueNavigation($0) },
+                    onOpenLocation: { enqueueNavigation($0) }
                 )
                 .id(location.id)
             }
@@ -854,9 +938,9 @@ private struct AppNavigationDestinations: ViewModifier {
                     apiClient: apiClient,
                     selectedTab: $accessoryDetailTab,
                     isDetailViewActive: $isDetailViewActive,
-                    onOpenUser: { navigationPath.append($0) },
-                    onOpenAsset: { navigationPath.append($0) },
-                    onOpenLocation: { navigationPath.append($0) }
+                    onOpenUser: { enqueueNavigation($0) },
+                    onOpenAsset: { enqueueNavigation(AssetNavID(id: $0.id)) },
+                    onOpenLocation: { enqueueNavigation($0) }
                 )
             }
             .navigationDestination(for: License.self) { license in
@@ -865,8 +949,8 @@ private struct AppNavigationDestinations: ViewModifier {
                     apiClient: apiClient,
                     selectedTab: $licenseDetailTab,
                     isDetailViewActive: $isDetailViewActive,
-                    onOpenUser: { navigationPath.append($0) },
-                    onOpenAsset: { navigationPath.append($0) }
+                    onOpenUser: { enqueueNavigation($0) },
+                    onOpenAsset: { enqueueNavigation(AssetNavID(id: $0.id)) }
                 )
             }
             .navigationDestination(for: Consumable.self) { consumable in
@@ -875,7 +959,7 @@ private struct AppNavigationDestinations: ViewModifier {
                     apiClient: apiClient,
                     selectedTab: $consumableDetailTab,
                     isDetailViewActive: $isDetailViewActive,
-                    onOpenUser: { navigationPath.append($0) }
+                    onOpenUser: { enqueueNavigation($0) }
                 )
             }
             .navigationDestination(for: Component.self) { component in
@@ -884,7 +968,7 @@ private struct AppNavigationDestinations: ViewModifier {
                     apiClient: apiClient,
                     selectedTab: $componentDetailTab,
                     isDetailViewActive: $isDetailViewActive,
-                    onOpenAsset: { navigationPath.append($0) }
+                    onOpenAsset: { enqueueNavigation(AssetNavID(id: $0.id)) }
                 )
             }
     }
@@ -946,6 +1030,10 @@ struct HardwareTab: View {
     @State private var isSelectingMaintenances = false
     @State private var selectedMaintenanceIds: Set<Int> = []
     @State private var maintenanceFilter: MaintenanceStatusFilter = .all
+    @State private var listSort = ListSort.assetTagDescending
+    @State private var maintenanceSort = ListSort.startDateDescending
+    @State private var assetListMemo = ListSortMemo<Asset>()
+    @State private var maintenanceListMemo = ListSortMemo<AssetMaintenance>()
 
     // Quick swipe-to-complete from the maintenance overview.
     @State private var maintenanceToComplete: AssetMaintenance?
@@ -984,16 +1072,34 @@ struct HardwareTab: View {
         )
     }
 
+    private var hasAssetFilterOptions: Bool {
+        !apiClient.statusLabels.isEmpty
+            || !apiClient.models.isEmpty
+            || !apiClient.manufacturers.isEmpty
+            || !apiClient.locations.isEmpty
+            || !apiClient.categories.isEmpty
+    }
+
     private var searchFilteredAssets: [Asset] {
-        var assets = apiClient.assets
-        if assetFilter.isActive {
-            assets = assets.filter { assetFilter.matches($0, statusLabels: apiClient.statusLabels) }
+        assetListMemo.cached(
+            from: apiClient.assets,
+            search: searchText,
+            sort: listSort,
+            extra: EquatablePair(first: assetFilter, second: apiClient.statusLabels.count)
+        ) { assets in
+            var result = assets
+            if assetFilter.isActive {
+                result = result.filter { assetFilter.matches($0, statusLabels: apiClient.statusLabels) }
+            }
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.assetMatches($0, query: searchText) }
+            }
+            return applyListSort(result, sort: listSort, keys: ListSortCatalog.assets)
         }
-        if searchText.isEmpty { return assets }
-        return assets.filter { SearchHelpers.assetMatches($0, query: searchText) }
     }
 
     private var dueTodayAssets: [Asset] {
+        guard isAuditSubtabActive || showTodayOnlyOverride else { return [] }
         let now = Date()
         return AuditDateClassifier.sortByNextAuditDateThenTag(
             searchFilteredAssets.filter { AuditDateClassifier.isDueToday($0, now: now) }
@@ -1001,6 +1107,7 @@ struct HardwareTab: View {
     }
 
     private var dueSoonAssets: [Asset] {
+        guard isAuditSubtabActive else { return [] }
         let now = Date()
         return AuditDateClassifier.sortByNextAuditDateThenTag(
             searchFilteredAssets.filter { AuditDateClassifier.isDueSoon($0, now: now, dueSoonDays: dueSoonDays) }
@@ -1008,6 +1115,7 @@ struct HardwareTab: View {
     }
 
     private var overdueAssets: [Asset] {
+        guard isAuditSubtabActive else { return [] }
         let now = Date()
         return AuditDateClassifier.sortByNextAuditDateThenTag(
             searchFilteredAssets.filter { AuditDateClassifier.isOverdue($0, now: now) }
@@ -1039,11 +1147,18 @@ struct HardwareTab: View {
     }
 
     private var displayedMaintenances: [AssetMaintenance] {
-        var records = apiClient.maintenances.filter { maintenanceFilter.matches($0) }
-        if !searchText.isEmpty {
-            records = records.filter { SearchHelpers.maintenanceMatches($0, query: searchText) }
+        maintenanceListMemo.cached(
+            from: apiClient.maintenances,
+            search: searchText,
+            sort: maintenanceSort,
+            extra: maintenanceFilter
+        ) { records in
+            var result = records.filter { maintenanceFilter.matches($0) }
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.maintenanceMatches($0, query: searchText) }
+            }
+            return applyListSort(result, sort: maintenanceSort, keys: ListSortCatalog.maintenances)
         }
-        return records
     }
 
     private var selectableMaintenances: [AssetMaintenance] {
@@ -1051,51 +1166,58 @@ struct HardwareTab: View {
     }
 
     var body: some View {
+        hardwareNavigationStack
+            .onAppear(perform: hardwareTabDidAppear)
+            .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.assets.count) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.models.count) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.maintenances.count) { _, _ in tryPushPendingQRLink() }
+            .sheet(isPresented: $showAuditCompletionSheet) {
+                auditCompletionSheet
+            }
+            .alert(L10n.string("error"), isPresented: $showAuditCompletionErrorAlert) {
+                Button(L10n.string("ok"), role: .cancel) {
+                    auditCompletionErrorMessage = ""
+                }
+            } message: {
+                Text(auditCompletionErrorMessage)
+            }
+    }
+
+    private var hardwareNavigationStack: some View {
         NavigationStack(path: $navigationPath) {
             hardwareTabContent
                 .background(Color(.systemBackground).ignoresSafeArea())
         }
         .syncTabBarWithNavigationPath(navigationPath)
-        .onAppear {
-            // Initial sync is owned by the parent.
-            if apiClient.isConfigured,
-               apiClient.statusLabels.isEmpty
-                || apiClient.manufacturers.isEmpty
-                || apiClient.categories.isEmpty
-                || apiClient.models.isEmpty {
-                Task { await apiClient.fetchListFilterCatalogs() }
-            }
-            tryPushPendingQRLink()
+    }
+
+    private var auditCompletionSheet: some View {
+        CompletionActionSheet(
+            title: L10n.string("complete_audit_confirm_title"),
+            message: L10n.string("complete_audit_confirm_message"),
+            dateLabel: L10n.string("next_audit_date"),
+            date: $auditCompletionNextAuditDate,
+            includeDate: $auditCompletionSetDate,
+            includeDateLabel: L10n.string("audit_set_next_audit_date"),
+            note: $auditCompletionNote,
+            selectedImage: $auditCompletionImage,
+            showCamera: $auditCompletionShowCamera,
+            confirmTitle: L10n.string("complete_audit"),
+            isSaving: isSavingAuditCompletion,
+            onSave: { Task { await saveAuditCompletionFromList() } }
+        )
+    }
+
+    private func hardwareTabDidAppear() {
+        if apiClient.isConfigured,
+           apiClient.statusLabels.isEmpty
+            || apiClient.manufacturers.isEmpty
+            || apiClient.categories.isEmpty
+            || apiClient.models.isEmpty {
+            Task { await apiClient.fetchListFilterCatalogs() }
         }
-        .onChange(of: pendingQRLink) { _, _ in
-            tryPushPendingQRLink()
-        }
-        .onChange(of: apiClient.assets) { _, _ in
-            tryPushPendingQRLink()
-        }
-        .sheet(isPresented: $showAuditCompletionSheet) {
-            CompletionActionSheet(
-                title: L10n.string("complete_audit_confirm_title"),
-                message: L10n.string("complete_audit_confirm_message"),
-                dateLabel: L10n.string("next_audit_date"),
-                date: $auditCompletionNextAuditDate,
-                includeDate: $auditCompletionSetDate,
-                includeDateLabel: L10n.string("audit_set_next_audit_date"),
-                note: $auditCompletionNote,
-                selectedImage: $auditCompletionImage,
-                showCamera: $auditCompletionShowCamera,
-                confirmTitle: L10n.string("complete_audit"),
-                isSaving: isSavingAuditCompletion,
-                onSave: { Task { await saveAuditCompletionFromList() } }
-            )
-        }
-        .alert(L10n.string("error"), isPresented: $showAuditCompletionErrorAlert) {
-            Button(L10n.string("ok"), role: .cancel) {
-                auditCompletionErrorMessage = ""
-            }
-        } message: {
-            Text(auditCompletionErrorMessage)
-        }
+        tryPushPendingQRLink()
     }
 
     private func saveAuditCompletionFromList() async {
@@ -1161,7 +1283,11 @@ struct HardwareTab: View {
                 hardwareAssetList
             }
         }
-        .onAppear { isDetailViewActive = false }
+        .onAppear {
+            if navigationPath.isEmpty {
+                isDetailViewActive = false
+            }
+        }
         .navigationTitle(MainTab.hardware.localizedTitle)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -1231,6 +1357,7 @@ struct HardwareTab: View {
                 }
             }
         }
+        .compactLayoutWhileSearching()
         .searchable(text: $searchText, prompt: L10n.string("search_assets"))
         .refreshable {
             if apiClient.isConfigured {
@@ -1387,6 +1514,32 @@ struct HardwareTab: View {
         return assetsToShow.isEmpty
     }
 
+    private var hardwareCountSortBar: some View {
+        HStack {
+            if isMaintenanceSubtabActive {
+                Label("\(displayedMaintenances.count)", systemImage: "wrench.and.screwdriver")
+                    .foregroundStyle(.primary)
+                Spacer()
+                ListSortMenu(sort: $maintenanceSort, keys: ListSortCatalog.maintenances)
+                maintenanceFilterMenu
+            } else if isAuditSubtabActive {
+                Label("\(auditOverviewCount)", systemImage: "checkmark.seal")
+                    .foregroundStyle(.primary)
+                Spacer()
+            } else {
+                Label("\(searchFilteredAssets.count)", systemImage: "laptopcomputer")
+                    .foregroundStyle(.primary)
+                Spacer()
+                ListSortMenu(sort: $listSort, keys: ListSortCatalog.assets)
+                if hasAssetFilterOptions {
+                    AssetFilterMenu(filter: $assetFilter, makeOptions: { assetFilterOptions })
+                }
+            }
+        }
+        .font(.subheadline)
+        .padding(.vertical, 2)
+    }
+
     private var hardwareEmptyTitle: String {
         (searchText.isEmpty && !assetFilter.isActive) ? L10n.string("no_assets") : L10n.string("no_assets_match")
     }
@@ -1419,28 +1572,10 @@ struct HardwareTab: View {
             }
 
             Section {
-                HStack {
-                    if isMaintenanceSubtabActive {
-                        Label("\(displayedMaintenances.count)", systemImage: "wrench.and.screwdriver")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        maintenanceFilterMenu
-                    } else if isAuditSubtabActive {
-                        Label("\(auditOverviewCount)", systemImage: "checkmark.seal")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                    } else {
-                        Label("\(searchFilteredAssets.count)", systemImage: "laptopcomputer")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if assetFilterOptions.hasFilterOptions {
-                            AssetFilterMenu(filter: $assetFilter, options: assetFilterOptions)
-                        }
-                    }
-                }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                hardwareCountSortBar
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             }
 
             if isMaintenanceSubtabActive {
@@ -1533,6 +1668,7 @@ struct HardwareTab: View {
         .browseListBackground()
         .listSectionSpacing(0)
         .listSectionSeparator(.hidden)
+        .compactLayoutWhileSearching()
         .overlay {
             if isMaintenanceSubtabActive {
                 if isLoadingMaintenances && apiClient.maintenances.isEmpty {
@@ -1666,7 +1802,7 @@ struct HardwareTab: View {
             if isAuditTabActive {
                 selectedAuditAsset = asset
             } else {
-                navigationPath.append(asset)
+                navigationPath.append(AssetNavID(id: asset.id))
             }
         } label: {
             AssetCardView(asset: asset, showNextAuditDate: shouldShowNextAuditDateOnCard)
@@ -1701,10 +1837,18 @@ struct HardwareTab: View {
     }
 
     private func tryPushPendingQRLink() {
-        guard case .hardware(let id) = pendingQRLink,
-              let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
-        navigationPath.append(asset)
-        pendingQRLink = nil
+        switch pendingQRLink {
+        case .hardware(let id):
+            guard let asset = apiClient.assets.first(where: { $0.id == id }) else { return }
+            navigationPath.append(AssetNavID(id: asset.id))
+            pendingQRLink = nil
+        case .maintenance(let id):
+            guard let record = apiClient.maintenances.first(where: { $0.id == id }) else { return }
+            selectedMaintenance = record
+            pendingQRLink = nil
+        default:
+            return
+        }
     }
 }
 
@@ -1730,7 +1874,9 @@ struct AccessoriesTab: View {
                 navigationPath: $navigationPath
             )
             .onAppear {
-                isDetailViewActive = false
+                if navigationPath.isEmpty {
+                    isDetailViewActive = false
+                }
                 tryPushPendingQRLink()
             }
             .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
@@ -1755,6 +1901,7 @@ struct AccessoriesTab: View {
                     }
                 }
             }
+            .compactLayoutWhileSearching()
             .searchable(text: $searchText, prompt: L10n.string("search_accessories"))
             .refreshable {
                 if apiClient.isConfigured {
@@ -1802,7 +1949,9 @@ struct LicensesTab: View {
                 navigationPath: $navigationPath
             )
             .onAppear {
-                isDetailViewActive = false
+                if navigationPath.isEmpty {
+                    isDetailViewActive = false
+                }
                 tryPushPendingQRLink()
             }
             .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
@@ -1817,6 +1966,7 @@ struct LicensesTab: View {
                 }
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
             }
+            .compactLayoutWhileSearching()
             .searchable(text: $searchText, prompt: L10n.string("search_licenses"))
             .refreshable {
                 if apiClient.isConfigured {
@@ -1864,6 +2014,8 @@ private struct LicensesContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var listSort = ListSort.updatedDescending
+    @State private var licenseListMemo = ListSortMemo<License>()
     @State private var itemToDelete: License?
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -1913,12 +2065,31 @@ private struct LicensesContent: View {
     }
 
     var filteredLicenses: [License] {
-        var items = apiClient.licenses
-        if filter.isActive {
-            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        licenseListMemo.cached(
+            from: apiClient.licenses,
+            search: searchText,
+            sort: listSort,
+            extra: filter
+        ) { items in
+            var result = items
+            if filter.isActive {
+                result = result.filter { filter.matches($0, dimensions: dimensions) }
+            }
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.licenseMatches($0, query: searchText) }
+            }
+            return applyListSort(result, sort: listSort, keys: ListSortCatalog.licenses)
         }
-        if searchText.isEmpty { return items }
-        return items.filter { SearchHelpers.licenseMatches($0, query: searchText) }
+    }
+
+    private var countSortBar: some View {
+        HStack {
+            Label("\(filteredLicenses.count)", systemImage: "doc.text.fill")
+                .foregroundStyle(.primary)
+            Spacer()
+            ListSortMenu(sort: $listSort, keys: ListSortCatalog.licenses)
+            ListFilterMenu(filter: $filter, options: filterOptions)
+        }
     }
 
     var body: some View {
@@ -1940,12 +2111,7 @@ private struct LicensesContent: View {
             } else {
                 List {
                     Section {
-                        HStack {
-                            Label("\(filteredLicenses.count)", systemImage: "doc.text.fill")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            ListFilterMenu(filter: $filter, options: filterOptions)
-                        }
+                        countSortBar
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
@@ -1977,6 +2143,7 @@ private struct LicensesContent: View {
                 .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .compactLayoutWhileSearching()
                 .overlay {
                     if filteredLicenses.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                         ContentUnavailableView(L10n.string("no_licenses"), systemImage: "doc.text.fill")
@@ -2097,7 +2264,9 @@ struct StockTab: View {
                 }
             }
             .onAppear {
-                isDetailViewActive = false
+                if navigationPath.isEmpty {
+                    isDetailViewActive = false
+                }
                 tryPushPendingQRLink()
             }
             .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
@@ -2128,6 +2297,7 @@ struct StockTab: View {
                 }
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
             }
+            .compactLayoutWhileSearching()
             .searchable(text: $searchText, prompt: searchPrompt)
             .refreshable {
                 if apiClient.isConfigured {
@@ -2210,6 +2380,8 @@ private struct ConsumablesContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var listSort = ListSort.updatedDescending
+    @State private var consumableListMemo = ListSortMemo<Consumable>()
     @State private var itemToDelete: Consumable?
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -2259,12 +2431,31 @@ private struct ConsumablesContent: View {
     }
 
     var filteredConsumables: [Consumable] {
-        var items = apiClient.consumables
-        if filter.isActive {
-            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        consumableListMemo.cached(
+            from: apiClient.consumables,
+            search: searchText,
+            sort: listSort,
+            extra: filter
+        ) { items in
+            var result = items
+            if filter.isActive {
+                result = result.filter { filter.matches($0, dimensions: dimensions) }
+            }
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.consumableMatches($0, query: searchText) }
+            }
+            return applyListSort(result, sort: listSort, keys: ListSortCatalog.consumables)
         }
-        if searchText.isEmpty { return items }
-        return items.filter { SearchHelpers.consumableMatches($0, query: searchText) }
+    }
+
+    private var countSortBar: some View {
+        HStack {
+            Label("\(filteredConsumables.count)", systemImage: "shippingbox")
+                .foregroundStyle(.primary)
+            Spacer()
+            ListSortMenu(sort: $listSort, keys: ListSortCatalog.consumables)
+            ListFilterMenu(filter: $filter, options: filterOptions)
+        }
     }
 
     var body: some View {
@@ -2286,12 +2477,7 @@ private struct ConsumablesContent: View {
             } else {
                 List {
                     Section {
-                        HStack {
-                            Label("\(filteredConsumables.count)", systemImage: "shippingbox")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            ListFilterMenu(filter: $filter, options: filterOptions)
-                        }
+                        countSortBar
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
@@ -2323,6 +2509,7 @@ private struct ConsumablesContent: View {
                 .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .compactLayoutWhileSearching()
                 .overlay {
                     if filteredConsumables.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                         ContentUnavailableView(L10n.string("no_consumables"), systemImage: "shippingbox")
@@ -2375,6 +2562,8 @@ private struct ComponentsContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var listSort = ListSort.updatedDescending
+    @State private var componentListMemo = ListSortMemo<Component>()
     @State private var itemToDelete: Component?
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -2424,12 +2613,31 @@ private struct ComponentsContent: View {
     }
 
     var filteredComponents: [Component] {
-        var items = apiClient.components
-        if filter.isActive {
-            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        componentListMemo.cached(
+            from: apiClient.components,
+            search: searchText,
+            sort: listSort,
+            extra: filter
+        ) { items in
+            var result = items
+            if filter.isActive {
+                result = result.filter { filter.matches($0, dimensions: dimensions) }
+            }
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.componentMatches($0, query: searchText) }
+            }
+            return applyListSort(result, sort: listSort, keys: ListSortCatalog.components)
         }
-        if searchText.isEmpty { return items }
-        return items.filter { SearchHelpers.componentMatches($0, query: searchText) }
+    }
+
+    private var countSortBar: some View {
+        HStack {
+            Label("\(filteredComponents.count)", systemImage: "cpu")
+                .foregroundStyle(.primary)
+            Spacer()
+            ListSortMenu(sort: $listSort, keys: ListSortCatalog.components)
+            ListFilterMenu(filter: $filter, options: filterOptions)
+        }
     }
 
     var body: some View {
@@ -2451,12 +2659,7 @@ private struct ComponentsContent: View {
             } else {
                 List {
                     Section {
-                        HStack {
-                            Label("\(filteredComponents.count)", systemImage: "cpu")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            ListFilterMenu(filter: $filter, options: filterOptions)
-                        }
+                        countSortBar
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
@@ -2488,6 +2691,7 @@ private struct ComponentsContent: View {
                 .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .compactLayoutWhileSearching()
                 .overlay {
                     if filteredComponents.isEmpty && apiClient.isConfigured && !apiClient.isLoading {
                         ContentUnavailableView(L10n.string("no_components"), systemImage: "cpu")
@@ -2588,6 +2792,8 @@ private struct AccessoriesContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var listSort = ListSort.updatedDescending
+    @State private var accessoryListMemo = ListSortMemo<Accessory>()
     @State private var itemToDelete: Accessory?
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -2629,12 +2835,31 @@ private struct AccessoriesContent: View {
     }
 
     var filteredAccessories: [Accessory] {
-        var items = apiClient.accessories
-        if filter.isActive {
-            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        accessoryListMemo.cached(
+            from: apiClient.accessories,
+            search: searchText,
+            sort: listSort,
+            extra: filter
+        ) { items in
+            var result = items
+            if filter.isActive {
+                result = result.filter { filter.matches($0, dimensions: dimensions) }
+            }
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.accessoryMatches($0, query: searchText) }
+            }
+            return applyListSort(result, sort: listSort, keys: ListSortCatalog.accessories)
         }
-        if searchText.isEmpty { return items }
-        return items.filter { SearchHelpers.accessoryMatches($0, query: searchText) }
+    }
+
+    private var countSortBar: some View {
+        HStack {
+            Label("\(filteredAccessories.count)", systemImage: "mediastick")
+                .foregroundStyle(.primary)
+            Spacer()
+            ListSortMenu(sort: $listSort, keys: ListSortCatalog.accessories)
+            ListFilterMenu(filter: $filter, options: filterOptions)
+        }
     }
 
     var body: some View {
@@ -2656,12 +2881,7 @@ private struct AccessoriesContent: View {
             } else {
                 List {
                     Section {
-                        HStack {
-                            Label("\(filteredAccessories.count)", systemImage: "mediastick")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            ListFilterMenu(filter: $filter, options: filterOptions)
-                        }
+                        countSortBar
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
@@ -2693,6 +2913,7 @@ private struct AccessoriesContent: View {
                 .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .compactLayoutWhileSearching()
                 .moduleEmptyOverlay(
                     isVisible: filteredAccessories.isEmpty && apiClient.isConfigured && !apiClient.isLoading,
                     title: L10n.string("no_accessories"),
@@ -2752,6 +2973,7 @@ struct DirectoryTab: View {
     @Binding var showingScanner: Bool
     @Binding var navigationPath: NavigationPath
     @Binding var isDetailViewActive: Bool
+    @Binding var pendingQRLink: SnipeITQRLink?
 
     @AppStorage("directorySelectedSubmodule") private var selectedSubmoduleRaw: String = DirectorySubmodule.users.rawValue
 
@@ -2795,7 +3017,12 @@ struct DirectoryTab: View {
                 if navigationPath.isEmpty {
                     isDetailViewActive = false
                 }
+                tryPushPendingQRLink()
             }
+            .onChange(of: pendingQRLink) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: selectedSubmoduleRaw) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.locations) { _, _ in tryPushPendingQRLink() }
+            .onChange(of: apiClient.users) { _, _ in tryPushPendingQRLink() }
             .navigationTitle(selectedSubmodule.localizedTitle)
             .toolbar {
                 if enabledSubmodules.count > 1 {
@@ -2858,6 +3085,7 @@ struct DirectoryTab: View {
                     }
                 )
             }
+            .compactLayoutWhileSearching()
             .searchable(
                 text: $searchText,
                 prompt: selectedSubmodule == .users
@@ -2888,6 +3116,23 @@ struct DirectoryTab: View {
         }
         .syncTabBarWithNavigationPath(navigationPath)
     }
+
+    private func tryPushPendingQRLink() {
+        switch pendingQRLink {
+        case .location(let id):
+            guard selectedSubmodule == .locations,
+                  let location = apiClient.locations.first(where: { $0.id == id }) else { return }
+            navigationPath.append(location)
+            pendingQRLink = nil
+        case .user(let id):
+            guard selectedSubmodule == .users,
+                  let user = apiClient.users.first(where: { $0.id == id }) else { return }
+            navigationPath.append(user)
+            pendingQRLink = nil
+        default:
+            return
+        }
+    }
 }
 
 private struct UsersContent: View {
@@ -2897,6 +3142,8 @@ private struct UsersContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var filter = ListFilter()
+    @State private var listSort = ListSort.nameAscending
+    @State private var userListMemo = ListSortMemo<User>()
     @State private var itemToDelete: User?
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -2935,14 +3182,41 @@ private struct UsersContent: View {
     }
 
     var filteredUsers: [User] {
-        var items = apiClient.users
-        if filter.isActive {
-            items = items.filter { filter.matches($0, dimensions: dimensions) }
+        userListMemo.cached(
+            from: apiClient.users,
+            search: searchText,
+            sort: listSort,
+            extra: EquatablePair(first: filter, second: apiClient.currentUser?.id)
+        ) { items in
+            var result = items
+            if filter.isActive {
+                result = result.filter { filter.matches($0, dimensions: dimensions) }
+            }
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.userMatches($0, query: searchText) }
+            }
+            result = applyListSort(result, sort: listSort, keys: ListSortCatalog.users)
+            if listSort.field == .name, listSort.order == .ascending {
+                return pinningCurrentUser(result)
+            }
+            return result
         }
-        if !searchText.isEmpty {
-            items = items.filter { SearchHelpers.userMatches($0, query: searchText) }
+    }
+
+    private func pinningCurrentUser(_ users: [User]) -> [User] {
+        guard let meId = apiClient.currentUser?.id,
+              let pinned = users.first(where: { $0.id == meId }) else { return users }
+        return [pinned] + users.filter { $0.id != meId }
+    }
+
+    private var countSortBar: some View {
+        HStack {
+            Label("\(filteredUsers.count)", systemImage: "person.2")
+                .foregroundStyle(.primary)
+            Spacer()
+            ListSortMenu(sort: $listSort, keys: ListSortCatalog.users)
+            ListFilterMenu(filter: $filter, options: filterOptions)
         }
-        return apiClient.sortedUsersPinningCurrent(items)
     }
 
     var body: some View {
@@ -2964,12 +3238,7 @@ private struct UsersContent: View {
             } else {
                 List {
                     Section {
-                        HStack {
-                            Label("\(filteredUsers.count)", systemImage: "person.2")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            ListFilterMenu(filter: $filter, options: filterOptions)
-                        }
+                        countSortBar
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
@@ -3001,6 +3270,7 @@ private struct UsersContent: View {
                 .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .compactLayoutWhileSearching()
                 .moduleEmptyOverlay(
                     isVisible: filteredUsers.isEmpty && apiClient.isConfigured && !apiClient.isLoading,
                     title: L10n.string("no_users"),
@@ -3053,14 +3323,34 @@ private struct LocationsContent: View {
     @Binding var navigationPath: NavigationPath
 
     @State private var itemToDelete: Location?
+    @State private var listSort = ListSort.nameAscending
+    @State private var locationListMemo = ListSortMemo<Location>()
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var showDeleteError = false
     @State private var deleteErrorMessage = ""
 
     var filteredLocations: [Location] {
-        if searchText.isEmpty { return apiClient.locations }
-        return apiClient.locations.filter { SearchHelpers.locationMatches($0, query: searchText) }
+        locationListMemo.cached(
+            from: apiClient.locations,
+            search: searchText,
+            sort: listSort
+        ) { items in
+            var result = items
+            if !searchText.isEmpty {
+                result = result.filter { SearchHelpers.locationMatches($0, query: searchText) }
+            }
+            return applyListSort(result, sort: listSort, keys: ListSortCatalog.locations)
+        }
+    }
+
+    private var countSortBar: some View {
+        HStack {
+            Label("\(filteredLocations.count)", systemImage: "mappin.and.ellipse")
+                .foregroundStyle(.primary)
+            Spacer()
+            ListSortMenu(sort: $listSort, keys: ListSortCatalog.locations)
+        }
     }
 
     var body: some View {
@@ -3082,11 +3372,7 @@ private struct LocationsContent: View {
             } else {
                 List {
                     Section {
-                        HStack {
-                            Label("\(apiClient.locations.count)", systemImage: "mappin.and.ellipse")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                        }
+                        countSortBar
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
@@ -3118,6 +3404,7 @@ private struct LocationsContent: View {
                 .browseListBackground()
                 .listSectionSpacing(.compact)
                 .listSectionSeparator(.hidden)
+                .compactLayoutWhileSearching()
                 .moduleEmptyOverlay(
                     isVisible: filteredLocations.isEmpty && apiClient.isConfigured && !apiClient.isLoading,
                     title: L10n.string("no_locations"),

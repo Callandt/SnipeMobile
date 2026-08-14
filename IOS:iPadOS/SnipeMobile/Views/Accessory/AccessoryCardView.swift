@@ -3,18 +3,17 @@ import SwiftUI
 struct AccessoryCardView: View {
     let accessory: Accessory
     var useExplicitBackground: Bool = true
-    @EnvironmentObject var appSettings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CardListIcon(systemName: "mediastick", imagePath: accessory.image)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(accessory.decodedName)
+                    Text(verbatim: accessory.decodedName)
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
-                    Text(String(format: L10n.string("tag_label"), accessory.decodedAssetTag))
+                    Text(verbatim: L10n.string("tag_label", accessory.decodedAssetTag))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {

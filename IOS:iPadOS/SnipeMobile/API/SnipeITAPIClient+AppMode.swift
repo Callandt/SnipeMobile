@@ -111,17 +111,28 @@ extension SnipeITAPIClient {
 
     /// Sync for the active app mode.
     func syncForCurrentAppMode() async {
+        listApplyGeneration += 1
+        let generation = listApplyGeneration
         switch AppModeStore.current {
         case .user:
-            await fetchUserModeData()
+            primaryFetchTask?.cancel()
+            primaryFetchTask = nil
+            fetchAssetsGeneration += 1
+            await persistCacheNow(for: .admin)
+            guard generation == listApplyGeneration else { return }
+            await fetchUserModeData(applyGeneration: generation)
             WidgetSnapshotBuilder.publishAdminOnly(baseURL: baseURL, isConfigured: isConfigured)
         case .admin, .none:
+            if let snapshot = loadSnapshot(for: .admin), !snapshot.assets.isEmpty {
+                applyCachedSnapshot(snapshot, replacing: true)
+            }
+            guard generation == listApplyGeneration else { return }
             await fetchPrimaryThenBackground()
         }
     }
 
     /// Load current user and assigned items.
-    func fetchUserModeData(clearRefreshError: Bool = false) async {
+    func fetchUserModeData(clearRefreshError: Bool = false, applyGeneration: Int? = nil) async {
         isLoading = true
         errorMessage = nil
         if clearRefreshError {
@@ -140,11 +151,11 @@ extension SnipeITAPIClient {
             async let accessories = fetchUserAccessories(userId: id, reportErrors: false)
             async let licenses = fetchUserLicenses(userId: id, reportErrors: false)
             let (myAssets, myAccessories, myLicenses) = await (mine, accessories, licenses)
-            await MainActor.run {
-                self.assets = myAssets
-                self.accessories = myAccessories
-                self.licenses = myLicenses
-            }
+            let generation = applyGeneration ?? listApplyGeneration
+            guard generation == listApplyGeneration else { return }
+            self.assets = myAssets.uniquedByID()
+            self.accessories = myAccessories
+            self.licenses = myLicenses
         } else if isConfigured {
             // Empty `/users/me` without error → connection failure.
             reportRefreshError(L10n.string("api_validate_connect_failed"))

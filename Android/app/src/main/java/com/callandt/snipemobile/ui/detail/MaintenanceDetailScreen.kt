@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,18 +52,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.callandt.snipemobile.data.model.AssetMaintenance
 import com.callandt.snipemobile.data.model.DateInfo
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.CardListIcon
 import com.callandt.snipemobile.ui.components.MaintenanceLinkedAssetInfo
+import com.callandt.snipemobile.ui.components.TappableDetailImage
 import com.callandt.snipemobile.ui.components.copyDetailValue
 import com.callandt.snipemobile.ui.maintenance.EditMaintenanceSheet
 import com.callandt.snipemobile.ui.theme.SnipeAccent
@@ -347,14 +345,9 @@ private fun MaintenanceDetailBody(
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(bottom = 8.dp),
                         )
-                        AsyncImage(
-                            model = imageUrl,
+                        TappableDetailImage(
+                            url = imageUrl,
                             contentDescription = L10n.string("image"),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 140.dp, max = 220.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Fit,
                         )
                     }
                 }

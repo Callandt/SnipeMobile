@@ -25,6 +25,13 @@ struct UserModeRootView: View {
     @State private var assetsPath = NavigationPath()
     @State private var requestsPath = NavigationPath()
     @State private var isDetailViewActive = false
+    private var isDetailPushedOnSelectedTab: Bool {
+        switch selectedTab {
+        case .me: return false
+        case .assets: return !assetsPath.isEmpty
+        case .requests: return !requestsPath.isEmpty
+        }
+    }
     @State private var selectedAssetDetailTab = 0
     @State private var showingSettings = false
     @State private var isRefreshingRequests = false
@@ -119,11 +126,10 @@ struct UserModeRootView: View {
             await reloadAll(reportErrors: true)
         }
         .onChange(of: selectedTab) { _, _ in
-            isDetailViewActive = false
             assetsPath = NavigationPath()
             requestsPath = NavigationPath()
         }
-        .modifier(TabBarMinimizeBehaviorModifier(isDetailVisible: isDetailViewActive))
+        .modifier(TabBarMinimizeBehaviorModifier(isDetailVisible: isDetailPushedOnSelectedTab))
         .sheet(isPresented: $showingSettings, onDismiss: {
             requestableAssets = []
             Task { await reloadAll(reportErrors: true) }
@@ -263,6 +269,7 @@ struct UserModeRootView: View {
             }
             .navigationTitle(L10n.string("user_mode_my_assets"))
             .navigationBarTitleDisplayMode(.large)
+            .compactLayoutWhileSearching()
             .searchable(text: $assetsSearchText, prompt: Text(L10n.string("search_assets")))
             .toolbar {
                 settingsToolbarButton

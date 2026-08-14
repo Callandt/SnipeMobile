@@ -1,14 +1,48 @@
 package com.callandt.snipemobile.ui.util
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.util.Locale
 
 /** Localized UI strings. */
 object L10n {
+    const val SYSTEM_LANGUAGE = "system"
+    val supportedLanguageCodes = listOf(
+        "en", "nl", "fr", "es", "de", "zh", "pt", "ja", "it", "ko", "ru", "ar",
+    )
+
+    var overrideLanguageCode: String by mutableStateOf(SYSTEM_LANGUAGE)
+
     private val languageCode: String
         get() {
-            val preferred = Locale.getDefault().language.lowercase()
-            return preferred.ifEmpty { "en" }
+            val stored = overrideLanguageCode
+            if (stored != SYSTEM_LANGUAGE && stored in supportedLanguageCodes) return stored
+            return deviceLanguageCode
         }
+
+    val deviceLanguageCode: String
+        get() {
+            val code = Locale.getDefault().language.lowercase().ifEmpty { "en" }
+            return if (code in supportedLanguageCodes) code else "en"
+        }
+
+    /** Picker languages besides the device language. */
+    val languagePickerCodes: List<String>
+        get() = supportedLanguageCodes.filter { it != deviceLanguageCode }
+
+    private fun nativeLanguageName(code: String): String {
+        val loc = Locale.forLanguageTag(code)
+        val name = loc.getDisplayLanguage(loc)
+        return name.replaceFirstChar { if (it.isLowerCase()) it.titlecase(loc) else it.toString() }
+    }
+
+    fun languageDisplayName(code: String): String {
+        if (code == SYSTEM_LANGUAGE) {
+            return "${nativeLanguageName(deviceLanguageCode)} (${string("system")})"
+        }
+        return nativeLanguageName(code)
+    }
 
     val isDutch: Boolean get() = languageCode == "nl"
     val isFrench: Boolean get() = languageCode == "fr"
@@ -53,7 +87,7 @@ object L10n {
         else -> L10n_en.strings
     }
 
-    fun string(key: String, locale: Locale = Locale.getDefault()): String {
+    fun string(key: String, locale: Locale = L10n.locale): String {
         val code = locale.language.lowercase().ifEmpty { "en" }
         val primary = tableFor(code)
         return primary[key] ?: L10n_en.strings[key] ?: key

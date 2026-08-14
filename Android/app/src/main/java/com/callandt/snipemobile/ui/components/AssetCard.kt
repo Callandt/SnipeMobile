@@ -101,22 +101,21 @@ fun AssetCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = L10n.string("tag_label", asset.decodedAssetTag),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (asset.decodedSerial.isNotEmpty()) {
                             Text(
-                                text = L10n.string("tag_label", asset.decodedAssetTag),
+                                text = "${L10n.string("sn_label")} ${asset.decodedSerial}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                            if (asset.decodedSerial.isNotEmpty()) {
-                                Text(
-                                    text = "${L10n.string("sn_label")} ${asset.decodedSerial}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false),
-                                )
-                            }
                         }
                         if (!status.isNullOrBlank()) {
                             Text(

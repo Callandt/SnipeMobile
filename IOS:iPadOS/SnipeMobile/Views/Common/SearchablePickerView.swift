@@ -151,11 +151,21 @@ struct AdaptivePickerRow<Value: Hashable>: View {
         totalCount > kLargeListThreshold || onAddNew != nil
     }
 
+    /// Picker crashes when selection has no matching tag.
+    private var taggedItems: [(value: Value, label: String)] {
+        var result = items
+        let known = result.map(\.value)
+        if !known.contains(selection), emptyOption?.value != selection {
+            result.append((selection, "—"))
+        }
+        return result
+    }
+
     var body: some View {
         if useSearchable {
             SearchablePickerRow(
                 title: title,
-                items: items,
+                items: taggedItems,
                 selection: $selection,
                 emptyOption: emptyOption,
                 addNewLabel: addNewLabel,
@@ -166,7 +176,7 @@ struct AdaptivePickerRow<Value: Hashable>: View {
                 if let e = emptyOption {
                     Text(e.label).tag(e.value)
                 }
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                ForEach(Array(taggedItems.enumerated()), id: \.offset) { _, item in
                     Text(item.label).tag(item.value)
                 }
             }

@@ -91,8 +91,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 
-data class LoadingProgress(val current: Int, val total: Int)
-
 data class AssetTagGenerationSettings(
     val autoIncrementAssets: Boolean,
     val prefix: String,
@@ -266,15 +264,13 @@ class SnipeApiClient(
     private val _lastApiMessage = MutableStateFlow<String?>(null)
     val lastApiMessage: StateFlow<String?> = _lastApiMessage.asStateFlow()
 
-    private val _loadingProgress = MutableStateFlow<LoadingProgress?>(null)
-    val loadingProgress: StateFlow<LoadingProgress?> = _loadingProgress.asStateFlow()
-
     private var cacheSaveJob: Job? = null
     private var isApplyingCache = false
     private var primaryFetchJob: Job? = null
     private val primaryFetchMutex = Mutex()
     private val fetchAssetsGeneration = AtomicInteger(0)
     private var fetchAssetsJob: Job? = null
+    private var listApplyGeneration = 0
     private val assetsPendingDetailRefresh = mutableSetOf<Int>()
 
     val baseUrl: String
@@ -283,8 +279,10 @@ class SnipeApiClient(
     val apiToken: String
         get() = secureStore.getString(AppSecret.API_TOKEN)
 
-    private val cacheKey: String
-        get() = LocalCacheStore.keyForBaseUrl(baseUrl)
+    private fun cacheKey(forMode: AppMode? = appModeStore.current.value): String {
+        val base = LocalCacheStore.keyForBaseUrl(baseUrl)
+        return if (forMode == AppMode.User) "$base-user" else "$base-admin"
+    }
 
     init {
         secureStore.migrateLegacyPlaintextSecretsIfNeeded(
@@ -364,7 +362,6 @@ class SnipeApiClient(
             _fieldsets.value = null
             _hasCompletedInitialLoad.value = false
             _isLoading.value = false
-            _loadingProgress.value = null
             _errorMessage.value = null
             _lastApiMessage.value = null
             _refreshErrorMessage.value = null
@@ -408,26 +405,38 @@ class SnipeApiClient(
 
     fun loadCachedDataIfAvailable() {
         if (!_isConfigured.value || baseUrl.isEmpty()) return
-        val snapshot = LocalCacheStore.load(appContext, cacheKey) ?: return
+        val snapshot = loadSnapshot(appModeStore.current.value) ?: return
+        applyCachedSnapshot(snapshot, replacing = false)
+    }
+
+    private fun loadSnapshot(mode: AppMode?): SnipeDataCacheSnapshot? {
+        LocalCacheStore.load(appContext, cacheKey(mode))?.let { return it }
+        if (mode != AppMode.User) {
+            return LocalCacheStore.load(appContext, LocalCacheStore.keyForBaseUrl(baseUrl))
+        }
+        return null
+    }
+
+    private fun applyCachedSnapshot(snapshot: SnipeDataCacheSnapshot, replacing: Boolean) {
         isApplyingCache = true
         try {
             if (snapshot.assets.isNotEmpty()) _hasCompletedInitialLoad.value = true
-            if (_assets.value.isEmpty()) _assets.value = snapshot.assets
-            if (_users.value.isEmpty()) _users.value = snapshot.users
-            if (_currentUser.value == null && snapshot.currentUser != null) {
+            if (replacing || _assets.value.isEmpty()) _assets.value = snapshot.assets
+            if (replacing || _users.value.isEmpty()) _users.value = snapshot.users
+            if ((_currentUser.value == null || replacing) && snapshot.currentUser != null) {
                 _currentUser.value = snapshot.users.find { it.id == snapshot.currentUser?.id }
                     ?: snapshot.currentUser
             }
-            if (_accessories.value.isEmpty()) _accessories.value = snapshot.accessories
-            if (_licenses.value.isEmpty()) _licenses.value = snapshot.licenses
-            if (_consumables.value.isEmpty()) _consumables.value = snapshot.consumables
-            if (_components.value.isEmpty()) _components.value = snapshot.components
-            if (_locations.value.isEmpty()) _locations.value = snapshot.locations
-            if (_companies.value.isEmpty()) _companies.value = snapshot.companies
-            if (_manufacturers.value.isEmpty()) _manufacturers.value = snapshot.manufacturers
-            if (_suppliers.value.isEmpty()) _suppliers.value = snapshot.suppliers
-            if (_statusLabels.value.isEmpty()) _statusLabels.value = snapshot.statusLabels
-            if (_maintenances.value.isEmpty()) _maintenances.value = snapshot.maintenances
+            if (replacing || _accessories.value.isEmpty()) _accessories.value = snapshot.accessories
+            if (replacing || _licenses.value.isEmpty()) _licenses.value = snapshot.licenses
+            if (replacing || _consumables.value.isEmpty()) _consumables.value = snapshot.consumables
+            if (replacing || _components.value.isEmpty()) _components.value = snapshot.components
+            if (replacing || _locations.value.isEmpty()) _locations.value = snapshot.locations
+            if (replacing || _companies.value.isEmpty()) _companies.value = snapshot.companies
+            if (replacing || _manufacturers.value.isEmpty()) _manufacturers.value = snapshot.manufacturers
+            if (replacing || _suppliers.value.isEmpty()) _suppliers.value = snapshot.suppliers
+            if (replacing || _statusLabels.value.isEmpty()) _statusLabels.value = snapshot.statusLabels
+            if (replacing || _maintenances.value.isEmpty()) _maintenances.value = snapshot.maintenances
         } finally {
             isApplyingCache = false
         }
@@ -442,7 +451,7 @@ class SnipeApiClient(
         }
     }
 
-    private suspend fun persistCacheNow() {
+    private suspend fun persistCacheNow(forMode: AppMode? = appModeStore.current.value) {
         if (!_isConfigured.value || baseUrl.isEmpty()) return
         val snapshot = SnipeDataCacheSnapshot(
             assets = _assets.value,
@@ -459,8 +468,10 @@ class SnipeApiClient(
             statusLabels = _statusLabels.value,
             maintenances = _maintenances.value,
         )
-        LocalCacheStore.save(appContext, snapshot, cacheKey)
-        WidgetSnapshotBuilder.update(appContext, snapshot, baseUrl, _isConfigured.value)
+        LocalCacheStore.save(appContext, snapshot, cacheKey(forMode))
+        if (forMode != AppMode.User) {
+            WidgetSnapshotBuilder.update(appContext, snapshot, baseUrl, _isConfigured.value)
+        }
     }
 
     // endregion
@@ -495,7 +506,6 @@ class SnipeApiClient(
             return
         }
         fetchUsers()
-        reconcileCurrentUserWithUsersList()
         if (_refreshErrorMessage.value != null || _pendingUnauthorizedSessionWipe.value) {
             withContext(Dispatchers.Main) {
                 _isLoading.value = false
@@ -619,17 +629,33 @@ class SnipeApiClient(
 
     /** Sync for the active app mode. */
     suspend fun syncForCurrentAppMode() {
+        listApplyGeneration += 1
+        val generation = listApplyGeneration
         when (appModeStore.current.value) {
             AppMode.User -> {
-                fetchUserModeData()
+                primaryFetchJob?.cancel()
+                primaryFetchJob = null
+                fetchAssetsGeneration.incrementAndGet()
+                persistCacheNow(AppMode.Admin)
+                if (generation != listApplyGeneration) return
+                fetchUserModeData(applyGeneration = generation)
                 WidgetSnapshotBuilder.publishAdminOnly(appContext, baseUrl, _isConfigured.value)
             }
-            AppMode.Admin, null -> fetchPrimaryThenBackground()
+            AppMode.Admin, null -> {
+                val snapshot = loadSnapshot(AppMode.Admin)
+                if (snapshot != null && snapshot.assets.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        applyCachedSnapshot(snapshot, replacing = true)
+                    }
+                }
+                if (generation != listApplyGeneration) return
+                fetchPrimaryThenBackground()
+            }
         }
     }
 
     /** Load current user and assigned items. */
-    suspend fun fetchUserModeData(clearRefreshError: Boolean = false) {
+    suspend fun fetchUserModeData(clearRefreshError: Boolean = false, applyGeneration: Int? = null) {
         withContext(Dispatchers.Main) {
             _isLoading.value = true
             _errorMessage.value = null
@@ -653,6 +679,8 @@ class SnipeApiClient(
             val myAccessories = fetchUserAccessories(userId, allowAdminFallback = false)
             val myLicenses = fetchUserLicenses(userId)
             withContext(Dispatchers.Main) {
+                val generation = applyGeneration ?: listApplyGeneration
+                if (generation != listApplyGeneration) return@withContext
                 _assets.value = myAssets
                 _accessories.value = myAccessories
                 _licenses.value = myLicenses
@@ -768,7 +796,6 @@ class SnipeApiClient(
             decodePayloadOrRoot<User>(response.body)?.let { user ->
                 withContext(Dispatchers.Main) {
                     _currentUser.value = user
-                    reconcileCurrentUserWithUsersList()
                 }
             } ?: run {
                 if (reportErrors) {
@@ -780,10 +807,6 @@ class SnipeApiClient(
                 reportRefreshError(localizedConnectionFailureMessage(e))
             }
         }
-    }
-
-    private fun reconcileCurrentUserWithUsersList() {
-        // Keep `/users/me`; do not overwrite from the users list.
     }
 
     suspend fun fetchAssets() {
@@ -799,7 +822,6 @@ class SnipeApiClient(
             val rows = fetchAllPaginated(
                 path = "/api/v1/hardware",
                 serializer = Asset.serializer(),
-                reportProgress = true,
                 reportConnectionError = true,
                 isCancelled = { generation != fetchAssetsGeneration.get() },
             ) ?: return@launch
@@ -831,7 +853,6 @@ class SnipeApiClient(
         ) ?: return
         withContext(Dispatchers.Main) {
             _users.value = rows.sortedBy { it.decodedName.lowercase(Locale.getDefault()) }
-            reconcileCurrentUserWithUsersList()
         }
         scheduleCacheSave()
     }
@@ -2905,84 +2926,64 @@ class SnipeApiClient(
     private suspend fun <T> fetchAllPaginated(
         path: String,
         serializer: KSerializer<T>,
-        reportProgress: Boolean = false,
         reportConnectionError: Boolean = false,
         extraQuery: Map<String, String> = emptyMap(),
         isCancelled: () -> Boolean = { false },
-    ): List<T>? = fetchAllPaginatedInternal(path, serializer, reportProgress, reportConnectionError, extraQuery, isCancelled)
-
-    private suspend fun <T> fetchAllPaginatedInternal(
-        path: String,
-        serializer: KSerializer<T>,
-        reportProgress: Boolean,
-        reportConnectionError: Boolean,
-        extraQuery: Map<String, String>,
-        isCancelled: () -> Boolean,
     ): List<T>? {
         if (baseUrl.isEmpty() || apiToken.isEmpty()) return null
         val collected = mutableListOf<T>()
         var offset = 0
         var serverTotal: Int? = null
-        if (reportProgress) withContext(Dispatchers.Main) { _loadingProgress.value = LoadingProgress(0, -1) }
-        try {
-            while (true) {
-                if (isCancelled()) return null
-                val query = buildString {
-                    append("limit=$API_PAGE_SIZE&offset=$offset")
-                    extraQuery.forEach { (k, v) -> append("&$k=$v") }
-                }
-                val url = "$baseUrl$path?$query"
-                val response = try {
-                    executeGet(url, reportConnectionError = reportConnectionError)
-                } catch (e: Exception) {
-                    if (reportConnectionError) {
-                        withContext(Dispatchers.Main) {
-                            reportRefreshError(localizedConnectionFailureMessage(e))
-                        }
-                    }
-                    throw e
-                }
-                if (response.code == 429) {
-                    delay(RATE_LIMIT_RETRY_MS)
-                    continue
-                }
-                if (response.code !in 200..299) {
-                    if (reportConnectionError) {
-                        withContext(Dispatchers.Main) {
-                            reportHttpRefreshFailure(response.code)
-                        }
-                    }
-                    return null
-                }
-                val pageJson = parseJsonObject(response.body)
-                val rowsElement = pageJson?.get("rows")
-                val rows = if (rowsElement is JsonArray) {
-                    rowsElement.mapNotNull { element ->
-                        runCatching { SnipeJson.decodeFromJsonElement(serializer, element) }.getOrNull()
-                    }
-                } else {
-                    // Unexpected page body shape.
-                    runCatching {
-                        SnipeJson.decodeFromString(PagedResponse.serializer(serializer), response.body).rows.orEmpty()
-                    }.getOrElse { emptyList() }
-                }
-                collected.addAll(rows)
-                serverTotal = pageJson?.get("total")?.jsonPrimitive?.intOrNull ?: serverTotal
-                if (reportProgress) {
-                    withContext(Dispatchers.Main) {
-                        _loadingProgress.value = LoadingProgress(collected.size, serverTotal ?: -1)
-                    }
-                }
-                if (rows.size < API_PAGE_SIZE) break
-                if (serverTotal != null && collected.size >= serverTotal) break
-                if (rows.isEmpty()) break
-                offset += API_PAGE_SIZE
-                delay(PAGE_DELAY_MS)
+        while (true) {
+            if (isCancelled()) return null
+            val query = buildString {
+                append("limit=$API_PAGE_SIZE&offset=$offset")
+                extraQuery.forEach { (k, v) -> append("&$k=$v") }
             }
-            return collected
-        } finally {
-            if (reportProgress) withContext(Dispatchers.Main) { _loadingProgress.value = null }
+            val url = "$baseUrl$path?$query"
+            val response = try {
+                executeGet(url, reportConnectionError = reportConnectionError)
+            } catch (e: Exception) {
+                if (reportConnectionError) {
+                    withContext(Dispatchers.Main) {
+                        reportRefreshError(localizedConnectionFailureMessage(e))
+                    }
+                }
+                throw e
+            }
+            if (response.code == 429) {
+                delay(RATE_LIMIT_RETRY_MS)
+                continue
+            }
+            if (response.code !in 200..299) {
+                if (reportConnectionError) {
+                    withContext(Dispatchers.Main) {
+                        reportHttpRefreshFailure(response.code)
+                    }
+                }
+                return null
+            }
+            val pageJson = parseJsonObject(response.body)
+            val rowsElement = pageJson?.get("rows")
+            val rows = if (rowsElement is JsonArray) {
+                rowsElement.mapNotNull { element ->
+                    runCatching { SnipeJson.decodeFromJsonElement(serializer, element) }.getOrNull()
+                }
+            } else {
+                // Unexpected page body shape.
+                runCatching {
+                    SnipeJson.decodeFromString(PagedResponse.serializer(serializer), response.body).rows.orEmpty()
+                }.getOrElse { emptyList() }
+            }
+            collected.addAll(rows)
+            serverTotal = pageJson?.get("total")?.jsonPrimitive?.intOrNull ?: serverTotal
+            if (rows.size < API_PAGE_SIZE) break
+            if (serverTotal != null && collected.size >= serverTotal) break
+            if (rows.isEmpty()) break
+            offset += API_PAGE_SIZE
+            delay(PAGE_DELAY_MS)
         }
+        return collected
     }
 
     private suspend fun executeGet(

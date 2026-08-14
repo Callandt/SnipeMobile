@@ -1,6 +1,6 @@
 package com.callandt.snipemobile.data.api
 
-import java.net.URI
+import com.callandt.snipemobile.ui.util.L10n
 import java.net.URLDecoder
 
 sealed class SnipeITQRLink {
@@ -9,14 +9,20 @@ sealed class SnipeITQRLink {
     data class Accessory(val id: Int) : SnipeITQRLink()
     data class License(val id: Int) : SnipeITQRLink()
     data class Consumable(val id: Int) : SnipeITQRLink()
+    data class Location(val id: Int) : SnipeITQRLink()
+    data class User(val id: Int) : SnipeITQRLink()
+    data class Maintenance(val id: Int) : SnipeITQRLink()
     data class HardwareByTag(val tag: String) : SnipeITQRLink()
 
     fun notFoundMessage(id: Int): String = when (this) {
-        is Hardware, is HardwareByTag -> "Asset not found (id: $id)"
-        is Component -> "Component not found (id: $id)"
-        is Accessory -> "Accessory not found (id: $id)"
-        is License -> "License not found (id: $id)"
-        is Consumable -> "Consumable not found (id: $id)"
+        is Hardware, is HardwareByTag -> L10n.string("asset_not_found_id", id.toString())
+        is Component -> L10n.string("component_not_found_id", id.toString())
+        is Accessory -> L10n.string("accessory_not_found_id", id.toString())
+        is License -> L10n.string("license_not_found_id", id.toString())
+        is Consumable -> L10n.string("consumable_not_found_id", id.toString())
+        is Location -> L10n.string("location_not_found_id", id.toString())
+        is User -> L10n.string("user_not_found_id", id.toString())
+        is Maintenance -> L10n.string("maintenance_not_found_id", id.toString())
     }
 
     companion object {
@@ -26,8 +32,6 @@ sealed class SnipeITQRLink {
             "quickscan", "quickadd", "checkout", "checkin", "edit", "delete",
             "view", "files", "history", "maintenances", "api", "v1",
         )
-
-        fun parse(url: URI): SnipeITQRLink? = parse(url.toString())
 
         /** Parse Snipe-IT item URLs. */
         fun parse(urlString: String): SnipeITQRLink? {
@@ -61,11 +65,14 @@ sealed class SnipeITQRLink {
                 if (segment == "ht") return HardwareByTag(next)
 
                 when (segment) {
-                    "hardware" -> return hardwareToken(next)
-                    "components" -> next.toIntOrNull()?.let { return Component(it) }
-                    "accessories" -> next.toIntOrNull()?.let { return Accessory(it) }
-                    "licenses" -> next.toIntOrNull()?.let { return License(it) }
-                    "consumables" -> next.toIntOrNull()?.let { return Consumable(it) }
+                    "hardware", "assets", "asset" -> return hardwareToken(next)
+                    "components", "component" -> entityId(next)?.let { return Component(it) }
+                    "accessories", "accessory" -> entityId(next)?.let { return Accessory(it) }
+                    "licenses", "license" -> entityId(next)?.let { return License(it) }
+                    "consumables", "consumable" -> entityId(next)?.let { return Consumable(it) }
+                    "locations", "location" -> entityId(next)?.let { return Location(it) }
+                    "users", "user" -> entityId(next)?.let { return User(it) }
+                    "maintenances", "maintenance" -> entityId(next)?.let { return Maintenance(it) }
                 }
             }
             return null
@@ -73,8 +80,13 @@ sealed class SnipeITQRLink {
 
         /** Digits = id; anything else = asset tag. */
         private fun hardwareToken(token: String): SnipeITQRLink {
+            val id = entityId(token)
+            return if (id != null) Hardware(id) else HardwareByTag(token)
+        }
+
+        private fun entityId(token: String): Int? {
             val id = token.toIntOrNull()
-            return if (id != null && id.toString() == token) Hardware(id) else HardwareByTag(token)
+            return if (id != null && id.toString() == token) id else null
         }
 
         private fun isReserved(token: String): Boolean =

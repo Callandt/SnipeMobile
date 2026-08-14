@@ -114,48 +114,67 @@ struct AssetFilterOptions {
 // Filter menu with a submenu per dimension.
 struct AssetFilterMenu: View {
     @Binding var filter: AssetFilter
-    let options: AssetFilterOptions
+    var makeOptions: () -> AssetFilterOptions
 
     var body: some View {
         Menu {
-            if options.hasStatusOptions {
-                statusPicker
-            }
-            dimensionPicker(
-                title: L10n.string("category"),
-                values: options.categories,
-                selection: $filter.category
-            )
-            dimensionPicker(
-                title: L10n.string("model"),
-                values: options.models,
-                selection: $filter.model
-            )
-            dimensionPicker(
-                title: L10n.string("manufacturer"),
-                values: options.manufacturers,
-                selection: $filter.manufacturer
-            )
-            dimensionPicker(
-                title: L10n.string("location"),
-                values: options.locations,
-                selection: $filter.location
-            )
-
-            if filter.isActive {
-                Divider()
-                Button(role: .destructive) {
-                    filter.clear()
-                } label: {
-                    Label(L10n.string("filter_clear"), systemImage: "xmark.circle")
-                }
-            }
+            AssetFilterMenuLoader(filter: $filter, makeOptions: makeOptions)
         } label: {
             HStack(spacing: 4) {
                 Text(filter.isActive ? L10n.string("filter_active_count", filter.activeCount) : L10n.string("filter"))
                 Image(systemName: filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
             }
             .font(.subheadline)
+        }
+        .fixedSize()
+    }
+}
+
+private struct AssetFilterMenuLoader: View {
+    @Binding var filter: AssetFilter
+    let makeOptions: () -> AssetFilterOptions
+
+    var body: some View {
+        AssetFilterMenuContent(filter: $filter, options: makeOptions())
+    }
+}
+
+private struct AssetFilterMenuContent: View {
+    @Binding var filter: AssetFilter
+    let options: AssetFilterOptions
+
+    var body: some View {
+        if options.hasStatusOptions {
+            statusPicker
+        }
+        dimensionPicker(
+            title: L10n.string("category"),
+            values: options.categories,
+            selection: $filter.category
+        )
+        dimensionPicker(
+            title: L10n.string("model"),
+            values: options.models,
+            selection: $filter.model
+        )
+        dimensionPicker(
+            title: L10n.string("manufacturer"),
+            values: options.manufacturers,
+            selection: $filter.manufacturer
+        )
+        dimensionPicker(
+            title: L10n.string("location"),
+            values: options.locations,
+            selection: $filter.location
+        )
+
+        if filter.isActive {
+            Divider()
+            Button(role: .destructive) {
+                filter.clear()
+            } label: {
+                Label(L10n.string("filter_clear"), systemImage: "xmark.circle")
+            }
         }
     }
 
