@@ -1,7 +1,5 @@
 package com.callandt.snipemobile.ui.asset
 
-import android.graphics.drawable.ColorDrawable
-import android.view.WindowManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,20 +30,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.callandt.snipemobile.data.model.CustomField
 import com.callandt.snipemobile.data.model.FieldDefinition
 import com.callandt.snipemobile.data.model.StatusLabel
@@ -187,33 +184,29 @@ internal fun AssetFullScreenSheet(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    val configuration = LocalConfiguration.current
-    Dialog(
+    val density = LocalDensity.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    val metrics = LocalContext.current.resources.displayMetrics
+    val widthPx = windowSize.width.takeIf { it > 0 } ?: metrics.widthPixels
+    val heightPx = windowSize.height.takeIf { it > 0 } ?: metrics.heightPixels
+    val widthDp = with(density) { widthPx.toDp() }
+    val heightDp = with(density) { heightPx.toDp() }
+
+    // Popup stays in the activity window. A Compose Dialog after several
+    // NavHost back navigations can measure as 0 and show a blank white screen.
+    Popup(
+        alignment = Alignment.TopStart,
+        offset = IntOffset.Zero,
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
+        properties = PopupProperties(
+            focusable = true,
             dismissOnBackPress = true,
             dismissOnClickOutside = false,
+            clippingEnabled = false,
         ),
     ) {
-        val view = LocalView.current
-        SideEffect {
-            val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
-            // Full-screen dialog needs MATCH_PARENT on the window.
-            window.setLayout(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-            )
-        }
-        // WRAP_CONTENT dialog + fillMaxSize() can measure as 0 (blank white window).
         Surface(
-            modifier = Modifier.requiredSize(
-                configuration.screenWidthDp.dp,
-                configuration.screenHeightDp.dp,
-            ),
+            modifier = Modifier.requiredSize(widthDp, heightDp),
             color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {

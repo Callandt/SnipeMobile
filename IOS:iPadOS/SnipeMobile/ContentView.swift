@@ -579,45 +579,39 @@ struct ContentView: View {
                 handleSnipeITQRLink(link)
                 return
             }
-            if scanResult.type == .qr, let url = URL(string: scannedValue) {
+            if scanResult.type == .qr,
+               enableDellQrScan,
+               let url = URL(string: scannedValue),
+               let host = url.host, host.lowercased().contains("dell"),
+               let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
+                let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
 
-                // Dell QR: service tag. Look up by serial.
-                if enableDellQrScan,
-                   let host = url.host, host.lowercased().contains("dell"),
-                   let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
-                    let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
-
-                    if let asset = apiClient.assets.first(where: {
-                        $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
-                    }) {
-                        pendingQRLink = .hardware(id: asset.id)
-                        selectedTab = .hardware
-                    } else if apiClient.assets.isEmpty {
-                        Task {
-                            await apiClient.fetchPrimaryThenBackground()
-                            await MainActor.run {
-                                if let asset = findAsset(for: normalized) {
-                                    pendingQRLink = .hardware(id: asset.id)
-                                    selectedTab = .hardware
-                                } else {
-                                    pendingQRLink = nil
-                                    promptAddDellAsset(url: url, serial: serial)
-                                }
+                if let asset = apiClient.assets.first(where: {
+                    $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
+                }) {
+                    pendingQRLink = .hardware(id: asset.id)
+                    selectedTab = .hardware
+                } else if apiClient.assets.isEmpty {
+                    Task {
+                        await apiClient.fetchPrimaryThenBackground()
+                        await MainActor.run {
+                            if let asset = findAsset(for: normalized) {
+                                pendingQRLink = .hardware(id: asset.id)
+                                selectedTab = .hardware
+                            } else {
+                                pendingQRLink = nil
+                                promptAddDellAsset(url: url, serial: serial)
                             }
                         }
-                    } else {
-                        pendingQRLink = nil
-                        promptAddDellAsset(url: url, serial: serial)
                     }
-                    return
+                } else {
+                    pendingQRLink = nil
+                    promptAddDellAsset(url: url, serial: serial)
                 }
-
-                scanErrorMessage = L10n.string("invalid_qr_unrecognized")
-                showScanErrorAlert = true
                 return
             }
 
-            // 1D barcode: match raw value against assetTag/serial/altBarcode.
+            // Barcode or QR with a raw asset tag / serial.
             if let asset = findAsset(for: scannedValue) {
                 pendingQRLink = .hardware(id: asset.id)
                 selectedTab = .hardware

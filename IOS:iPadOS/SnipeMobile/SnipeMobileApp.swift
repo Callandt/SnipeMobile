@@ -2516,40 +2516,35 @@ struct MainSplitView: View {
                 Task { await openSnipeITQRLink(link) }
                 return
             }
-            if scanResult.type == .qr, let url = URL(string: scannedValue) {
+            if scanResult.type == .qr,
+               enableDellQrScan,
+               let url = URL(string: scannedValue),
+               let host = url.host, host.lowercased().contains("dell"),
+               let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
+                let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
 
-                if enableDellQrScan,
-                   let host = url.host, host.lowercased().contains("dell"),
-                   let serial = SnipeITAPIClient.extractDellServiceTag(from: url), !serial.isEmpty {
-                    let normalized = serial.trimmingCharacters(in: .whitespaces).lowercased()
-
-                    if let asset = apiClient.assets.first(where: {
-                        $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
-                    }) {
-                        selectedSection = .hardware
-                        selectedAsset = asset
-                        selectedAssetDetailTab = 0
-                    } else if apiClient.assets.isEmpty {
-                        Task {
-                            await apiClient.fetchPrimaryThenBackground()
-                            await MainActor.run {
-                                if let asset = findAsset(for: normalized) {
-                                    selectedSection = .hardware
-                                    selectedAsset = asset
-                                    selectedAssetDetailTab = 0
-                                } else {
-                                    promptAddDellAsset(url: url, serial: serial)
-                                }
+                if let asset = apiClient.assets.first(where: {
+                    $0.decodedSerial.trimmingCharacters(in: .whitespaces).lowercased() == normalized
+                }) {
+                    selectedSection = .hardware
+                    selectedAsset = asset
+                    selectedAssetDetailTab = 0
+                } else if apiClient.assets.isEmpty {
+                    Task {
+                        await apiClient.fetchPrimaryThenBackground()
+                        await MainActor.run {
+                            if let asset = findAsset(for: normalized) {
+                                selectedSection = .hardware
+                                selectedAsset = asset
+                                selectedAssetDetailTab = 0
+                            } else {
+                                promptAddDellAsset(url: url, serial: serial)
                             }
                         }
-                    } else {
-                        promptAddDellAsset(url: url, serial: serial)
                     }
-                    return
+                } else {
+                    promptAddDellAsset(url: url, serial: serial)
                 }
-
-                scanErrorMessage = L10n.string("invalid_qr_unrecognized")
-                showScanErrorAlert = true
                 return
             }
 

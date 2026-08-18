@@ -149,7 +149,7 @@ fun AppNav(viewModel: AppViewModel) {
         if (hasCompletedOnboarding) Routes.Main else Routes.Welcome
     }
     fun openPhoneDetail(route: String) {
-        navController.navigate(route)
+        navController.navigateFromListWhenResumed(route)
     }
 
     fun openTabletDetail(tab: MainTab, selection: TabletDetailSelection) {
@@ -254,10 +254,10 @@ fun AppNav(viewModel: AppViewModel) {
             if (appMode == AppMode.User) {
                 UserModeScaffold(
                     viewModel = viewModel,
-                    onOpenSettings = { navController.navigate(Routes.Settings) },
-                    onAssetClick = { navController.navigate(Routes.asset(it)) },
-                    onAccessoryClick = { navController.navigate(Routes.accessory(it)) },
-                    onLicenseClick = { navController.navigate(Routes.license(it)) },
+                    onOpenSettings = { navController.navigateWhenResumed(Routes.Settings) },
+                    onAssetClick = { navController.navigateFromListWhenResumed(Routes.asset(it)) },
+                    onAccessoryClick = { navController.navigateFromListWhenResumed(Routes.accessory(it)) },
+                    onLicenseClick = { navController.navigateFromListWhenResumed(Routes.license(it)) },
                 )
             } else if (isTablet) {
                 TabletMainSplit(
@@ -266,8 +266,8 @@ fun AppNav(viewModel: AppViewModel) {
                     onTabSelected = { selectedTab = it },
                     selection = tabletSelection,
                     onSelectionChange = { tabletSelection = it },
-                    onOpenSettings = { navController.navigate(Routes.Settings) },
-                    onOpenScanner = { navController.navigate(Routes.Scanner) },
+                    onOpenSettings = { navController.navigateWhenResumed(Routes.Settings) },
+                    onOpenScanner = { navController.navigateWhenResumed(Routes.Scanner) },
                     pendingDellAdd = pendingDellAdd ?: showDellAddPrompt,
                     onClearPendingDellAdd = {
                         showDellAddPrompt = null
@@ -279,16 +279,16 @@ fun AppNav(viewModel: AppViewModel) {
                     viewModel = viewModel,
                     selectedTab = selectedTab,
                     onTabSelected = { selectedTab = it },
-                    onOpenSettings = { navController.navigate(Routes.Settings) },
-                    onOpenScanner = { navController.navigate(Routes.Scanner) },
-                    onAssetClick = { navController.navigate(Routes.asset(it)) },
-                    onAccessoryClick = { navController.navigate(Routes.accessory(it)) },
-                    onLicenseClick = { navController.navigate(Routes.license(it)) },
-                    onConsumableClick = { navController.navigate(Routes.consumable(it)) },
-                    onComponentClick = { navController.navigate(Routes.component(it)) },
-                    onUserClick = { navController.navigate(Routes.user(it)) },
-                    onLocationClick = { navController.navigate(Routes.location(it)) },
-                    onMaintenanceClick = { navController.navigate(Routes.maintenance(it)) },
+                    onOpenSettings = { navController.navigateWhenResumed(Routes.Settings) },
+                    onOpenScanner = { navController.navigateWhenResumed(Routes.Scanner) },
+                    onAssetClick = { navController.navigateFromListWhenResumed(Routes.asset(it)) },
+                    onAccessoryClick = { navController.navigateFromListWhenResumed(Routes.accessory(it)) },
+                    onLicenseClick = { navController.navigateFromListWhenResumed(Routes.license(it)) },
+                    onConsumableClick = { navController.navigateFromListWhenResumed(Routes.consumable(it)) },
+                    onComponentClick = { navController.navigateFromListWhenResumed(Routes.component(it)) },
+                    onUserClick = { navController.navigateFromListWhenResumed(Routes.user(it)) },
+                    onLocationClick = { navController.navigateFromListWhenResumed(Routes.location(it)) },
+                    onMaintenanceClick = { navController.navigateFromListWhenResumed(Routes.maintenance(it)) },
                     pendingDellAdd = pendingDellAdd ?: showDellAddPrompt,
                     onClearPendingDellAdd = {
                         showDellAddPrompt = null
@@ -300,7 +300,7 @@ fun AppNav(viewModel: AppViewModel) {
         composable(Routes.Settings) {
             SettingsScreen(
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popWhenResumed() },
                 onWiped = {
                     navController.navigate(Routes.Welcome) {
                         popUpTo(Routes.Main) { inclusive = true }
@@ -314,7 +314,7 @@ fun AppNav(viewModel: AppViewModel) {
                 snackbarHost = { SnackbarHost(snackbarHostState) },
             ) { _ ->
                 QrScannerScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = { navController.popWhenResumed() },
                     onLinkParsed = { link ->
                         scope.launch {
                             navigateFromQrLink(
@@ -346,7 +346,16 @@ fun AppNav(viewModel: AppViewModel) {
                     onDellUrlScanned = { url ->
                         if (!enableDellQrScan) {
                             scope.launch {
-                                snackbarHostState.showSnackbar(L10n.string("invalid_qr_unrecognized"))
+                                val raw = url.toString()
+                                val asset = viewModel.apiClient.resolveScannedHardware(raw)
+                                if (asset != null) {
+                                    navController.popBackStack()
+                                    openEntityFromQr(Routes.asset(asset.id))
+                                } else {
+                                    snackbarHostState.showSnackbar(
+                                        L10n.string("asset_not_found_scanned_value", raw),
+                                    )
+                                }
                             }
                             return@QrScannerScreen
                         }
@@ -380,14 +389,14 @@ fun AppNav(viewModel: AppViewModel) {
             AssetDetailScreen(
                 assetId = id,
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onOpenMaintenance = { navController.navigate(Routes.maintenance(it)) },
-                onOpenUser = { navController.navigate(Routes.user(it)) },
-                onOpenLocation = { navController.navigate(Routes.location(it)) },
-                onOpenAsset = { navController.navigate(Routes.asset(it)) },
-                onOpenAccessory = { navController.navigate(Routes.accessory(it)) },
-                onOpenLicense = { navController.navigate(Routes.license(it)) },
-                onOpenComponent = { navController.navigate(Routes.component(it)) },
+                onBack = { navController.popWhenResumed() },
+                onOpenMaintenance = { navController.navigateWhenResumed(Routes.maintenance(it)) },
+                onOpenUser = { navController.navigateWhenResumed(Routes.user(it)) },
+                onOpenLocation = { navController.navigateWhenResumed(Routes.location(it)) },
+                onOpenAsset = { navController.navigateWhenResumed(Routes.asset(it)) },
+                onOpenAccessory = { navController.navigateWhenResumed(Routes.accessory(it)) },
+                onOpenLicense = { navController.navigateWhenResumed(Routes.license(it)) },
+                onOpenComponent = { navController.navigateWhenResumed(Routes.component(it)) },
                 isReadOnly = appMode == AppMode.User,
             )
         }
@@ -395,61 +404,61 @@ fun AppNav(viewModel: AppViewModel) {
             AccessoryDetailScreen(
                 accessoryId = id,
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onOpenUser = { navController.navigate(Routes.user(it)) },
-                onOpenLocation = { navController.navigate(Routes.location(it)) },
-                onOpenAsset = { navController.navigate(Routes.asset(it)) },
+                onBack = { navController.popWhenResumed() },
+                onOpenUser = { navController.navigateWhenResumed(Routes.user(it)) },
+                onOpenLocation = { navController.navigateWhenResumed(Routes.location(it)) },
+                onOpenAsset = { navController.navigateWhenResumed(Routes.asset(it)) },
             )
         }
         detailRoute(Routes.LicenseDetail, "id") { id ->
             LicenseDetailScreen(
                 licenseId = id,
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onOpenUser = { navController.navigate(Routes.user(it)) },
-                onOpenAsset = { navController.navigate(Routes.asset(it)) },
+                onBack = { navController.popWhenResumed() },
+                onOpenUser = { navController.navigateWhenResumed(Routes.user(it)) },
+                onOpenAsset = { navController.navigateWhenResumed(Routes.asset(it)) },
             )
         }
         detailRoute(Routes.ConsumableDetail, "id") { id ->
             ConsumableDetailScreen(
                 consumableId = id,
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onOpenUser = { navController.navigate(Routes.user(it)) },
+                onBack = { navController.popWhenResumed() },
+                onOpenUser = { navController.navigateWhenResumed(Routes.user(it)) },
             )
         }
         detailRoute(Routes.ComponentDetail, "id") { id ->
             ComponentDetailScreen(
                 componentId = id,
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onOpenAsset = { navController.navigate(Routes.asset(it)) },
+                onBack = { navController.popWhenResumed() },
+                onOpenAsset = { navController.navigateWhenResumed(Routes.asset(it)) },
             )
         }
         detailRoute(Routes.UserDetail, "id") { id ->
             UserDetailScreen(
                 userId = id,
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onOpenAsset = { navController.navigate(Routes.asset(it)) },
-                onOpenAccessory = { navController.navigate(Routes.accessory(it)) },
-                onOpenLicense = { navController.navigate(Routes.license(it)) },
-                onOpenConsumable = { navController.navigate(Routes.consumable(it)) },
+                onBack = { navController.popWhenResumed() },
+                onOpenAsset = { navController.navigateWhenResumed(Routes.asset(it)) },
+                onOpenAccessory = { navController.navigateWhenResumed(Routes.accessory(it)) },
+                onOpenLicense = { navController.navigateWhenResumed(Routes.license(it)) },
+                onOpenConsumable = { navController.navigateWhenResumed(Routes.consumable(it)) },
             )
         }
         detailRoute(Routes.LocationDetail, "id") { id ->
             LocationDetailScreen(
                 locationId = id,
                 viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onOpenUser = { navController.navigate(Routes.user(it)) },
-                onOpenAsset = { navController.navigate(Routes.asset(it)) },
-                onOpenAccessory = { navController.navigate(Routes.accessory(it)) },
-                onOpenLocation = { navController.navigate(Routes.location(it)) },
+                onBack = { navController.popWhenResumed() },
+                onOpenUser = { navController.navigateWhenResumed(Routes.user(it)) },
+                onOpenAsset = { navController.navigateWhenResumed(Routes.asset(it)) },
+                onOpenAccessory = { navController.navigateWhenResumed(Routes.accessory(it)) },
+                onOpenLocation = { navController.navigateWhenResumed(Routes.location(it)) },
             )
         }
         detailRoute(Routes.MaintenanceDetail, "id") { id ->
-            MaintenanceDetailScreen(id, viewModel) { navController.popBackStack() }
+            MaintenanceDetailScreen(id, viewModel) { navController.popWhenResumed() }
         }
     }
     }

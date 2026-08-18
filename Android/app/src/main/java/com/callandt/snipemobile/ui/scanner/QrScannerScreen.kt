@@ -162,7 +162,6 @@ fun QrScannerScreen(
                                                     QrScannerMode.SnipeIT -> handleSnipeITBarcodes(
                                                         barcodes = barcodes,
                                                         previewView = previewView,
-                                                        errorThrottle = errorThrottle,
                                                         lastRawScan = lastRawScan,
                                                         lastRawTime = lastRawTime,
                                                         onLinkParsed = { link ->
@@ -174,7 +173,6 @@ fun QrScannerScreen(
                                                             onDellUrlScanned(url)
                                                         },
                                                         onRawBarcodeScanned = onRawBarcodeScanned,
-                                                        onError = onError,
                                                     )
                                                 }
                                             }
@@ -224,13 +222,11 @@ fun QrScannerScreen(
 private fun handleSnipeITBarcodes(
     barcodes: List<Barcode>,
     previewView: PreviewView,
-    errorThrottle: AtomicLong,
     lastRawScan: AtomicReference<String>,
     lastRawTime: AtomicLong,
     onLinkParsed: (SnipeITQRLink) -> Unit,
     onDellUrlScanned: (URI) -> Unit,
     onRawBarcodeScanned: (String) -> Unit,
-    onError: (String) -> Unit,
 ) {
     val values = barcodes.mapNotNull { barcode ->
         val raw = barcode.rawValue?.trim().orEmpty()
@@ -258,42 +254,12 @@ private fun handleSnipeITBarcodes(
         return
     }
 
-    // 1D codes are tags/serials, not Snipe-IT URLs.
-    val oneD = values.firstOrNull { (barcode, raw) ->
-        is1DBarcode(barcode.format) || (barcode.format == Barcode.FORMAT_UNKNOWN && !looksLikeUrl(raw))
-    }
-    if (oneD != null) {
-        val raw = oneD.second
-        val now = System.currentTimeMillis()
-        if (raw == lastRawScan.get() && now - lastRawTime.get() < 2500) return
-        lastRawScan.set(raw)
-        lastRawTime.set(now)
-        previewView.post { onRawBarcodeScanned(raw) }
-        return
-    }
-
-    reportInvalid(previewView, errorThrottle, onError, L10n.string("invalid_qr_unrecognized"))
-}
-
-private fun is1DBarcode(format: Int): Boolean = when (format) {
-    Barcode.FORMAT_CODE_128,
-    Barcode.FORMAT_CODE_39,
-    Barcode.FORMAT_CODE_93,
-    Barcode.FORMAT_CODABAR,
-    Barcode.FORMAT_EAN_13,
-    Barcode.FORMAT_EAN_8,
-    Barcode.FORMAT_ITF,
-    Barcode.FORMAT_UPC_A,
-    Barcode.FORMAT_UPC_E,
-    -> true
-    else -> false
-}
-
-private fun looksLikeUrl(raw: String): Boolean {
-    val value = raw.trim()
-    return value.contains("://") ||
-        value.startsWith("http://", ignoreCase = true) ||
-        value.startsWith("https://", ignoreCase = true)
+    val raw = values.first().second
+    val now = System.currentTimeMillis()
+    if (raw == lastRawScan.get() && now - lastRawTime.get() < 2500) return
+    lastRawScan.set(raw)
+    lastRawTime.set(now)
+    previewView.post { onRawBarcodeScanned(raw) }
 }
 
 private fun reportInvalid(

@@ -23,6 +23,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,6 +50,7 @@ import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.UserCard
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.components.rememberListReadyAfterResume
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.location.AddLocationSheet
 import com.callandt.snipemobile.ui.user.AddUserSheet
@@ -130,6 +132,13 @@ fun DirectoryTab(
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
     val isTablet = WindowAdaptive.isTabletLayout()
+    val listReady = rememberListReadyAfterResume()
+    LaunchedEffect(listReady) {
+        if (!listReady) {
+            showAddUser = false
+            showAddLocation = false
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -140,23 +149,14 @@ fun DirectoryTab(
                 title = L10n.string("tab_directory"),
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
-                leadingActions = {
-                    if (!isTablet) {
-                        IconButton(onClick = {
-                            if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
-                        }) {
-                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
-                        }
-                    }
-                },
                 actions = {
-                    if (isTablet) {
-                        IconButton(onClick = {
-                            if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
-                        }) {
-                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
-                        }
-                    } else {
+                    IconButton(onClick = {
+                        if (!listReady) return@IconButton
+                        if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                    }
+                    if (!isTablet) {
                         IconButton(onClick = onOpenScanner) {
                             Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
                         }
@@ -244,7 +244,7 @@ fun DirectoryTab(
                                         ) {
                                             UserCard(
                                                 user = user,
-                                                onClick = { onUserClick(user.id) },
+                                                onClick = { if (listReady) onUserClick(user.id) },
                                             )
                                         }
                                     }
@@ -298,7 +298,7 @@ fun DirectoryTab(
                                         ) {
                                             LocationCard(
                                                 location = location,
-                                                onClick = { onLocationClick(location.id) },
+                                                onClick = { if (listReady) onLocationClick(location.id) },
                                             )
                                         }
                                     }

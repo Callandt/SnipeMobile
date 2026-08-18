@@ -59,6 +59,7 @@ import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.AccessoryCard
 import com.callandt.snipemobile.ui.components.AssetCard
 import com.callandt.snipemobile.ui.components.LicenseCard
+import com.callandt.snipemobile.ui.components.rememberListReadyAfterResume
 import com.callandt.snipemobile.ui.detail.UserDetailScreen
 import com.callandt.snipemobile.ui.theme.SnipeOrange
 import com.callandt.snipemobile.ui.util.L10n
@@ -122,6 +123,11 @@ fun UserModeScaffold(
         reloadAll(reportErrors = true)
     }
 
+    val listReady = rememberListReadyAfterResume()
+    val openAsset: (Int) -> Unit = { id -> if (listReady) onAssetClick(id) }
+    val openAccessory: (Int) -> Unit = { id -> if (listReady) onAccessoryClick(id) }
+    val openLicense: (Int) -> Unit = { id -> if (listReady) onLicenseClick(id) }
+
     Scaffold(
         bottomBar = {
             NavigationBar(windowInsets = NavigationBarDefaults.windowInsets) {
@@ -160,9 +166,9 @@ fun UserModeScaffold(
                     onRefreshingChange = { refreshing = it },
                     onReload = { reportErrors -> reloadAll(reportErrors) },
                     onOpenSettings = onOpenSettings,
-                    onAssetClick = onAssetClick,
-                    onAccessoryClick = onAccessoryClick,
-                    onLicenseClick = onLicenseClick,
+                    onAssetClick = openAsset,
+                    onAccessoryClick = openAccessory,
+                    onLicenseClick = openLicense,
                 )
 
                 UserModeTab.Requests -> UserModeRequestsTab(
@@ -176,7 +182,7 @@ fun UserModeScaffold(
                     onRefreshingChange = { refreshing = it },
                     onReloadRequestables = { reportErrors -> reloadRequestables(reportErrors) },
                     onOpenSettings = onOpenSettings,
-                    onAssetClick = onAssetClick,
+                    onAssetClick = openAsset,
                 )
             }
         }

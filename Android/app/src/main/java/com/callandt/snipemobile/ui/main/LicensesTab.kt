@@ -22,6 +22,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,7 @@ import com.callandt.snipemobile.ui.components.ListSortMenuButton
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.components.rememberListReadyAfterResume
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.license.AddLicenseSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
@@ -118,6 +120,10 @@ fun LicensesTab(
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
     val isTablet = WindowAdaptive.isTabletLayout()
+    val listReady = rememberListReadyAfterResume()
+    LaunchedEffect(listReady) {
+        if (!listReady) showAddLicense = false
+    }
 
     Scaffold(
         modifier = modifier,
@@ -128,19 +134,11 @@ fun LicensesTab(
                 title = L10n.string("tab_licenses"),
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
-                leadingActions = {
-                    if (!isTablet) {
-                        IconButton(onClick = { showAddLicense = true }) {
-                            Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
-                        }
-                    }
-                },
                 actions = {
-                    if (isTablet) {
-                        IconButton(onClick = { showAddLicense = true }) {
-                            Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
-                        }
-                    } else {
+                    IconButton(onClick = { if (listReady) showAddLicense = true }) {
+                        Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
+                    }
+                    if (!isTablet) {
                         IconButton(onClick = onOpenScanner) {
                             Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
                         }
@@ -206,7 +204,7 @@ fun LicensesTab(
                                     ) {
                                         LicenseCard(
                                             license = license,
-                                            onClick = { onLicenseClick(license.id) },
+                                            onClick = { if (listReady) onLicenseClick(license.id) },
                                         )
                                     }
                                 }

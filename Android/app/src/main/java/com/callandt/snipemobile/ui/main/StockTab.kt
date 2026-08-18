@@ -23,6 +23,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +51,7 @@ import com.callandt.snipemobile.ui.components.ListSortMenuButton
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.components.rememberListReadyAfterResume
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.consumable.AddConsumableSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
@@ -165,6 +167,13 @@ fun StockTab(
     ErrorSnackbar(refreshError, snackbarHostState, onDismiss = { viewModel.clearRefreshError() })
 
     val isTablet = WindowAdaptive.isTabletLayout()
+    val listReady = rememberListReadyAfterResume()
+    LaunchedEffect(listReady) {
+        if (!listReady) {
+            showAddConsumable = false
+            showAddComponent = false
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -175,23 +184,14 @@ fun StockTab(
                 title = L10n.string("tab_stock"),
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
-                leadingActions = {
-                    if (!isTablet) {
-                        IconButton(onClick = {
-                            if (showConsumablesList) showAddConsumable = true else showAddComponent = true
-                        }) {
-                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
-                        }
-                    }
-                },
                 actions = {
-                    if (isTablet) {
-                        IconButton(onClick = {
-                            if (showConsumablesList) showAddConsumable = true else showAddComponent = true
-                        }) {
-                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
-                        }
-                    } else {
+                    IconButton(onClick = {
+                        if (!listReady) return@IconButton
+                        if (showConsumablesList) showAddConsumable = true else showAddComponent = true
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                    }
+                    if (!isTablet) {
                         IconButton(onClick = onOpenScanner) {
                             Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
                         }
@@ -274,7 +274,7 @@ fun StockTab(
                                         ) {
                                             ConsumableCard(
                                                 consumable = item,
-                                                onClick = { onConsumableClick(item.id) },
+                                                onClick = { if (listReady) onConsumableClick(item.id) },
                                             )
                                         }
                                     }
@@ -335,7 +335,7 @@ fun StockTab(
                                         ) {
                                             ComponentCard(
                                                 component = item,
-                                                onClick = { onComponentClick(item.id) },
+                                                onClick = { if (listReady) onComponentClick(item.id) },
                                             )
                                         }
                                     }

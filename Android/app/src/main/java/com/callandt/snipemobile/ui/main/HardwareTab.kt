@@ -85,6 +85,7 @@ import com.callandt.snipemobile.ui.components.MaintenanceCard
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SwipeToDeleteRow
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
+import com.callandt.snipemobile.ui.components.rememberListReadyAfterResume
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.maintenance.BulkMaintenanceFormSheet
 import com.callandt.snipemobile.ui.theme.SnipeGreen
@@ -307,13 +308,26 @@ fun HardwareTab(
 
     val isTablet = WindowAdaptive.isTabletLayout()
     val showAddActions = !(isMaintenanceSubtab && isSelectingMaintenances)
+    val listReady = rememberListReadyAfterResume()
+    val openAsset: (Int) -> Unit = { id -> if (listReady) onAssetClick(id) }
+    val openMaintenance: (Int) -> Unit = { id -> if (listReady) onMaintenanceClick(id) }
+
+    LaunchedEffect(listReady) {
+        if (listReady) return@LaunchedEffect
+        showAddMenu = false
+        pendingHardwareSheet = null
+        showAddAsset = false
+        showBulkMaintenance = false
+        showBulkAudit = false
+        showBulkLabels = false
+    }
 
     @Composable
     fun HardwareAddActions() {
         when (currentSubtab) {
             HardwareSubtab.All, HardwareSubtab.Audit -> {
                 Box {
-                    IconButton(onClick = { showAddMenu = true }) {
+                    IconButton(onClick = { if (listReady) showAddMenu = true }) {
                         Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
                     }
                     DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
@@ -357,7 +371,7 @@ fun HardwareTab(
                 }
             }
             HardwareSubtab.Maintenance -> {
-                IconButton(onClick = { showBulkMaintenance = true }) {
+                IconButton(onClick = { if (listReady) showBulkMaintenance = true }) {
                     Icon(Icons.Default.Add, contentDescription = L10n.string("add_maintenance"))
                 }
             }
@@ -374,24 +388,9 @@ fun HardwareTab(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = {
-                    if (isTablet) {
-                        if (isMaintenanceSubtab && isSelectingMaintenances) {
-                            TextButton(onClick = { cancelMaintenanceSelection() }) {
-                                Text(L10n.string("cancel"))
-                            }
-                        }
-                    } else {
-                        when (currentSubtab) {
-                            HardwareSubtab.All, HardwareSubtab.Audit -> HardwareAddActions()
-                            HardwareSubtab.Maintenance -> {
-                                if (isSelectingMaintenances) {
-                                    TextButton(onClick = { cancelMaintenanceSelection() }) {
-                                        Text(L10n.string("cancel"))
-                                    }
-                                } else {
-                                    HardwareAddActions()
-                                }
-                            }
+                    if (isMaintenanceSubtab && isSelectingMaintenances) {
+                        TextButton(onClick = { cancelMaintenanceSelection() }) {
+                            Text(L10n.string("cancel"))
                         }
                     }
                 },
@@ -416,9 +415,8 @@ fun HardwareTab(
                         else -> Unit
                     }
                     if (showAddActions) {
-                        if (isTablet) {
-                            HardwareAddActions()
-                        } else {
+                        HardwareAddActions()
+                        if (!isTablet) {
                             IconButton(onClick = onOpenScanner) {
                                 Icon(Icons.Default.QrCodeScanner, contentDescription = L10n.string("scan_qr"))
                             }
@@ -589,7 +587,7 @@ fun HardwareTab(
                                                                 selectedMaintenanceIds + item.id
                                                             }
                                                     } else {
-                                                        onMaintenanceClick(item.id)
+                                                        openMaintenance(item.id)
                                                     }
                                                 },
                                                 onRequestComplete = {
@@ -606,13 +604,13 @@ fun HardwareTab(
                                     overdue = overdueAssets,
                                     dueToday = dueTodayAssets,
                                     dueSoon = dueSoonAssets,
-                                    onAssetClick = onAssetClick,
+                                    onAssetClick = openAsset,
                                     listResetKey = searchQuery,
                                 )
                             }
                             HardwareSubtab.All -> AssetList(
                                 assets = filteredAssets,
-                                onAssetClick = onAssetClick,
+                                onAssetClick = openAsset,
                                 onRequestDelete = { asset ->
                                     assetToDelete = asset
                                     assetDeleteState.requestDelete()
