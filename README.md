@@ -11,8 +11,10 @@ Mobile apps to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, us
 - **TestFlight (beta)** - [join the beta](https://testflight.apple.com/join/TjDwstBE)
 
 ### Android
-- Not on a store yet - build from this repo (see below)
-
+- **Play Store (beta)**
+  1. Join the [Google Group](https://groups.google.com/g/snipemobile) first.
+  2. Then open the [Play testing link](https://play.google.com/apps/testing/com.callandt.snipemobile).
+  
 ## Requirements
 
 ### Shared
