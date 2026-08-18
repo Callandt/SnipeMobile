@@ -27,7 +27,6 @@ Mobile apps to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, us
 ### Android
 - Android Studio (recent stable) or JDK 17+
 - Android 8.0+ (API 26)
-- Project path: `Android/`
 
 ## Building
 
@@ -37,14 +36,9 @@ Mobile apps to manage [Snipe-IT](https://snipeitapp.com) assets, accessories, us
 3. On first launch, enter your Snipe-IT API URL and API token.
 
 ### Android
-1. Open the `Android/` folder in Android Studio (or use Gradle from that folder).
+1. Open the `Android/` folder in Android Studio.
 2. Sync Gradle, then run on an emulator or device.
 3. On first launch, enter your Snipe-IT API URL and API token.
-
-```bash
-cd Android
-./gradlew :app:installDebug
-```
 
 ## Features
 
