@@ -123,6 +123,7 @@ fun MainTabContent(
     modifier: Modifier = Modifier,
     pendingDellAdd: DellAddPrefill? = null,
     onClearPendingDellAdd: () -> Unit = {},
+    sidebarToggle: @Composable () -> Unit = {},
 ) {
     when (selectedTab) {
         MainTab.Hardware -> HardwareTab(
@@ -133,6 +134,7 @@ fun MainTabContent(
             onOpenScanner = onOpenScanner,
             pendingDellAdd = pendingDellAdd,
             onClearPendingDellAdd = onClearPendingDellAdd,
+            sidebarToggle = sidebarToggle,
             modifier = modifier,
         )
         MainTab.Accessories -> AccessoriesTab(
@@ -140,6 +142,7 @@ fun MainTabContent(
             onAccessoryClick = onAccessoryClick,
             onOpenSettings = onOpenSettings,
             onOpenScanner = onOpenScanner,
+            sidebarToggle = sidebarToggle,
             modifier = modifier,
         )
         MainTab.Licenses -> LicensesTab(
@@ -147,6 +150,7 @@ fun MainTabContent(
             onLicenseClick = onLicenseClick,
             onOpenSettings = onOpenSettings,
             onOpenScanner = onOpenScanner,
+            sidebarToggle = sidebarToggle,
             modifier = modifier,
         )
         MainTab.Stock -> StockTab(
@@ -155,6 +159,7 @@ fun MainTabContent(
             onComponentClick = onComponentClick,
             onOpenSettings = onOpenSettings,
             onOpenScanner = onOpenScanner,
+            sidebarToggle = sidebarToggle,
             modifier = modifier,
         )
         MainTab.Directory -> DirectoryTab(
@@ -163,6 +168,7 @@ fun MainTabContent(
             onLocationClick = onLocationClick,
             onOpenSettings = onOpenSettings,
             onOpenScanner = onOpenScanner,
+            sidebarToggle = sidebarToggle,
             modifier = modifier,
         )
     }

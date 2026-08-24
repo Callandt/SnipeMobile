@@ -1,14 +1,17 @@
 package com.callandt.snipemobile.ui.components
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -28,7 +31,7 @@ fun SearchTopBar(
     leadingActions: @Composable () -> Unit = {},
     actions: @Composable () -> Unit = {},
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().statusBarsPadding()) {
         TopAppBar(
             title = { Text(title) },
             navigationIcon = {
@@ -41,6 +44,7 @@ fun SearchTopBar(
                 }
             },
             actions = { actions() },
+            windowInsets = WindowInsets(0, 0, 0, 0),
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surface,
                 titleContentColor = MaterialTheme.colorScheme.onSurface,
@@ -48,12 +52,12 @@ fun SearchTopBar(
                 actionIconContentColor = MaterialTheme.colorScheme.onSurface,
             ),
         )
-        androidx.compose.material3.OutlinedTextField(
+        OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
             placeholder = { Text(L10n.string("search") + "…") },
             singleLine = true,
         )

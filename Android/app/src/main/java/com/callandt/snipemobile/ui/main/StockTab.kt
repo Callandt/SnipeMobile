@@ -77,6 +77,7 @@ fun StockTab(
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
     onOpenScanner: () -> Unit = {},
+    sidebarToggle: @Composable () -> Unit = {},
 ) {
     val consumables by viewModel.consumables.collectAsState()
     val components by viewModel.components.collectAsState()
@@ -184,6 +185,7 @@ fun StockTab(
                 title = L10n.string("tab_stock"),
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
+                leadingActions = sidebarToggle,
                 actions = {
                     IconButton(onClick = {
                         if (!listReady) return@IconButton

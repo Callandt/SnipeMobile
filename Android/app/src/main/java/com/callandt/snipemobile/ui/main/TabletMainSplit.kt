@@ -1,5 +1,8 @@
 package com.callandt.snipemobile.ui.main
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,28 +22,44 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuOpen
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
+import android.content.res.Configuration
+import kotlinx.coroutines.launch
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.DellAddPrefill
 import com.callandt.snipemobile.ui.detail.AccessoryDetailScreen
@@ -54,9 +73,17 @@ import com.callandt.snipemobile.ui.detail.UserDetailScreen
 import com.callandt.snipemobile.ui.theme.SnipeAccent
 import com.callandt.snipemobile.ui.util.L10n
 
-private val SidebarWidth = 260.dp
-private val ListColumnWidth = 400.dp
+private val SidebarWidth = 200.dp
+private val ListColumnWidthPortrait = 300.dp
+private val ListColumnWidthLandscape = 400.dp
 private val DetailMaxContentWidth = 760.dp
+
+/** Wider list in landscape. */
+private fun listColumnWidth(screenWidthDp: Int, landscape: Boolean): Dp {
+    val desired = if (landscape) ListColumnWidthLandscape else ListColumnWidthPortrait
+    val cap = (screenWidthDp * 0.42f).dp
+    return min(desired, maxOf(ListColumnWidthPortrait, cap))
+}
 
 /** Tablet: modules | list | detail. */
 @Composable
@@ -91,30 +118,98 @@ fun TabletMainSplit(
         }
     }
 
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val listWidth = listColumnWidth(screenWidthDp, landscape)
+    val canFitThreeColumns = screenWidthDp >=
+        (SidebarWidth + listWidth + DetailMaxContentWidth).value.toInt()
+    var sidebarColumnVisible by rememberSaveable {
+        mutableStateOf(canFitThreeColumns)
+    }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val sidebarShowing = if (canFitThreeColumns) sidebarColumnVisible else drawerState.isOpen
+
+    LaunchedEffect(canFitThreeColumns) {
+        sidebarColumnVisible = canFitThreeColumns
+        if (canFitThreeColumns && drawerState.isOpen) {
+            drawerState.close()
+        }
+    }
+
+    fun closeOverlaySidebar() {
+        if (!canFitThreeColumns && drawerState.isOpen) {
+            scope.launch { drawerState.close() }
+        }
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = !canFitThreeColumns,
+        drawerContent = {
+            if (!canFitThreeColumns) {
+                ModalDrawerSheet(
+                    modifier = Modifier
+                        .width(SidebarWidth)
+                        .fillMaxHeight(),
+                    drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ) {
+                    TabletSidebar(
+                        visibleTabs = visibleTabs,
+                        selectedTab = selectedTab,
+                        onTabSelected = { tab ->
+                            onTabSelected(tab)
+                            onSelectionChange(null)
+                            closeOverlaySidebar()
+                        },
+                        onOpenScanner = {
+                            closeOverlaySidebar()
+                            onOpenScanner()
+                        },
+                        onOpenSettings = {
+                            closeOverlaySidebar()
+                            onOpenSettings()
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        },
+        modifier = modifier.fillMaxSize(),
+    ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        TabletSidebar(
-            visibleTabs = visibleTabs,
-            selectedTab = selectedTab,
-            onTabSelected = { tab ->
-                onTabSelected(tab)
-                onSelectionChange(null)
-            },
-            onOpenScanner = onOpenScanner,
-            onOpenSettings = onOpenSettings,
-            modifier = Modifier
-                .width(SidebarWidth)
-                .fillMaxHeight(),
-        )
-
-        VerticalDivider()
+        AnimatedVisibility(
+            visible = canFitThreeColumns && sidebarColumnVisible,
+            enter = expandHorizontally(),
+            exit = shrinkHorizontally(),
+            modifier = Modifier.fillMaxHeight(),
+        ) {
+            Row(modifier = Modifier.fillMaxHeight()) {
+                TabletSidebar(
+                    visibleTabs = visibleTabs,
+                    selectedTab = selectedTab,
+                    onTabSelected = { tab ->
+                        onTabSelected(tab)
+                        onSelectionChange(null)
+                    },
+                    onOpenScanner = onOpenScanner,
+                    onOpenSettings = onOpenSettings,
+                    modifier = Modifier
+                        .width(SidebarWidth)
+                        .fillMaxHeight(),
+                )
+                VerticalDivider()
+            }
+        }
 
         Box(
             modifier = Modifier
-                .width(ListColumnWidth)
+                .width(listWidth)
                 .fillMaxHeight(),
         ) {
             MainTabContent(
@@ -132,6 +227,30 @@ fun TabletMainSplit(
                 onMaintenanceClick = { onSelectionChange(TabletDetailSelection.Maintenance(it)) },
                 pendingDellAdd = pendingDellAdd,
                 onClearPendingDellAdd = onClearPendingDellAdd,
+                sidebarToggle = {
+                    IconButton(
+                        onClick = {
+                            if (canFitThreeColumns) {
+                                sidebarColumnVisible = !sidebarColumnVisible
+                            } else {
+                                scope.launch {
+                                    if (drawerState.isOpen) drawerState.close() else drawerState.open()
+                                }
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = if (sidebarShowing) {
+                                Icons.AutoMirrored.Filled.MenuOpen
+                            } else {
+                                Icons.Default.Menu
+                            },
+                            contentDescription = L10n.string(
+                                if (sidebarShowing) "hide_sidebar" else "show_sidebar",
+                            ),
+                        )
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -159,6 +278,7 @@ fun TabletMainSplit(
                 )
             }
         }
+    }
     }
 }
 

@@ -80,6 +80,7 @@ fun DirectoryTab(
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
     onOpenScanner: () -> Unit = {},
+    sidebarToggle: @Composable () -> Unit = {},
 ) {
     val users by viewModel.users.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
@@ -149,6 +150,7 @@ fun DirectoryTab(
                 title = L10n.string("tab_directory"),
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
+                leadingActions = sidebarToggle,
                 actions = {
                     IconButton(onClick = {
                         if (!listReady) return@IconButton

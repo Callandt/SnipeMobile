@@ -148,6 +148,7 @@ fun HardwareTab(
     onOpenScanner: () -> Unit = {},
     pendingDellAdd: DellAddPrefill? = null,
     onClearPendingDellAdd: () -> Unit = {},
+    sidebarToggle: @Composable () -> Unit = {},
 ) {
     val assets by viewModel.assets.collectAsState()
     val maintenances by viewModel.maintenances.collectAsState()
@@ -388,9 +389,12 @@ fun HardwareTab(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = {
-                    if (isMaintenanceSubtab && isSelectingMaintenances) {
-                        TextButton(onClick = { cancelMaintenanceSelection() }) {
-                            Text(L10n.string("cancel"))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        sidebarToggle()
+                        if (isMaintenanceSubtab && isSelectingMaintenances) {
+                            TextButton(onClick = { cancelMaintenanceSelection() }) {
+                                Text(L10n.string("cancel"))
+                            }
                         }
                     }
                 },

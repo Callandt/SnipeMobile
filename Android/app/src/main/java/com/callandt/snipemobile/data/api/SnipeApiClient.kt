@@ -2949,7 +2949,7 @@ class SnipeApiClient(
                         reportRefreshError(localizedConnectionFailureMessage(e))
                     }
                 }
-                throw e
+                return null
             }
             if (response.code == 429) {
                 delay(RATE_LIMIT_RETRY_MS)

@@ -67,6 +67,7 @@ fun AccessoriesTab(
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
     onOpenScanner: () -> Unit = {},
+    sidebarToggle: @Composable () -> Unit = {},
 ) {
     val items by viewModel.accessories.collectAsState()
     val categories by viewModel.categories.collectAsState()
@@ -130,6 +131,7 @@ fun AccessoriesTab(
                 title = L10n.string("tab_accessories"),
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
+                leadingActions = sidebarToggle,
                 actions = {
                     IconButton(onClick = { if (listReady) showAddAccessory = true }) {
                         Icon(Icons.Default.Add, contentDescription = L10n.string("add_accessory"))
