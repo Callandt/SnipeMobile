@@ -1,16 +1,23 @@
 package com.callandt.snipemobile.ui.asset
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -36,12 +43,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.callandt.snipemobile.data.model.CustomField
 import com.callandt.snipemobile.data.model.FieldDefinition
@@ -49,6 +61,7 @@ import com.callandt.snipemobile.data.model.StatusLabel
 import com.callandt.snipemobile.ui.components.StringPickerField
 import com.callandt.snipemobile.ui.util.AssetStatusFilterSupport
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.WindowAdaptive
 import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -147,6 +160,7 @@ internal fun AssetFormSheetScaffold(
         topBar = {
             TopAppBar(
                 title = { Text(title) },
+                windowInsets = WindowInsets(0, 0, 0, 0),
                 navigationIcon = {
                     IconButton(onClick = onDismiss, enabled = !isSaving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("cancel"))
@@ -191,12 +205,22 @@ internal fun AssetFullScreenSheet(
     val heightPx = windowSize.height.takeIf { it > 0 } ?: metrics.heightPixels
     val widthDp = with(density) { widthPx.toDp() }
     val heightDp = with(density) { heightPx.toDp() }
+    val isTablet = WindowAdaptive.isTabletLayout()
+    val windowAnchor = remember {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset = IntOffset.Zero
+        }
+    }
 
     // Popup stays in the activity window. A Compose Dialog after several
     // NavHost back navigations can measure as 0 and show a blank white screen.
     Popup(
-        alignment = Alignment.TopStart,
-        offset = IntOffset.Zero,
+        popupPositionProvider = windowAnchor,
         onDismissRequest = onDismiss,
         properties = PopupProperties(
             focusable = true,
@@ -207,10 +231,42 @@ internal fun AssetFullScreenSheet(
     ) {
         Surface(
             modifier = Modifier.requiredSize(widthDp, heightDp),
-            color = MaterialTheme.colorScheme.background,
+            color = if (isTablet) Color.Transparent else MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {
-            content()
+            if (isTablet) {
+                val scrimClicks = remember { MutableInteractionSource() }
+                Box(Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .clickable(
+                                interactionSource = scrimClicks,
+                                indication = null,
+                                onClick = onDismiss,
+                            ),
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .widthIn(max = 600.dp)
+                            .fillMaxHeight()
+                            .padding(vertical = 24.dp)
+                            .statusBarsPadding()
+                            .navigationBarsPadding(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.background,
+                        shadowElevation = 8.dp,
+                    ) {
+                        content()
+                    }
+                }
+            } else {
+                Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                    content()
+                }
+            }
         }
     }
 }
