@@ -3337,7 +3337,7 @@ class SnipeITAPIClient: ObservableObject {
         let status_id: Int?
         let category_id: Int?
         let manufacturer_id: Int?
-        let supplier_id: Int?
+        let supplier_id: NullableInt?
         let notes: String?
         let order_number: String?
         let rtd_location_id: NullableInt?
@@ -3468,6 +3468,11 @@ class SnipeITAPIClient: ObservableObject {
                 // Some Snipe-IT versions expect custom fields as top-level _snipeit_* keys.
                 for (dbKey, value) in customFields {
                     bodyObject[dbKey] = value
+                }
+            }
+            for key in ["supplier_id", "company_id", "category_id", "manufacturer_id", "location_id"] {
+                if let id = bodyObject[key] as? Int, id <= 0 {
+                    bodyObject.removeValue(forKey: key)
                 }
             }
 
@@ -3886,6 +3891,15 @@ class SnipeITAPIClient: ObservableObject {
                     bodyObject[dbKey] = wrappedValue.value
                 }
                 bodyObject.removeValue(forKey: "custom_fields")
+            }
+            // Snipe-IT `exists:…,id` rejects 0. Optional FKs must be JSON null or omitted.
+            if let sid = bodyObject["supplier_id"] as? Int, sid <= 0 {
+                bodyObject["supplier_id"] = NSNull()
+            }
+            for key in ["category_id", "manufacturer_id"] {
+                if let id = bodyObject[key] as? Int, id <= 0 {
+                    bodyObject.removeValue(forKey: key)
+                }
             }
 
             let data: Data

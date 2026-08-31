@@ -596,14 +596,16 @@ struct AssetDetailView: View {
         if let id = currentAsset.manufacturer?.id, manufacturerIds.contains(id) {
             selectedManufacturerId = id
         } else if let first = manufacturerIds.first { selectedManufacturerId = first }
-        let supplierIds = Set(apiClient.assets.compactMap { $0.supplier?.id })
-        if let id = currentAsset.supplier?.id, supplierIds.contains(id) {
+        if let id = currentAsset.supplier?.id, id > 0 {
             selectedSupplierId = id
-        } else if let first = supplierIds.first { selectedSupplierId = first }
-        let companyIds = Set(apiClient.assets.compactMap { $0.company?.id })
-        if let id = currentAsset.company?.id, companyIds.contains(id) {
+        } else {
+            selectedSupplierId = 0
+        }
+        if let id = currentAsset.company?.id, id > 0 {
             selectedCompanyId = id
-        } else if let first = companyIds.first { selectedCompanyId = first }
+        } else {
+            selectedCompanyId = 0
+        }
         let locationIds = Set(apiClient.locations.map(\.id))
         if let id = currentAsset.rtdLocation?.id, locationIds.contains(id) {
             selectedLocationId = id

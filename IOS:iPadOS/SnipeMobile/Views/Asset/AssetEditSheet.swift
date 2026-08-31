@@ -222,11 +222,11 @@ struct AssetEditSheet: View {
                 name: trim(editName),
                 asset_tag: trim(editAssetTag) ?? asset.assetTag,
                 serial: serialRequest,
-                model_id: selectedModelId,
-                status_id: selectedStatusId,
-                category_id: selectedCategoryId,
-                manufacturer_id: selectedManufacturerId,
-                supplier_id: selectedSupplierId,
+                model_id: selectedModelId > 0 ? selectedModelId : nil,
+                status_id: selectedStatusId > 0 ? selectedStatusId : nil,
+                category_id: selectedCategoryId > 0 ? selectedCategoryId : nil,
+                manufacturer_id: selectedManufacturerId > 0 ? selectedManufacturerId : nil,
+                supplier_id: selectedSupplierId > 0 ? .value(selectedSupplierId) : .null,
                 notes: trim(editNotes) ?? "",
                 order_number: trim(editOrderNumber) ?? "",
                 rtd_location_id: selectedLocationId > 0 ? .value(selectedLocationId) : .null,
@@ -302,7 +302,7 @@ struct AssetEditSheet: View {
                 }
             }
             if !apiClient.assets.isEmpty {
-                let supplierPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.supplier?.id })).compactMap { id in
+                let supplierPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.supplier?.id }.filter { $0 > 0 })).compactMap { id in
                     apiClient.assets.first(where: { $0.supplier?.id == id })?.supplier.map {
                         IdNamePair(id: $0.id, name: HTMLDecoder.decode($0.name))
                     }
@@ -319,7 +319,7 @@ struct AssetEditSheet: View {
                 }
             }
             if !apiClient.assets.isEmpty {
-                let companyPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.company?.id })).compactMap { id in
+                let companyPairs: [IdNamePair] = Array(Set(apiClient.assets.compactMap { $0.company?.id }.filter { $0 > 0 })).compactMap { id in
                     apiClient.assets.first(where: { $0.company?.id == id })?.company.map {
                         IdNamePair(id: $0.id, name: HTMLDecoder.decode($0.name))
                     }
