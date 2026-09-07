@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -86,10 +87,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.callandt.snipemobile.data.prefs.AppMode
 import com.callandt.snipemobile.data.prefs.AppModeCheckProgress
+import com.callandt.snipemobile.data.api.SnipeITOAuthService
 import com.callandt.snipemobile.debug.AppLog
 import com.callandt.snipemobile.debug.DebugLogStore
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.SettingsGroupedCard
+import com.callandt.snipemobile.ui.onboarding.SnipeITOAuthWebSheet
 import com.callandt.snipemobile.ui.components.SettingsRow
 import com.callandt.snipemobile.ui.components.SettingsSectionFooter
 import com.callandt.snipemobile.ui.components.SettingsSectionHeader
@@ -865,9 +868,33 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
     var url by remember(baseUrl) { mutableStateOf(baseUrl) }
     var token by remember { mutableStateOf(viewModel.currentApiToken()) }
     var isChecking by remember { mutableStateOf(false) }
+    var isSigningIn by remember { mutableStateOf(false) }
     var showCheckProgress by remember { mutableStateOf(false) }
     var checkProgress by remember { mutableStateOf(AppModeCheckProgress()) }
+    var signInMessage by remember { mutableStateOf<String?>(null) }
+    var signInMessageIsError by remember { mutableStateOf(false) }
+    var oauthUnavailableHint by remember { mutableStateOf(false) }
+    var pendingSession by remember { mutableStateOf<SnipeITOAuthService.AuthSession?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val hasUrl = url.isNotBlank()
+    val isConnected = hasUrl && token.isNotBlank()
+    val busy = isChecking || isSigningIn
+
+    suspend fun saveAndCheck() {
+        if (isChecking) return
+        isChecking = true
+        showCheckProgress = true
+        checkProgress = AppModeCheckProgress()
+        viewModel.saveApiConfiguration(url.trim(), token.trim(), syncAfterSave = false)
+        val result = viewModel.detectAppMode { updated ->
+            checkProgress = updated
+        }
+        if (result.succeeded) {
+            viewModel.syncForCurrentAppModeSuspending()
+        }
+        isChecking = false
+    }
 
     Scaffold(
         topBar = {
@@ -889,24 +916,53 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            SettingsGroupedCard {
+                SettingsRow(
+                    icon = if (isConnected) Icons.Default.Check else Icons.Default.Info,
+                    iconColor = if (isConnected) Color(0xFF34C759) else Color(0xFF8E8E93),
+                    title = L10n.string("api_connection"),
+                    value = if (isConnected) {
+                        L10n.string("api_connected")
+                    } else {
+                        L10n.string("api_not_connected")
+                    },
+                    showChevron = false,
+                    onClick = null,
+                )
+                SettingsRow(
+                    icon = Icons.Default.Person,
+                    iconColor = Color(0xFF5856D6),
+                    title = L10n.string("app_mode_label"),
+                    value = appMode?.localizedTitle ?: L10n.string("app_mode_unknown"),
+                    showChevron = false,
+                    onClick = null,
+                )
+            }
+
+            Text(
+                L10n.string("api_server"),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedTextField(
                 value = url,
-                onValueChange = { url = it },
+                onValueChange = {
+                    url = it
+                    signInMessage = null
+                    signInMessageIsError = false
+                    oauthUnavailableHint = false
+                },
                 label = { Text(L10n.string("server_url")) },
                 placeholder = { Text("https://snipeit.yourcompany.com") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text(L10n.string("api_key")) },
-                modifier = Modifier.fillMaxWidth(),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-            )
             Text(
-                L10n.string("api_settings_desc"),
+                if (isConnected) {
+                    L10n.string("api_settings_server_footer")
+                } else {
+                    L10n.string("api_settings_desc")
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -914,21 +970,105 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
             Button(
                 onClick = {
                     scope.launch {
-                        if (isChecking) return@launch
-                        isChecking = true
-                        showCheckProgress = true
-                        checkProgress = AppModeCheckProgress()
-                        viewModel.saveApiConfiguration(url.trim(), token.trim(), syncAfterSave = false)
-                        val result = viewModel.detectAppMode { updated ->
-                            checkProgress = updated
+                        if (!hasUrl || busy) return@launch
+                        isSigningIn = true
+                        signInMessage = null
+                        signInMessageIsError = false
+                        oauthUnavailableHint = false
+                        when (val discovery = SnipeITOAuthService.discover(url)) {
+                            is SnipeITOAuthService.Discovery.OAuth -> {
+                                pendingSession = SnipeITOAuthService.startSession(url, discovery.clientId)
+                            }
+                            SnipeITOAuthService.Discovery.Unavailable -> {
+                                oauthUnavailableHint = true
+                                signInMessageIsError = false
+                                signInMessage = L10n.string("login_oauth_unavailable")
+                            }
+                            SnipeITOAuthService.Discovery.Unreachable -> {
+                                signInMessageIsError = true
+                                signInMessage = L10n.string("login_connection_error")
+                            }
                         }
-                        if (result.succeeded) {
-                            viewModel.syncForCurrentAppModeSuspending()
-                        }
-                        isChecking = false
+                        if (pendingSession == null) isSigningIn = false
                     }
                 },
-                enabled = !isChecking && url.isNotBlank() && token.isNotBlank(),
+                enabled = hasUrl && !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (isSigningIn) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+                Text(
+                    if (isSigningIn) {
+                        L10n.string("login_signing_in")
+                    } else if (isConnected) {
+                        L10n.string("api_sign_in_again")
+                    } else {
+                        L10n.string("login_sign_in")
+                    },
+                )
+            }
+            Text(
+                when {
+                    oauthUnavailableHint -> L10n.string("login_oauth_unavailable")
+                    isConnected -> L10n.string("api_sign_in_again_footer")
+                    else -> L10n.string("api_settings_sign_in_footer")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (signInMessage != null) {
+                Text(
+                    signInMessage!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (oauthUnavailableHint || !signInMessageIsError) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+            }
+
+            Text(
+                L10n.string("login_api_key"),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text(L10n.string("login_api_key")) },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+            )
+            Text(
+                L10n.string("api_key_settings_footer"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = L10n.string("how_api_key"),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://snipe-it.readme.io/reference/generating-api-tokens"),
+                        ),
+                    )
+                },
+            )
+
+            Button(
+                onClick = { scope.launch { saveAndCheck() } },
+                enabled = !busy && hasUrl && token.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (isChecking) {
@@ -980,17 +1120,40 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-
-            SettingsGroupedCard {
-                SettingsRow(
-                    icon = Icons.Default.Person,
-                    iconColor = Color(0xFF5856D6),
-                    title = L10n.string("app_mode_label"),
-                    value = appMode?.localizedTitle ?: L10n.string("app_mode_unknown"),
-                    showChevron = false,
-                    onClick = null,
-                )
-            }
         }
+    }
+
+    pendingSession?.let { session ->
+        SnipeITOAuthWebSheet(
+            authorizeUrl = session.authorizeUrl,
+            onCancel = {
+                pendingSession = null
+                isSigningIn = false
+            },
+            onRedirect = { uri ->
+                val captured = session
+                pendingSession = null
+                scope.launch {
+                    try {
+                        val result = SnipeITOAuthService.completeSignIn(url, captured, uri)
+                        url = result.baseUrl
+                        token = result.token
+                        signInMessageIsError = false
+                        signInMessage = null
+                        saveAndCheck()
+                    } catch (e: SnipeITOAuthService.ServiceException) {
+                        if (e.kind != SnipeITOAuthService.ServiceException.Kind.Cancelled) {
+                            signInMessageIsError = true
+                            signInMessage = e.message
+                        }
+                    } catch (e: Exception) {
+                        signInMessageIsError = true
+                        signInMessage = e.message ?: L10n.string("login_failed")
+                    } finally {
+                        isSigningIn = false
+                    }
+                }
+            },
+        )
     }
 }

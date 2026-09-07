@@ -1112,24 +1112,111 @@ struct APISettingsView: View {
     @Binding var apiIsAdminCapable: Bool
 
     @State private var isChecking = false
+    @State private var isSigningIn = false
+    @State private var isDiscovering = false
+    @State private var oauthClientId: String?
+    @State private var oauthUnavailableHint = false
+    @State private var signInMessage: String?
+    @State private var signInMessageIsError = false
     @State private var checkProgress = AppModeCheckProgress()
     @State private var showCheckProgress = false
+
+    private var hasURL: Bool {
+        !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isConnected: Bool {
+        hasURL && !apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         Form {
             Section {
+                SettingsRow(
+                    icon: isConnected ? "checkmark.circle.fill" : "xmark.circle.fill",
+                    iconColor: isConnected ? .green : .secondary,
+                    title: L10n.string("api_connection"),
+                    value: isConnected
+                        ? L10n.string("api_connected")
+                        : L10n.string("api_not_connected")
+                )
+                SettingsRow(
+                    icon: appModeRaw == AppMode.user.rawValue ? "person.fill" : "person.badge.key.fill",
+                    iconColor: .indigo,
+                    title: L10n.string("app_mode_label"),
+                    value: AppMode(rawValue: appModeRaw)?.localizedTitle ?? L10n.string("app_mode_unknown")
+                )
+            }
+
+            Section {
                 TextField("https://snipeit.yourcompany.com", text: $baseURL)
-                    .autocapitalization(.none)
+                    .textInputAutocapitalization(.never)
                     .textContentType(.URL)
                     .keyboardType(.URL)
                     .disableAutocorrection(true)
-                SecureField("API Key", text: $apiToken)
-                    .textContentType(.password)
+                    .onChange(of: baseURL) { _, _ in
+                        oauthClientId = nil
+                        oauthUnavailableHint = false
+                        signInMessage = nil
+                        signInMessageIsError = false
+                    }
             } header: {
-                Text(L10n.string("api_settings"))
+                Text(L10n.string("api_server"))
+            } footer: {
+                Text(
+                    isConnected
+                        ? L10n.string("api_settings_server_footer")
+                        : L10n.string("api_settings_desc")
+                )
+            }
+
+            Section {
+                Button {
+                    Task { await signInWithOAuth() }
+                } label: {
+                    HStack {
+                        Label(
+                            isSigningIn
+                                ? L10n.string("login_signing_in")
+                                : (isConnected
+                                    ? L10n.string("api_sign_in_again")
+                                    : L10n.string("login_sign_in")),
+                            systemImage: "person.badge.key.fill"
+                        )
+                        Spacer()
+                        if isSigningIn || isDiscovering {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(!hasURL || isSigningIn || isChecking)
+
+                if let signInMessage {
+                    Text(signInMessage)
+                        .font(.footnote)
+                        .foregroundStyle(
+                            (oauthUnavailableHint || !signInMessageIsError) ? Color.secondary : Color.red
+                        )
+                }
+            } footer: {
+                Text(
+                    oauthUnavailableHint
+                        ? L10n.string("login_oauth_unavailable")
+                        : (isConnected
+                            ? L10n.string("api_sign_in_again_footer")
+                            : L10n.string("api_settings_sign_in_footer"))
+                )
+            }
+
+            Section {
+                SecureField(L10n.string("login_api_key_placeholder"), text: $apiToken)
+                    .textContentType(.password)
+                    .textInputAutocapitalization(.never)
+            } header: {
+                Text(L10n.string("login_api_key"))
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.string("api_settings_desc"))
+                    Text(L10n.string("api_key_settings_footer"))
                     Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
                         Text(L10n.string("how_api_key"))
                             .font(.footnote.weight(.medium))
@@ -1150,7 +1237,8 @@ struct APISettingsView: View {
                     }
                 }
                 .disabled(isChecking
-                          || baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                          || isSigningIn
+                          || !hasURL
                           || apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 if showCheckProgress {
@@ -1177,21 +1265,73 @@ struct APISettingsView: View {
             } footer: {
                 Text(L10n.string("api_save_check_footer"))
             }
-
-            Section {
-                SettingsRow(
-                    icon: appModeRaw == AppMode.user.rawValue ? "person.fill" : "person.badge.key.fill",
-                    iconColor: .indigo,
-                    title: L10n.string("app_mode_label"),
-                    value: AppMode(rawValue: appModeRaw)?.localizedTitle ?? L10n.string("app_mode_unknown")
-                )
-            }
         }
         .navigationTitle(L10n.string("api_settings"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             baseURL = apiClient.baseURL
             apiToken = KeychainSecretStore.string(for: .apiToken)
+            Task { await discoverIfNeeded() }
+        }
+    }
+
+    private func discoverIfNeeded() async {
+        guard hasURL, oauthClientId == nil, !isDiscovering else { return }
+        isDiscovering = true
+        defer { isDiscovering = false }
+        if case .oauth(let clientId) = await SnipeITOAuthService.shared.discover(baseURL: baseURL) {
+            oauthClientId = clientId
+            oauthUnavailableHint = false
+        }
+    }
+
+    private func signInWithOAuth() async {
+        guard hasURL, !isSigningIn else { return }
+        isSigningIn = true
+        signInMessage = nil
+        signInMessageIsError = false
+        oauthUnavailableHint = false
+        defer { isSigningIn = false }
+
+        var clientId = oauthClientId
+        if clientId == nil {
+            isDiscovering = true
+            let discovery = await SnipeITOAuthService.shared.discover(baseURL: baseURL)
+            isDiscovering = false
+            switch discovery {
+            case .oauth(let id):
+                oauthClientId = id
+                clientId = id
+            case .unavailable:
+                oauthUnavailableHint = true
+                signInMessageIsError = false
+                signInMessage = L10n.string("login_oauth_unavailable")
+                return
+            case .unreachable:
+                signInMessageIsError = true
+                signInMessage = L10n.string("login_connection_error")
+                return
+            }
+        }
+
+        guard let clientId else { return }
+
+        do {
+            let result = try await SnipeITOAuthService.shared.signIn(
+                baseURL: baseURL,
+                clientId: clientId
+            )
+            baseURL = result.baseURL
+            apiToken = result.token
+            signInMessageIsError = false
+            signInMessage = nil
+            await saveAndCheck()
+        } catch {
+            if (error as? SnipeITOAuthService.ServiceError) == .cancelled {
+                return
+            }
+            signInMessageIsError = true
+            signInMessage = error.localizedDescription
         }
     }
 
