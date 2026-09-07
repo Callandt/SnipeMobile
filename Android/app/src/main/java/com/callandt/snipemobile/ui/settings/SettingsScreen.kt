@@ -66,6 +66,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -874,12 +875,28 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
     var signInMessage by remember { mutableStateOf<String?>(null) }
     var signInMessageIsError by remember { mutableStateOf(false) }
     var oauthUnavailableHint by remember { mutableStateOf(false) }
+    var showApiKeyOverride by remember { mutableStateOf(false) }
     var pendingSession by remember { mutableStateOf<SnipeITOAuthService.AuthSession?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val hasUrl = url.isNotBlank()
     val isConnected = hasUrl && token.isNotBlank()
     val busy = isChecking || isSigningIn
+    val showsApiKey = oauthUnavailableHint || showApiKeyOverride
+
+    LaunchedEffect(baseUrl) {
+        if (baseUrl.isBlank()) return@LaunchedEffect
+        when (val discovery = SnipeITOAuthService.discover(baseUrl)) {
+            is SnipeITOAuthService.Discovery.OAuth -> {
+                oauthUnavailableHint = false
+            }
+            SnipeITOAuthService.Discovery.Unavailable -> {
+                oauthUnavailableHint = true
+                showApiKeyOverride = false
+            }
+            SnipeITOAuthService.Discovery.Unreachable -> Unit
+        }
+    }
 
     suspend fun saveAndCheck() {
         if (isChecking) return
@@ -950,7 +967,6 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                     url = it
                     signInMessage = null
                     signInMessageIsError = false
-                    oauthUnavailableHint = false
                 },
                 label = { Text(L10n.string("server_url")) },
                 placeholder = { Text("https://snipeit.yourcompany.com") },
@@ -967,104 +983,128 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Button(
-                onClick = {
-                    scope.launch {
-                        if (!hasUrl || busy) return@launch
-                        isSigningIn = true
-                        signInMessage = null
-                        signInMessageIsError = false
-                        oauthUnavailableHint = false
-                        when (val discovery = SnipeITOAuthService.discover(url)) {
-                            is SnipeITOAuthService.Discovery.OAuth -> {
-                                pendingSession = SnipeITOAuthService.startSession(url, discovery.clientId)
+            if (!oauthUnavailableHint) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            if (!hasUrl || busy) return@launch
+                            isSigningIn = true
+                            signInMessage = null
+                            signInMessageIsError = false
+                            oauthUnavailableHint = false
+                            when (val discovery = SnipeITOAuthService.discover(url)) {
+                                is SnipeITOAuthService.Discovery.OAuth -> {
+                                    pendingSession = SnipeITOAuthService.startSession(url, discovery.clientId)
+                                }
+                                SnipeITOAuthService.Discovery.Unavailable -> {
+                                    oauthUnavailableHint = true
+                                    showApiKeyOverride = false
+                                    isSigningIn = false
+                                }
+                                SnipeITOAuthService.Discovery.Unreachable -> {
+                                    signInMessageIsError = true
+                                    signInMessage = L10n.string("login_connection_error")
+                                    isSigningIn = false
+                                }
                             }
-                            SnipeITOAuthService.Discovery.Unavailable -> {
-                                oauthUnavailableHint = true
-                                signInMessageIsError = false
-                                signInMessage = L10n.string("login_oauth_unavailable")
-                            }
-                            SnipeITOAuthService.Discovery.Unreachable -> {
-                                signInMessageIsError = true
-                                signInMessage = L10n.string("login_connection_error")
+                            if (pendingSession == null && !oauthUnavailableHint) {
+                                isSigningIn = false
                             }
                         }
-                        if (pendingSession == null) isSigningIn = false
+                    },
+                    enabled = hasUrl && !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (isSigningIn) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
                     }
-                },
-                enabled = hasUrl && !busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                if (isSigningIn) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(18.dp),
-                        strokeWidth = 2.dp,
+                    Text(
+                        if (isSigningIn) {
+                            L10n.string("login_signing_in")
+                        } else if (isConnected) {
+                            L10n.string("api_sign_in_again")
+                        } else {
+                            L10n.string("login_sign_in")
+                        },
                     )
                 }
                 Text(
-                    if (isSigningIn) {
-                        L10n.string("login_signing_in")
-                    } else if (isConnected) {
-                        L10n.string("api_sign_in_again")
+                    if (isConnected) {
+                        L10n.string("api_sign_in_again_footer")
                     } else {
-                        L10n.string("login_sign_in")
+                        L10n.string("api_settings_sign_in_footer")
                     },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                TextButton(
+                    onClick = { showApiKeyOverride = !showApiKeyOverride },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (showApiKeyOverride) {
+                            L10n.string("login_hide_api_key")
+                        } else {
+                            L10n.string("login_use_api_key")
+                        },
+                    )
+                }
             }
-            Text(
-                when {
-                    oauthUnavailableHint -> L10n.string("login_oauth_unavailable")
-                    isConnected -> L10n.string("api_sign_in_again_footer")
-                    else -> L10n.string("api_settings_sign_in_footer")
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             if (signInMessage != null) {
                 Text(
                     signInMessage!!,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (oauthUnavailableHint || !signInMessageIsError) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
+                    color = if (signInMessageIsError) {
                         MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }
 
-            Text(
-                L10n.string("login_api_key"),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text(L10n.string("login_api_key")) },
-                modifier = Modifier.fillMaxWidth(),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-            )
-            Text(
-                L10n.string("api_key_settings_footer"),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = L10n.string("how_api_key"),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable {
-                    context.startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://snipe-it.readme.io/reference/generating-api-tokens"),
-                        ),
-                    )
-                },
-            )
+            if (showsApiKey) {
+                Text(
+                    L10n.string("login_api_key"),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text(L10n.string("login_api_key")) },
+                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
+                Text(
+                    if (oauthUnavailableHint) {
+                        L10n.string("login_oauth_unavailable")
+                    } else {
+                        L10n.string("api_key_settings_footer")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = L10n.string("how_api_key"),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://snipe-it.readme.io/reference/generating-api-tokens"),
+                            ),
+                        )
+                    },
+                )
+            }
 
             Button(
                 onClick = { scope.launch { saveAndCheck() } },
@@ -1138,6 +1178,7 @@ private fun ApiSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
                         val result = SnipeITOAuthService.completeSignIn(url, captured, uri)
                         url = result.baseUrl
                         token = result.token
+                        showApiKeyOverride = false
                         signInMessageIsError = false
                         signInMessage = null
                         saveAndCheck()

@@ -1116,6 +1116,7 @@ struct APISettingsView: View {
     @State private var isDiscovering = false
     @State private var oauthClientId: String?
     @State private var oauthUnavailableHint = false
+    @State private var showAPIKeyOverride = false
     @State private var signInMessage: String?
     @State private var signInMessageIsError = false
     @State private var checkProgress = AppModeCheckProgress()
@@ -1127,6 +1128,10 @@ struct APISettingsView: View {
 
     private var isConnected: Bool {
         hasURL && !apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var showsAPIKey: Bool {
+        oauthUnavailableHint || showAPIKeyOverride
     }
 
     var body: some View {
@@ -1156,7 +1161,6 @@ struct APISettingsView: View {
                     .disableAutocorrection(true)
                     .onChange(of: baseURL) { _, _ in
                         oauthClientId = nil
-                        oauthUnavailableHint = false
                         signInMessage = nil
                         signInMessageIsError = false
                     }
@@ -1170,56 +1174,74 @@ struct APISettingsView: View {
                 )
             }
 
-            Section {
-                Button {
-                    Task { await signInWithOAuth() }
-                } label: {
-                    HStack {
-                        Label(
-                            isSigningIn
-                                ? L10n.string("login_signing_in")
-                                : (isConnected
-                                    ? L10n.string("api_sign_in_again")
-                                    : L10n.string("login_sign_in")),
-                            systemImage: "person.badge.key.fill"
-                        )
-                        Spacer()
-                        if isSigningIn || isDiscovering {
-                            ProgressView()
+            if !oauthUnavailableHint {
+                Section {
+                    Button {
+                        Task { await signInWithOAuth() }
+                    } label: {
+                        HStack {
+                            Label(
+                                isSigningIn
+                                    ? L10n.string("login_signing_in")
+                                    : (isConnected
+                                        ? L10n.string("api_sign_in_again")
+                                        : L10n.string("login_sign_in")),
+                                systemImage: "person.badge.key.fill"
+                            )
+                            Spacer()
+                            if isSigningIn || isDiscovering {
+                                ProgressView()
+                            }
                         }
                     }
-                }
-                .disabled(!hasURL || isSigningIn || isChecking)
+                    .disabled(!hasURL || isSigningIn || isChecking)
 
-                if let signInMessage {
-                    Text(signInMessage)
-                        .font(.footnote)
-                        .foregroundStyle(
-                            (oauthUnavailableHint || !signInMessageIsError) ? Color.secondary : Color.red
+                    Button {
+                        withAnimation {
+                            showAPIKeyOverride.toggle()
+                        }
+                    } label: {
+                        Text(
+                            showAPIKeyOverride
+                                ? L10n.string("login_hide_api_key")
+                                : L10n.string("login_use_api_key")
                         )
-                }
-            } footer: {
-                Text(
-                    oauthUnavailableHint
-                        ? L10n.string("login_oauth_unavailable")
-                        : (isConnected
+                        .font(.subheadline.weight(.medium))
+                    }
+                    .disabled(isSigningIn || isChecking)
+
+                    if let signInMessage {
+                        Text(signInMessage)
+                            .font(.footnote)
+                            .foregroundStyle(signInMessageIsError ? Color.red : Color.secondary)
+                    }
+                } footer: {
+                    Text(
+                        isConnected
                             ? L10n.string("api_sign_in_again_footer")
-                            : L10n.string("api_settings_sign_in_footer"))
-                )
+                            : L10n.string("api_settings_sign_in_footer")
+                    )
+                }
             }
 
-            Section {
-                SecureField(L10n.string("login_api_key_placeholder"), text: $apiToken)
-                    .textContentType(.password)
-                    .textInputAutocapitalization(.never)
-            } header: {
-                Text(L10n.string("login_api_key"))
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.string("api_key_settings_footer"))
-                    Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
-                        Text(L10n.string("how_api_key"))
-                            .font(.footnote.weight(.medium))
+            if showsAPIKey {
+                Section {
+                    SecureField(L10n.string("login_api_key_placeholder"), text: $apiToken)
+                        .textContentType(.password)
+                        .textInputAutocapitalization(.never)
+                } header: {
+                    Text(L10n.string("login_api_key"))
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(
+                            oauthUnavailableHint
+                                ? L10n.string("login_oauth_unavailable")
+                                : L10n.string("api_key_settings_footer")
+                        )
+                        Link(destination: URL(string: "https://snipe-it.readme.io/reference/generating-api-tokens")!) {
+                            Text(L10n.string("how_api_key"))
+                                .font(.footnote.weight(.medium))
+                        }
                     }
                 }
             }
@@ -1279,9 +1301,16 @@ struct APISettingsView: View {
         guard hasURL, oauthClientId == nil, !isDiscovering else { return }
         isDiscovering = true
         defer { isDiscovering = false }
-        if case .oauth(let clientId) = await SnipeITOAuthService.shared.discover(baseURL: baseURL) {
+        switch await SnipeITOAuthService.shared.discover(baseURL: baseURL) {
+        case .oauth(let clientId):
             oauthClientId = clientId
             oauthUnavailableHint = false
+        case .unavailable:
+            oauthClientId = nil
+            oauthUnavailableHint = true
+            showAPIKeyOverride = false
+        case .unreachable:
+            break
         }
     }
 
@@ -1323,6 +1352,7 @@ struct APISettingsView: View {
             )
             baseURL = result.baseURL
             apiToken = result.token
+            showAPIKeyOverride = false
             signInMessageIsError = false
             signInMessage = nil
             await saveAndCheck()
