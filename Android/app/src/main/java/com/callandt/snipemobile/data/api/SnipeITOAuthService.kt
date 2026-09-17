@@ -116,7 +116,6 @@ object SnipeITOAuthService {
             .appendQueryParameter("code_challenge", challenge)
             .appendQueryParameter("code_challenge_method", "S256")
             .appendQueryParameter("state", state)
-            .appendQueryParameter("prompt", "login")
             .build()
         return AuthSession(
             clientId = clientId,
