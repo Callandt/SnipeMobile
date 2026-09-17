@@ -157,47 +157,88 @@ fun AppNav(viewModel: AppViewModel) {
         tabletSelection = selection
     }
 
+    fun dismissScanner() {
+        if (navController.currentDestination?.route == Routes.Scanner) {
+            navController.popBackStack()
+        }
+    }
+
     fun openEntityFromQr(route: String) {
+        // Phone: open the detail from the still-resumed scanner. popUpTo(Main)
+        // in navigateFromListWhenResumed closes the scanner. Popping first
+        // leaves Main not-yet-RESUMED, so the detail navigation is dropped.
         when {
             route.startsWith("asset/") -> {
                 val id = route.removePrefix("asset/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Hardware, TabletDetailSelection.Asset(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Hardware, TabletDetailSelection.Asset(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             route.startsWith("accessory/") -> {
                 val id = route.removePrefix("accessory/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Accessories, TabletDetailSelection.Accessory(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Accessories, TabletDetailSelection.Accessory(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             route.startsWith("license/") -> {
                 val id = route.removePrefix("license/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Licenses, TabletDetailSelection.License(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Licenses, TabletDetailSelection.License(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             route.startsWith("consumable/") -> {
                 val id = route.removePrefix("consumable/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Stock, TabletDetailSelection.Consumable(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Stock, TabletDetailSelection.Consumable(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             route.startsWith("component/") -> {
                 val id = route.removePrefix("component/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Stock, TabletDetailSelection.Component(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Stock, TabletDetailSelection.Component(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             route.startsWith("location/") -> {
                 val id = route.removePrefix("location/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Directory, TabletDetailSelection.Location(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Directory, TabletDetailSelection.Location(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             route.startsWith("user/") -> {
                 val id = route.removePrefix("user/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Directory, TabletDetailSelection.User(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Directory, TabletDetailSelection.User(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             route.startsWith("maintenance/") -> {
                 val id = route.removePrefix("maintenance/").toIntOrNull() ?: return
-                if (isTablet) openTabletDetail(MainTab.Hardware, TabletDetailSelection.Maintenance(id))
-                else openPhoneDetail(route)
+                if (isTablet) {
+                    dismissScanner()
+                    openTabletDetail(MainTab.Hardware, TabletDetailSelection.Maintenance(id))
+                } else {
+                    openPhoneDetail(route)
+                }
             }
             else -> openPhoneDetail(route)
         }
@@ -322,10 +363,7 @@ fun AppNav(viewModel: AppViewModel) {
                                 viewModel = viewModel,
                                 link = link,
                                 snackbarHostState = snackbarHostState,
-                                openEntity = { route ->
-                                    navController.popBackStack()
-                                    openEntityFromQr(route)
-                                },
+                                openEntity = { route -> openEntityFromQr(route) },
                             )
                         }
                     },
@@ -334,7 +372,6 @@ fun AppNav(viewModel: AppViewModel) {
                         scope.launch {
                             val asset = viewModel.apiClient.resolveScannedHardware(raw)
                             if (asset != null) {
-                                navController.popBackStack()
                                 openEntityFromQr(Routes.asset(asset.id))
                             } else {
                                 snackbarHostState.showSnackbar(
@@ -349,7 +386,6 @@ fun AppNav(viewModel: AppViewModel) {
                                 val raw = url.toString()
                                 val asset = viewModel.apiClient.resolveScannedHardware(raw)
                                 if (asset != null) {
-                                    navController.popBackStack()
                                     openEntityFromQr(Routes.asset(asset.id))
                                 } else {
                                     snackbarHostState.showSnackbar(
@@ -366,11 +402,10 @@ fun AppNav(viewModel: AppViewModel) {
                                 url = url,
                                 snackbarHostState = snackbarHostState,
                                 onOpenAsset = { assetId ->
-                                    navController.popBackStack()
                                     openEntityFromQr(Routes.asset(assetId))
                                 },
                                 onPromptAddAsset = { prefill ->
-                                    navController.popBackStack()
+                                    dismissScanner()
                                     selectedTab = MainTab.Hardware
                                     showDellAddPrompt = prefill
                                     viewModel.setPendingDellAdd(prefill.url, prefill.serial)
