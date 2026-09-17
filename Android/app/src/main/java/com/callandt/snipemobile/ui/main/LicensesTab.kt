@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -50,13 +51,14 @@ import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.license.AddLicenseSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.ListFilter
 import com.callandt.snipemobile.ui.util.ListSort
 import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.licenseMatchesSearch
 import com.callandt.snipemobile.ui.util.listFilterOptions
 import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.rememberSaveableListFilter
+import com.callandt.snipemobile.ui.util.rememberSaveableListSort
 import com.callandt.snipemobile.ui.util.sortedByListSort
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,9 +79,9 @@ fun LicensesTab(
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
-    var searchQuery by remember { mutableStateOf("") }
-    var listFilter by remember { mutableStateOf(ListFilter()) }
-    var listSort by remember { mutableStateOf(ListSort.updatedDescending) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var listFilter by rememberSaveableListFilter()
+    var listSort by rememberSaveableListSort(ListSort.updatedDescending)
     var showAddLicense by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()

@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -56,7 +57,6 @@ import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.consumable.AddConsumableSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.ListFilter
 import com.callandt.snipemobile.ui.util.ListSort
 import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.WindowAdaptive
@@ -64,6 +64,8 @@ import com.callandt.snipemobile.ui.util.componentMatchesSearch
 import com.callandt.snipemobile.ui.util.consumableMatchesSearch
 import com.callandt.snipemobile.ui.util.listFilterOptions
 import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.rememberSaveableListFilter
+import com.callandt.snipemobile.ui.util.rememberSaveableListSort
 import com.callandt.snipemobile.ui.util.sortedByListSort
 
 private enum class StockSubtab { Consumables, Components }
@@ -91,12 +93,12 @@ fun StockTab(
     val isLoading by viewModel.isLoading.collectAsState()
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
 
-    var searchQuery by remember { mutableStateOf("") }
-    var consumableFilter by remember { mutableStateOf(ListFilter()) }
-    var componentFilter by remember { mutableStateOf(ListFilter()) }
-    var consumableSort by remember { mutableStateOf(ListSort.updatedDescending) }
-    var componentSort by remember { mutableStateOf(ListSort.updatedDescending) }
-    var subtab by remember { mutableIntStateOf(0) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var consumableFilter by rememberSaveableListFilter(key = "consumableFilter")
+    var componentFilter by rememberSaveableListFilter(key = "componentFilter")
+    var consumableSort by rememberSaveableListSort(ListSort.updatedDescending, key = "consumableSort")
+    var componentSort by rememberSaveableListSort(ListSort.updatedDescending, key = "componentSort")
+    var subtab by rememberSaveable { mutableIntStateOf(0) }
     var showAddConsumable by remember { mutableStateOf(false) }
     var showAddComponent by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }

@@ -49,6 +49,7 @@ import com.callandt.snipemobile.ui.settings.SettingsScreen
 import com.callandt.snipemobile.ui.usermode.UserModeScaffold
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.WindowAdaptive
+import com.callandt.snipemobile.ui.util.rememberSaveableEnum
 import kotlinx.coroutines.launch
 
 object Routes {
@@ -90,7 +91,7 @@ fun AppNav(viewModel: AppViewModel) {
     val enableDellQrScan by viewModel.enableDellQrScan.collectAsState()
     val pendingDellAdd by viewModel.pendingDellAdd.collectAsState()
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableStateOf(MainTab.Hardware) }
+    var selectedTab by rememberSaveableEnum(MainTab.Hardware)
     var tabletSelection by remember { mutableStateOf<TabletDetailSelection?>(null) }
     var showDellAddPrompt by remember { mutableStateOf<DellAddPrefill?>(null) }
     val isTablet = WindowAdaptive.isTabletLayout()
@@ -164,9 +165,7 @@ fun AppNav(viewModel: AppViewModel) {
     }
 
     fun openEntityFromQr(route: String) {
-        // Phone: open the detail from the still-resumed scanner. popUpTo(Main)
-        // in navigateFromListWhenResumed closes the scanner. Popping first
-        // leaves Main not-yet-RESUMED, so the detail navigation is dropped.
+        // Don't pop the scanner first — Main isn't resumed yet so detail nav is dropped.
         when {
             route.startsWith("asset/") -> {
                 val id = route.removePrefix("asset/").toIntOrNull() ?: return

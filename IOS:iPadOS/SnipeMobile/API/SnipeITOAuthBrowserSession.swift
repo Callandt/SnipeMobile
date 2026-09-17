@@ -38,9 +38,7 @@ final class SnipeITOAuthBrowserSession: NSObject, ASWebAuthenticationPresentatio
                 continuation.resume(returning: callbackURL)
             }
             session.presentationContextProvider = self
-            // SAML (e.g. Microsoft Entra) needs cookies across redirects. An
-            // ephemeral session commonly leaves login.microsoftonline.com blank
-            // or stuck refreshing.
+            // SAML needs cookies; ephemeral sessions hang on Microsoft login.
             session.prefersEphemeralWebBrowserSession = false
             self.session = session
             if !session.start() {

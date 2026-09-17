@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,8 @@ import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.accessoryMatchesSearch
 import com.callandt.snipemobile.ui.util.assetMatchesSearch
 import com.callandt.snipemobile.ui.util.licenseMatchesSearch
+import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.rememberSaveableEnum
 import kotlinx.coroutines.launch
 
 private enum class UserModeTab(
@@ -86,7 +89,7 @@ fun UserModeScaffold(
     onAccessoryClick: (Int) -> Unit,
     onLicenseClick: (Int) -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(UserModeTab.Profile) }
+    var selectedTab by rememberSaveableEnum(UserModeTab.Profile)
     val scope = rememberCoroutineScope()
     val isLoading by viewModel.isLoading.collectAsState()
     val assets by viewModel.assets.collectAsState()
@@ -100,7 +103,7 @@ fun UserModeScaffold(
     var pendingRequestIds by remember { mutableStateOf(setOf<Int>()) }
     var actionError by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
-    var assetsSearch by remember { mutableStateOf("") }
+    var assetsSearch by rememberSaveable { mutableStateOf("") }
 
     suspend fun reloadRequestables(reportErrors: Boolean) {
         isRefreshingRequests = true
@@ -360,7 +363,9 @@ private fun UserModeAssetsTab(
                         )
                     }
                     else -> {
+                        val listState = rememberResettingLazyListState(query)
                         LazyColumn(
+                            state = listState,
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
@@ -463,7 +468,9 @@ private fun UserModeRequestsTab(
                     )
                 }
                 else -> {
+                    val listState = rememberResettingLazyListState("user-mode-requests")
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {

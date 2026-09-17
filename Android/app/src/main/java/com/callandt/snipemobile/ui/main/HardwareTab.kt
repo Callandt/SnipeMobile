@@ -89,7 +89,6 @@ import com.callandt.snipemobile.ui.components.rememberListReadyAfterResume
 import com.callandt.snipemobile.ui.components.rememberUserPullRefreshing
 import com.callandt.snipemobile.ui.maintenance.BulkMaintenanceFormSheet
 import com.callandt.snipemobile.ui.theme.SnipeGreen
-import com.callandt.snipemobile.ui.util.AssetFilter
 import com.callandt.snipemobile.ui.util.AssetFilterOptions
 import com.callandt.snipemobile.ui.util.AuditDateHelper
 import com.callandt.snipemobile.ui.util.WindowAdaptive
@@ -98,6 +97,9 @@ import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.ListSort
 import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.assetMatchesSearch
+import com.callandt.snipemobile.ui.util.rememberSaveableAssetFilter
+import com.callandt.snipemobile.ui.util.rememberSaveableEnum
+import com.callandt.snipemobile.ui.util.rememberSaveableListSort
 import com.callandt.snipemobile.ui.util.sortedByListSort
 import com.callandt.snipemobile.ui.util.maintenanceMatchesSearch
 import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
@@ -166,10 +168,10 @@ fun HardwareTab(
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var subtabIndex by rememberSaveable { mutableIntStateOf(0) }
-    var assetFilter by remember { mutableStateOf(AssetFilter()) }
-    var listSort by remember { mutableStateOf(ListSort.assetTagDescending) }
-    var maintenanceSort by remember { mutableStateOf(ListSort.startDateDescending) }
-    var maintenanceFilter by remember { mutableStateOf(MaintenanceStatusFilter.All) }
+    var assetFilter by rememberSaveableAssetFilter(key = "assetFilter")
+    var listSort by rememberSaveableListSort(ListSort.assetTagDescending, key = "assetSort")
+    var maintenanceSort by rememberSaveableListSort(ListSort.startDateDescending, key = "maintenanceSort")
+    var maintenanceFilter by rememberSaveableEnum(MaintenanceStatusFilter.All, key = "maintenanceFilter")
     var showMaintenanceFilterMenu by remember { mutableStateOf(false) }
     var showAddAsset by remember { mutableStateOf(false) }
     var showBulkMaintenance by remember { mutableStateOf(false) }

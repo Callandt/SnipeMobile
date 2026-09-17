@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -56,7 +57,6 @@ import com.callandt.snipemobile.ui.location.AddLocationSheet
 import com.callandt.snipemobile.ui.user.AddUserSheet
 import com.callandt.snipemobile.ui.util.FilterDimension
 import com.callandt.snipemobile.ui.util.L10n
-import com.callandt.snipemobile.ui.util.ListFilter
 import com.callandt.snipemobile.ui.util.ListSort
 import com.callandt.snipemobile.ui.util.ListSortCatalog
 import com.callandt.snipemobile.ui.util.ListSortField
@@ -65,6 +65,8 @@ import com.callandt.snipemobile.ui.util.WindowAdaptive
 import com.callandt.snipemobile.ui.util.listFilterOptions
 import com.callandt.snipemobile.ui.util.locationMatchesSearch
 import com.callandt.snipemobile.ui.util.rememberResettingLazyListState
+import com.callandt.snipemobile.ui.util.rememberSaveableListFilter
+import com.callandt.snipemobile.ui.util.rememberSaveableListSort
 import com.callandt.snipemobile.ui.util.sortedByListSort
 import com.callandt.snipemobile.ui.util.userMatchesSearch
 import com.callandt.snipemobile.ui.util.usersSortedWithCurrentFirst
@@ -90,11 +92,11 @@ fun DirectoryTab(
     val isLoading by viewModel.isLoading.collectAsState()
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
 
-    var searchQuery by remember { mutableStateOf("") }
-    var userFilter by remember { mutableStateOf(ListFilter()) }
-    var userSort by remember { mutableStateOf(ListSort.nameAscending) }
-    var locationSort by remember { mutableStateOf(ListSort.nameAscending) }
-    var subtab by remember { mutableIntStateOf(0) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var userFilter by rememberSaveableListFilter(key = "userFilter")
+    var userSort by rememberSaveableListSort(ListSort.nameAscending, key = "userSort")
+    var locationSort by rememberSaveableListSort(ListSort.nameAscending, key = "locationSort")
+    var subtab by rememberSaveable { mutableIntStateOf(0) }
     var showAddUser by remember { mutableStateOf(false) }
     var showAddLocation by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
