@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ViewQuilt
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -102,6 +103,7 @@ import com.callandt.snipemobile.ui.management.ManagementEntity
 import com.callandt.snipemobile.ui.management.ManagementHubScreen
 import com.callandt.snipemobile.ui.management.ManagementListScreen
 import com.callandt.snipemobile.ui.onboarding.RightsCheckProgressList
+import com.callandt.snipemobile.ui.util.CardKind
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.notifications.AuditNotificationScheduler
 import java.util.Locale
@@ -116,9 +118,12 @@ private object SettingsRoutes {
     const val Api = "api"
     const val Audit = "audit"
     const val Assets = "assets"
+    const val CardLayout = "card_layout"
+    const val CardLayoutKind = "card_layout/{kind}"
     const val Dell = "dell"
 
     fun managementEntity(entity: ManagementEntity) = "management/${entity.name}"
+    fun cardLayoutKind(kind: CardKind) = "card_layout/${kind.id}"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -175,6 +180,27 @@ fun SettingsScreen(
         }
         composable(SettingsRoutes.Assets) {
             AssetCreationSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+        }
+        composable(SettingsRoutes.CardLayout) {
+            CardLayoutSettingsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onOpenKind = { navController.navigate(SettingsRoutes.cardLayoutKind(it)) },
+            )
+        }
+        composable(
+            route = SettingsRoutes.CardLayoutKind,
+            arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val kindId = backStackEntry.arguments?.getString("kind")
+            val kind = kindId?.let(CardKind::fromId)
+            if (kind != null) {
+                CardLayoutKindEditorScreen(
+                    kind = kind,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable(SettingsRoutes.Dell) {
             DellSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
@@ -305,8 +331,14 @@ private fun SettingsRootScreen(
                         checked = showPhotosInCardList,
                         onCheckedChange = { viewModel.setShowPhotosInCardList(it) },
                     )
+                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
+                    SettingsRow(
+                        icon = Icons.Default.ViewQuilt,
+                        iconColor = Color(0xFF5856D6),
+                        title = L10n.string("card_layout_settings"),
+                        onClick = { onNavigate(SettingsRoutes.CardLayout) },
+                    )
                 }
-                SettingsSectionFooter(L10n.string("show_photos_in_cards_footer"))
             }
 
             if (!isUserMode) {
@@ -340,7 +372,6 @@ private fun SettingsRootScreen(
                             onClick = { onNavigate(SettingsRoutes.ActivityLog) },
                         )
                     }
-                    SettingsSectionFooter(L10n.string("settings_management_footer"))
                 }
             }
 
@@ -455,7 +486,6 @@ private fun SettingsRootScreen(
                         )
                     }
                 }
-                SettingsSectionFooter(L10n.string("connection_section_footer"))
             }
 
             item {

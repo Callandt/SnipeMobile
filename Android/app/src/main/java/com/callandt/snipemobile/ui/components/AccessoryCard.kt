@@ -6,13 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Usb
-import androidx.compose.material.icons.outlined.Place
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -21,12 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Accessory
+import com.callandt.snipemobile.ui.util.CardKind
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.accessoryCardFields
+import com.callandt.snipemobile.ui.util.resolveCard
 
-/** Accessory list card with qty/remaining. */
 @Composable
 fun AccessoryCard(
     accessory: Accessory,
@@ -36,8 +34,8 @@ fun AccessoryCard(
 ) {
     val remaining = accessory.remaining
     val qty = accessory.qty
+    val resolved = resolveCard(CardKind.Accessory, LocalCardLayouts.current, accessoryCardFields(accessory))
     val assignee = accessory.decodedAssignedToName.takeIf { it.isNotEmpty() }
-    val location = accessory.decodedLocationName.takeIf { it.isNotEmpty() }
 
     Surface(
         modifier = modifier
@@ -65,26 +63,7 @@ fun AccessoryCard(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = accessory.decodedName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = L10n.string("tag_label", accessory.decodedAssetTag),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (accessory.decodedManufacturerName.isNotEmpty()) {
-                        Text(
-                            text = accessory.decodedManufacturerName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    CardLayoutHeader(resolved = resolved)
                 }
                 if (showAvailability && (remaining != null || qty != null)) {
                     Column(horizontalAlignment = Alignment.End) {
@@ -108,16 +87,7 @@ fun AccessoryCard(
                 }
             }
 
-            if (assignee != null || location != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    assignee?.let {
-                        AccessoryMetaRow(icon = Icons.Default.Person, text = it)
-                    }
-                    location?.let {
-                        AccessoryMetaRow(icon = Icons.Outlined.Place, text = it)
-                    }
-                }
-            }
+            CardLayoutMeta(items = resolved.meta)
 
             if (assignee != null) {
                 AssetCheckedOutBanner(
@@ -126,29 +96,5 @@ fun AccessoryCard(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun AccessoryMetaRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    text: String,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-            modifier = Modifier.size(18.dp),
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-        )
     }
 }

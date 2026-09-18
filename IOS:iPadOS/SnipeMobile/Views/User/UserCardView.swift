@@ -3,60 +3,41 @@ import SwiftUI
 struct UserCardView: View {
     let user: User
     var useExplicitBackground: Bool = true
+    @Environment(\.cardLayouts) private var cardLayouts
 
-    private var cardTitle: String {
-        let name = user.decodedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty { return name }
-        let first = user.decodedFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !first.isEmpty { return first }
-        let email = user.decodedEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !email.isEmpty { return email }
-        return L10n.string("user")
+    private var resolved: ResolvedCardLayout {
+        CardLayoutResolver.resolve(
+            kind: .user,
+            layout: cardLayouts.layout(for: .user),
+            fields: [
+                .value(CardFieldID.name, user.decodedName),
+                .value(CardFieldID.firstName, user.decodedFirstName),
+                .value(CardFieldID.lastName, user.decodedLastName),
+                .value(CardFieldID.username, user.decodedUsername),
+                .value(CardFieldID.email, user.decodedEmail),
+                .labeled(CardFieldID.phone, user.decodedPhone),
+                .value(CardFieldID.jobTitle, user.decodedJobtitle),
+                .labeled(CardFieldID.employeeNumber, user.decodedEmployeeNumber),
+                .value(CardFieldID.company, user.decodedCompanyName),
+                .value(CardFieldID.location, user.decodedLocationName),
+                .value(
+                    CardFieldID.status,
+                    user.activated.map { L10n.string($0 ? "activated" : "deactivated") } ?? ""
+                ),
+                .labeled(CardFieldID.groups, user.groups.map(\.decodedName).filter { !$0.isEmpty }.joined(separator: ", ")),
+                .labeled(CardFieldID.notes, user.decodedNotes)
+            ]
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CardListIcon(systemName: "person.circle.fill", imagePath: user.image)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(cardTitle)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                    if !user.decodedEmail.isEmpty, user.decodedEmail != cardTitle {
-                        Text(user.decodedEmail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
+                CardLayoutHeader(resolved: resolved)
                 Spacer()
             }
-            if !user.decodedJobtitle.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "briefcase")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                    Text(HTMLDecoder.decode(user.decodedJobtitle))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .lineSpacing(2)
-                }
-            }
-            if !user.decodedLocationName.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "mappin.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                    Text(HTMLDecoder.decode(user.decodedLocationName))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .lineSpacing(2)
-                }
-            }
+            CardLayoutMeta(items: resolved.meta)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,4 +47,4 @@ struct UserCardView: View {
         )
         .contentShape(Rectangle())
     }
-} 
+}

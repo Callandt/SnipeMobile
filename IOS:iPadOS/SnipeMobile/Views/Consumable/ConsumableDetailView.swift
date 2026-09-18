@@ -57,6 +57,7 @@ struct ConsumableDetailView: View {
             if selectedTab == 0 {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        DetailPageTitle(title: currentConsumable.decodedName)
                         if let imageURL = resolvedImageURL {
                             VStack(spacing: 10) {
                                 Text(L10n.string("image"))
@@ -185,13 +186,6 @@ struct ConsumableDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(currentConsumable.decodedName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
                     Button(role: .destructive) {

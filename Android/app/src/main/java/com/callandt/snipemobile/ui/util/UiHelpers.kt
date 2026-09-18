@@ -301,9 +301,6 @@ fun assetPickerSearchText(asset: Asset): String =
     }.filter { it.isNotBlank() }.joinToString(" ")
 
 
-fun assetCardTitle(asset: Asset): String =
-    asset.decodedModelName.ifEmpty { asset.decodedName.ifEmpty { asset.decodedAssetTag } }
-
 fun assetResolvedStatus(asset: Asset): String? {
     val name = asset.decodedStatusLabelName.trim()
     if (name.isNotEmpty()) return name

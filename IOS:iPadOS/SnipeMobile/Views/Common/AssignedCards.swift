@@ -184,6 +184,7 @@ struct LicenseSeatAssetCard: View {
     var fallbackTitle: String = ""
     var fallbackTag: String = ""
     var assignee: SnipeITAPIClient.LicenseSeatAssignee?
+    @Environment(\.cardLayouts) private var cardLayouts
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -229,9 +230,8 @@ struct LicenseSeatAssetCard: View {
 
     private var assetTitle: String {
         if let asset {
-            let model = asset.decodedModelName
-            if !model.isEmpty { return model }
-            if !asset.decodedName.isEmpty { return asset.decodedName }
+            let title = AssetListDisplay.title(for: asset, layouts: cardLayouts)
+            if !title.isEmpty { return title }
         }
         if !fallbackTitle.isEmpty { return fallbackTitle }
         return L10n.string("asset")

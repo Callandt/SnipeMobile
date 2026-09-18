@@ -271,6 +271,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                         }
                     }
                     .modifier(CardListPhotoEnvironment())
+                    .modifier(CardLayoutEnvironment())
                     .environment(\.locale, L10n.locale)
                     .environmentObject(appSettings)
                     .environmentObject(auditNotificationRouter)

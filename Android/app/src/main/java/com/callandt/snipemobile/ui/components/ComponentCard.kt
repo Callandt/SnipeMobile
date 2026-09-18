@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -18,12 +17,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Component
+import com.callandt.snipemobile.ui.util.CardKind
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.componentCardFields
+import com.callandt.snipemobile.ui.util.resolveCard
 
-/** Component list card. */
 @Composable
 fun ComponentCard(
     component: Component,
@@ -32,7 +32,7 @@ fun ComponentCard(
 ) {
     val remaining = component.remaining
     val qty = component.qty
-    val location = component.decodedLocationName.takeIf { it.isNotEmpty() }
+    val resolved = resolveCard(CardKind.Component, LocalCardLayouts.current, componentCardFields(component))
 
     Surface(
         modifier = modifier
@@ -60,28 +60,7 @@ fun ComponentCard(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = component.decodedName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (component.decodedCategoryName.isNotEmpty()) {
-                        Text(
-                            text = component.decodedCategoryName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (component.decodedManufacturerName.isNotEmpty()) {
-                        Text(
-                            text = component.decodedManufacturerName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    CardLayoutHeader(resolved = resolved)
                 }
                 if (remaining != null || qty != null) {
                     Column(horizontalAlignment = Alignment.End) {
@@ -104,9 +83,7 @@ fun ComponentCard(
                     }
                 }
             }
-            location?.let {
-                StockMetaRow(icon = Icons.Outlined.Place, text = it)
-            }
+            CardLayoutMeta(items = resolved.meta)
         }
     }
 }

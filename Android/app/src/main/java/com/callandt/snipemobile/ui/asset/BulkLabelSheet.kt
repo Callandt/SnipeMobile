@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.AssetCompactNameColumn
 import com.callandt.snipemobile.ui.util.L10n
 import kotlinx.coroutines.launch
 
@@ -104,22 +105,10 @@ fun BulkLabelSheet(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    asset.decodedModelName.ifEmpty { asset.decodedName },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                val subtitle = listOf(asset.decodedAssetTag, asset.decodedName)
-                                    .filter { it.isNotEmpty() }
-                                    .joinToString(" · ")
-                                if (subtitle.isNotEmpty()) {
-                                    Text(
-                                        subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
+                            AssetCompactNameColumn(
+                                asset = asset,
+                                modifier = Modifier.weight(1f),
+                            )
                             Icon(Icons.Filled.Close, contentDescription = L10n.string("delete"))
                         }
                     }

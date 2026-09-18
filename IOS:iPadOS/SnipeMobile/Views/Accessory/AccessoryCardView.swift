@@ -3,55 +3,43 @@ import SwiftUI
 struct AccessoryCardView: View {
     let accessory: Accessory
     var useExplicitBackground: Bool = true
+    @Environment(\.cardLayouts) private var cardLayouts
+
+    private var resolved: ResolvedCardLayout {
+        CardLayoutResolver.resolve(
+            kind: .accessory,
+            layout: cardLayouts.layout(for: .accessory),
+            fields: [
+                .value(CardFieldID.name, accessory.decodedName),
+                .value(
+                    CardFieldID.tag,
+                    accessory.decodedAssetTag,
+                    formatted: accessory.decodedAssetTag.isEmpty ? nil : L10n.string("tag_label", accessory.decodedAssetTag)
+                ),
+                .labeled(CardFieldID.modelNumber, accessory.modelNumber ?? ""),
+                .value(CardFieldID.status, accessory.decodedStatusLabelName),
+                .value(CardFieldID.manufacturer, accessory.decodedManufacturerName),
+                .value(CardFieldID.category, accessory.decodedCategoryName),
+                .value(CardFieldID.supplier, HTMLDecoder.decode(accessory.supplier?.name ?? "")),
+                .value(CardFieldID.company, HTMLDecoder.decode(accessory.company?.name ?? "")),
+                .value(CardFieldID.assignedTo, accessory.decodedAssignedToName),
+                .value(CardFieldID.location, accessory.decodedLocationName),
+                .labeled(CardFieldID.purchaseDate, accessory.purchaseDate ?? ""),
+                .labeled(CardFieldID.purchaseCost, accessory.purchaseCost ?? ""),
+                .labeled(CardFieldID.orderNumber, accessory.orderNumber ?? ""),
+                .labeled(CardFieldID.notes, accessory.decodedNotes)
+            ]
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CardListIcon(systemName: "mediastick", imagePath: accessory.image)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: accessory.decodedName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    Text(verbatim: L10n.string("tag_label", accessory.decodedAssetTag))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    if let manufacturerName = accessory.manufacturer?.name, !manufacturerName.isEmpty {
-                        Text(manufacturerName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                CardLayoutHeader(resolved: resolved)
                 Spacer()
             }
-            if !accessory.decodedAssignedToName.isEmpty || !accessory.decodedLocationName.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    if !accessory.decodedAssignedToName.isEmpty {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "person.circle")
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
-                            Text(accessory.decodedAssignedToName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .lineSpacing(2)
-                        }
-                    }
-                    if !accessory.decodedLocationName.isEmpty {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "mappin.circle")
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
-                            Text(accessory.decodedLocationName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .lineSpacing(2)
-                        }
-                    }
-                }
-            }
+            CardLayoutMeta(items: resolved.meta)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,4 +49,4 @@ struct AccessoryCardView: View {
         )
         .contentShape(Rectangle())
     }
-} 
+}

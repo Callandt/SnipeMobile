@@ -337,13 +337,6 @@ struct AssetDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(currentAsset.decodedModelName.isEmpty ? currentAsset.decodedName : currentAsset.decodedModelName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
                     if !isReadOnly, !currentAsset.decodedAssetTag.isEmpty {

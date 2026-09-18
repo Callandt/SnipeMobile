@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,18 +26,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Asset
+import com.callandt.snipemobile.ui.util.CardKind
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.assetCardFields
 import com.callandt.snipemobile.ui.util.assetCardLocationName
-import com.callandt.snipemobile.ui.util.assetCardTitle
 import com.callandt.snipemobile.ui.util.assetCheckedOutAssignee
 import com.callandt.snipemobile.ui.util.assetCheckedOutIcon
 import com.callandt.snipemobile.ui.util.assetResolvedStatus
+import com.callandt.snipemobile.ui.util.resolveCard
 
-/** Asset list card. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssetCard(
@@ -50,11 +50,15 @@ fun AssetCard(
     onLongClick: (() -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
 ) {
-    val title = assetCardTitle(asset)
-    val showAssetName = asset.decodedName.isNotEmpty() && asset.decodedName != title
+    val layouts = LocalCardLayouts.current
     val locationName = assetCardLocationName(asset)
     val assignee = assetCheckedOutAssignee(asset)
     val status = assetResolvedStatus(asset)
+    val resolved = resolveCard(
+        CardKind.Asset,
+        layouts,
+        assetCardFields(asset, locationName, status),
+    )
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -93,67 +97,18 @@ fun AssetCard(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = L10n.string("tag_label", asset.decodedAssetTag),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (asset.decodedSerial.isNotEmpty()) {
-                            Text(
-                                text = "${L10n.string("sn_label")} ${asset.decodedSerial}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        if (!status.isNullOrBlank()) {
-                            Text(
-                                text = status,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (showNextAuditDate) {
+                        val extra = if (showNextAuditDate) {
                             val next = asset.nextAuditDate?.formatted
                                 ?: asset.nextAuditDate?.localizedDisplay(includeTime = false)
-                            if (!next.isNullOrBlank()) {
-                                Text(
-                                    text = "${L10n.string("next_audit_date")}: $next",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            listOfNotNull(next?.takeIf { it.isNotBlank() }?.let { "${L10n.string("next_audit_date")}: $it" })
+                        } else {
+                            emptyList()
                         }
+                        CardLayoutHeader(resolved = resolved, extraLines = extra)
                     }
                 }
 
-                if (showAssetName || locationName != null) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (showAssetName) {
-                            MetaIconRow(
-                                icon = Icons.AutoMirrored.Outlined.Label,
-                                text = asset.decodedName,
-                            )
-                        }
-                        if (locationName != null) {
-                            MetaIconRow(
-                                icon = Icons.Outlined.Place,
-                                text = locationName,
-                            )
-                        }
-                    }
-                }
+                CardLayoutMeta(items = resolved.meta)
 
                 if (assignee != null) {
                     AssetCheckedOutBanner(
@@ -169,23 +124,28 @@ fun AssetCard(
 }
 
 @Composable
-private fun MetaIconRow(icon: ImageVector, text: String) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-            modifier = Modifier.size(18.dp),
-        )
+fun AssetCompactNameColumn(
+    asset: Asset,
+    modifier: Modifier = Modifier,
+    titleStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+) {
+    val layouts = LocalCardLayouts.current
+    val resolved = resolveCard(CardKind.Asset, layouts, assetCardFields(asset))
+    Column(modifier = modifier) {
         Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
+            text = resolved.title,
+            style = titleStyle,
         )
+        val subtitle = listOfNotNull(resolved.subtitle).plus(resolved.headerLines)
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
+        if (subtitle.isNotEmpty()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

@@ -210,13 +210,6 @@ struct UserDetailView: View {
         .navigationBarTitleDisplayMode(isReadOnly ? .large : .inline)
         .toolbar {
             if !isReadOnly {
-                ToolbarItem(placement: .principal) {
-                    Text(displayName)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showEditSheet = true } label: {
                         Image(systemName: "pencil")
@@ -307,6 +300,7 @@ struct UserDetailView: View {
 
     private var userInfoSection: some View {
         VStack(spacing: 12) {
+            DetailPageTitle(title: displayName)
             if let imageURL = resolvedImageURL {
                 VStack(spacing: 10) {
                     Text(L10n.string("image"))

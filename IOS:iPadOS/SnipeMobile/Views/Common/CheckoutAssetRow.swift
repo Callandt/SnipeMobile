@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Shared checkout pickers (user, location, asset) with matching UI.
+// Shared checkout pickers: user, location, asset.
 private struct CheckoutSearchField: View {
     @Binding var searchText: String
     let placeholderKey: String
@@ -254,6 +254,7 @@ struct CheckoutAssetRow: View {
     let asset: Asset
     let isSelected: Bool
     let onSelect: () -> Void
+    @Environment(\.cardLayouts) private var cardLayouts
 
     private var isAssignedToLocation: Bool {
         asset.assignedTo?.isLocation == true
@@ -264,9 +265,8 @@ struct CheckoutAssetRow: View {
     }
 
     private var titleText: String {
-        if !asset.decodedModelName.isEmpty { return asset.decodedModelName }
-        if !asset.decodedName.isEmpty { return asset.decodedName }
-        return asset.decodedAssetTag
+        let title = AssetListDisplay.title(for: asset, layouts: cardLayouts)
+        return title.isEmpty ? asset.decodedAssetTag : title
     }
 
     var body: some View {

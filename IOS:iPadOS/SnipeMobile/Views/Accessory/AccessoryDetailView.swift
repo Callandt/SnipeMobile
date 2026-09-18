@@ -64,6 +64,7 @@ struct AccessoryDetailView: View {
             if selectedTab == 0 {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        DetailPageTitle(title: currentAccessory.decodedName)
                         if let imageURL = resolvedImageURL {
                             VStack(spacing: 10) {
                                 Text(L10n.string("image"))
@@ -80,7 +81,7 @@ struct AccessoryDetailView: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .center)
                         VStack(alignment: .leading, spacing: 15) {
-                            ForEach(Array(accessoryInfoRows().enumerated()), id: \ .offset) { _, row in
+                            ForEach(Array(accessoryInfoRows().enumerated()), id: \.offset) { _, row in
                                 row
                             }
                         }
@@ -211,13 +212,6 @@ struct AccessoryDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(currentAccessory.decodedName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
                     Button(role: .destructive) {

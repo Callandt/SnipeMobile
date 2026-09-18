@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,12 +19,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.License
+import com.callandt.snipemobile.ui.util.CardKind
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.licenseCardFields
+import com.callandt.snipemobile.ui.util.resolveCard
 
-/** License list card. */
 @Composable
 fun LicenseCard(
     license: License,
@@ -36,8 +35,7 @@ fun LicenseCard(
 ) {
     val totalSeats = license.seats
     val freeSeats = license.freeSeatsCount ?: license.remaining
-    val licenseName = license.decodedLicenseName.takeIf { it.isNotEmpty() }
-    val licenseEmail = license.decodedLicenseEmail.takeIf { it.isNotEmpty() }
+    val resolved = resolveCard(CardKind.License, LocalCardLayouts.current, licenseCardFields(license))
 
     Surface(
         modifier = modifier
@@ -67,28 +65,7 @@ fun LicenseCard(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = license.decodedName.ifEmpty { license.decodedLicenseName },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (license.decodedManufacturerName.isNotEmpty()) {
-                        Text(
-                            text = license.decodedManufacturerName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    license.expirationDate?.localizedDisplay()?.takeIf { it.isNotEmpty() }?.let { expires ->
-                        Text(
-                            text = L10n.string("expires_value", expires),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    CardLayoutHeader(resolved = resolved)
                 }
                 if (showSeats && totalSeats != null && freeSeats != null) {
                     Column(horizontalAlignment = Alignment.End) {
@@ -108,40 +85,7 @@ fun LicenseCard(
                 }
             }
 
-            if (licenseName != null || licenseEmail != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    licenseName?.let {
-                        LicenseMetaRow(icon = Icons.Default.Person, text = it)
-                    }
-                    licenseEmail?.let {
-                        LicenseMetaRow(icon = Icons.Default.Email, text = it)
-                    }
-                }
-            }
+            CardLayoutMeta(items = resolved.meta)
         }
-    }
-}
-
-@Composable
-private fun LicenseMetaRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    text: String,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-            modifier = Modifier.size(18.dp),
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-        )
     }
 }

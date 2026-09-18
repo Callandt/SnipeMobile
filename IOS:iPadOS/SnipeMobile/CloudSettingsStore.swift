@@ -28,6 +28,8 @@ private enum CloudKey: String, CaseIterable {
     case enableDellQrScan
     case autoFillAssetTag
     case showPhotosInCardList
+    case preferAssetNameInLists
+    case cardLayoutsJSON
     case dellTechDirectClientId
     case dellTechDirectClientSecret
     /// Unix timestamp of last wipe. Other devices mirror it locally.
@@ -237,6 +239,22 @@ final class CloudSettingsStore {
         }
     }
 
+    func setPreferAssetNameInLists(_ value: Bool) {
+        defaults.set(value, forKey: "preferAssetNameInLists")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.preferAssetNameInLists.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
+    func setCardLayoutsJSON(_ value: String) {
+        defaults.set(value, forKey: "cardLayoutsJSON")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.cardLayoutsJSON.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
     func setDellTechDirectClientId(_ value: String) {
         KeychainSecretStore.set(value, for: .dellTechDirectClientId)
         defaults.removeObject(forKey: "dellTechDirectClientId")
@@ -324,6 +342,12 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.showPhotosInCardList.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.showPhotosInCardList.rawValue), forKey: "showPhotosInCardList")
         }
+        if store.object(forKey: CloudKey.preferAssetNameInLists.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.preferAssetNameInLists.rawValue), forKey: "preferAssetNameInLists")
+        }
+        if let v = store.string(forKey: CloudKey.cardLayoutsJSON.rawValue) {
+            defaults.set(v, forKey: "cardLayoutsJSON")
+        }
         if let v = store.string(forKey: CloudKey.dellTechDirectClientId.rawValue) {
             KeychainSecretStore.set(v, for: .dellTechDirectClientId)
             defaults.removeObject(forKey: "dellTechDirectClientId")
@@ -360,6 +384,10 @@ final class CloudSettingsStore {
         store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
         store.set(defaults.object(forKey: "autoFillAssetTag") as? Bool ?? true, forKey: CloudKey.autoFillAssetTag.rawValue)
         store.set(defaults.bool(forKey: "showPhotosInCardList"), forKey: CloudKey.showPhotosInCardList.rawValue)
+        store.set(defaults.bool(forKey: "preferAssetNameInLists"), forKey: CloudKey.preferAssetNameInLists.rawValue)
+        if let v = defaults.string(forKey: "cardLayoutsJSON") {
+            store.set(v, forKey: CloudKey.cardLayoutsJSON.rawValue)
+        }
         store.removeObject(forKey: CloudKey.dellTechDirectClientId.rawValue)
         store.removeObject(forKey: CloudKey.dellTechDirectClientSecret.rawValue)
     }

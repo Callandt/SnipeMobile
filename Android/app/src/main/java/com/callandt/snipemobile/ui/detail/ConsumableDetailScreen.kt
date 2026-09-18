@@ -43,6 +43,7 @@ import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
+import com.callandt.snipemobile.ui.components.DetailPageTitle
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemCard
@@ -100,12 +101,7 @@ fun ConsumableDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        consumable?.decodedName ?: L10n.string("category_type_consumable"),
-                        maxLines = 1,
-                    )
-                },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
@@ -245,6 +241,7 @@ private fun ConsumableDetailsBody(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        DetailPageTitle(consumable.decodedName)
         if (!consumable.image.isNullOrBlank()) {
             ItemCard(title = consumable.decodedName, imageUrl = consumable.image)
         }

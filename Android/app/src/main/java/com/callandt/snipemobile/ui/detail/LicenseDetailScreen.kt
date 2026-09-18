@@ -51,6 +51,7 @@ import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
+import com.callandt.snipemobile.ui.components.DetailPageTitle
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemCard
@@ -119,7 +120,7 @@ fun LicenseDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(license?.decodedName ?: L10n.string("category_type_license"), maxLines = 1) },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
@@ -287,6 +288,7 @@ private fun LicenseDetailContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        DetailPageTitle(license.decodedName)
         DetailSectionCard(title = L10n.string("license_info")) {
             DetailRow(L10n.string("name"), license.decodedName)
             DetailRow(L10n.string("manufacturer"), license.decodedManufacturerName)

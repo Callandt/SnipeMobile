@@ -11,9 +11,27 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
-/** Key/value detail block (one surface). */
+/** Detail page heading. */
+@Composable
+fun DetailPageTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    if (title.isBlank()) return
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.Center,
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
+/** Key/value block. */
 @Composable
 fun DetailSectionCard(
     title: String,
@@ -40,7 +58,7 @@ fun DetailSectionCard(
     }
 }
 
-/** Section title + separate item cards (not wrapped in one surface). */
+/** Section with separate item cards. */
 @Composable
 fun DetailCardListSection(
     title: String,

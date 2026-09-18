@@ -3,27 +3,34 @@ import SwiftUI
 struct ConsumableCardView: View {
     let consumable: Consumable
     var useExplicitBackground: Bool = true
+    @Environment(\.cardLayouts) private var cardLayouts
+
+    private var resolved: ResolvedCardLayout {
+        CardLayoutResolver.resolve(
+            kind: .consumable,
+            layout: cardLayouts.layout(for: .consumable),
+            fields: [
+                .value(CardFieldID.name, consumable.decodedName),
+                .labeled(CardFieldID.itemNo, consumable.decodedItemNo),
+                .labeled(CardFieldID.modelNumber, consumable.decodedModelNumber),
+                .value(CardFieldID.category, consumable.decodedCategoryName),
+                .value(CardFieldID.manufacturer, consumable.decodedManufacturerName),
+                .value(CardFieldID.supplier, HTMLDecoder.decode(consumable.supplier?.name ?? "")),
+                .value(CardFieldID.company, consumable.decodedCompanyName),
+                .value(CardFieldID.location, consumable.decodedLocationName),
+                .labeled(CardFieldID.purchaseDate, consumable.purchaseDate ?? ""),
+                .labeled(CardFieldID.purchaseCost, consumable.purchaseCost ?? ""),
+                .labeled(CardFieldID.orderNumber, consumable.orderNumber ?? ""),
+                .labeled(CardFieldID.notes, HTMLDecoder.decode(consumable.notes ?? ""))
+            ]
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CardListIcon(systemName: "shippingbox", imagePath: consumable.image)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(consumable.decodedName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    if !consumable.decodedCategoryName.isEmpty {
-                        Text(consumable.decodedCategoryName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    if !consumable.decodedManufacturerName.isEmpty {
-                        Text(consumable.decodedManufacturerName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                CardLayoutHeader(resolved: resolved)
                 Spacer()
                 if let remaining = consumable.remaining, let qty = consumable.qty {
                     VStack(alignment: .trailing, spacing: 2) {
@@ -36,18 +43,7 @@ struct ConsumableCardView: View {
                     }
                 }
             }
-            if !consumable.decodedLocationName.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "mappin.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                    Text(consumable.decodedLocationName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .lineSpacing(2)
-                }
-            }
+            CardLayoutMeta(items: resolved.meta)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

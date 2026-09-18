@@ -48,6 +48,7 @@ struct LicenseDetailView: View {
             if selectedTab == 0 {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        DetailPageTitle(title: currentLicense.decodedName)
                         Text(L10n.string("license_info"))
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -126,13 +127,6 @@ struct LicenseDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(currentLicense.decodedName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
                     Button(role: .destructive) {

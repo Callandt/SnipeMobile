@@ -27,6 +27,7 @@ import com.callandt.snipemobile.data.prefs.AppMode
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.DellAddPrefill
 import com.callandt.snipemobile.ui.components.CardPhotoSettings
+import com.callandt.snipemobile.ui.components.LocalCardLayouts
 import com.callandt.snipemobile.ui.components.LocalCardPhotoSettings
 import com.callandt.snipemobile.ui.detail.AccessoryDetailScreen
 import com.callandt.snipemobile.ui.detail.AssetDetailScreen
@@ -97,6 +98,7 @@ fun AppNav(viewModel: AppViewModel) {
     val isTablet = WindowAdaptive.isTabletLayout()
     val pendingMainTab by viewModel.pendingMainTab.collectAsState()
     val showPhotosInCardList by viewModel.showPhotosInCardList.collectAsState()
+    val cardLayouts by viewModel.cardLayouts.collectAsState()
     val baseUrl by viewModel.baseUrl.collectAsState()
 
     fun returnToWelcomeAfterWipe() {
@@ -248,6 +250,7 @@ fun AppNav(viewModel: AppViewModel) {
             enabled = showPhotosInCardList,
             baseUrl = baseUrl,
         ),
+        LocalCardLayouts provides cardLayouts,
     ) {
         NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.Welcome) {

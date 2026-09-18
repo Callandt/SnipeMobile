@@ -30,6 +30,7 @@ struct SettingsView: View {
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
     @AppStorage("autoFillAssetTag") private var autoFillAssetTag: Bool = true
     @AppStorage("showPhotosInCardList") private var showPhotosInCardList: Bool = false
+    @AppStorage("preferAssetNameInLists") private var preferAssetNameInLists: Bool = false
 
     @State private var baseURL: String = ""
     @State private var apiToken: String = ""
@@ -136,6 +137,10 @@ struct SettingsView: View {
             DellSettingsView()
         case .assets:
             AssetSettingsView(autoFillAssetTag: $autoFillAssetTag)
+        case .cardLayout:
+            CardLayoutSettingsView()
+        case .cardLayoutKind(let kind):
+            CardLayoutKindEditor(kind: kind)
         case .modules:
             ModulesSettingsView(
                 showAccessoriesTab: $showAccessoriesTab,
@@ -166,7 +171,8 @@ struct SettingsView: View {
             settingsLanguage: $settingsLanguage,
             useCloudSync: $useCloudSync,
             autoFillAssetTag: $autoFillAssetTag,
-            showPhotosInCardList: $showPhotosInCardList
+            showPhotosInCardList: $showPhotosInCardList,
+            preferAssetNameInLists: $preferAssetNameInLists
         )
     }
 
@@ -235,10 +241,15 @@ struct SettingsView: View {
                 title: L10n.string("show_photos_in_cards_toggle"),
                 isOn: $showPhotosInCardList
             )
+            NavigationLink(value: SettingsRoute.cardLayout) {
+                SettingsRow(
+                    icon: "rectangle.portrait.on.rectangle.portrait",
+                    iconColor: .indigo,
+                    title: L10n.string("card_layout_settings")
+                )
+            }
         } header: {
             Text(L10n.string("settings_general"))
-        } footer: {
-            Text(L10n.string("show_photos_in_cards_footer"))
         }
     }
 
@@ -282,8 +293,6 @@ struct SettingsView: View {
                     value: nil
                 )
             }
-        } footer: {
-            Text(L10n.string("settings_management_footer"))
         }
     }
 
@@ -347,8 +356,6 @@ struct SettingsView: View {
             }
         } header: {
             Text(L10n.string("settings_connection"))
-        } footer: {
-            Text(L10n.string("connection_section_footer"))
         }
     }
 
@@ -579,6 +586,7 @@ private struct SettingsCloudObservers: ViewModifier {
     @Binding var useCloudSync: Bool
     @Binding var autoFillAssetTag: Bool
     @Binding var showPhotosInCardList: Bool
+    @Binding var preferAssetNameInLists: Bool
 
     func body(content: Content) -> some View {
         content
@@ -602,6 +610,9 @@ private struct SettingsCloudObservers: ViewModifier {
             }
             .onChange(of: showPhotosInCardList) { _, newValue in
                 CloudSettingsStore.shared.setShowPhotosInCardList(newValue)
+            }
+            .onChange(of: preferAssetNameInLists) { _, newValue in
+                CloudSettingsStore.shared.setPreferAssetNameInLists(newValue)
             }
     }
 }
@@ -740,6 +751,8 @@ private struct SettingsAlertsModifier: ViewModifier {
 
 enum SettingsRoute: Hashable {
     case security, api, audit, dell, modules, assets
+    case cardLayout
+    case cardLayoutKind(CardKind)
     case management, activityLog
     case managementEntity(ManagementEntity)
 }
@@ -1505,8 +1518,6 @@ struct ManagementSettingsView: View {
                         )
                     }
                 }
-            } footer: {
-                Text(L10n.string("settings_management_footer"))
             }
         }
         .navigationTitle(L10n.string("settings_management"))

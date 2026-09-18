@@ -62,6 +62,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.AssetCompactNameColumn
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchTopBar
 import com.callandt.snipemobile.ui.components.SearchablePickerField
@@ -189,22 +190,10 @@ fun BulkAuditSheet(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    asset.decodedModelName.ifEmpty { asset.decodedName },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                val subtitle = listOf(asset.decodedAssetTag, asset.decodedName)
-                                    .filter { it.isNotEmpty() }
-                                    .joinToString(" · ")
-                                if (subtitle.isNotEmpty()) {
-                                    Text(
-                                        subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
+                            AssetCompactNameColumn(
+                                asset = asset,
+                                modifier = Modifier.weight(1f),
+                            )
                             Icon(Icons.Filled.Close, contentDescription = L10n.string("delete"))
                         }
                     }
@@ -363,22 +352,11 @@ internal fun AssetMultiSelectScreen(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                asset.decodedModelName.ifEmpty { asset.decodedName },
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            val subtitle = listOf(asset.decodedAssetTag, asset.decodedName)
-                                .filter { it.isNotEmpty() }
-                                .joinToString(" · ")
-                            if (subtitle.isNotEmpty()) {
-                                Text(
-                                    subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
+                        AssetCompactNameColumn(
+                            asset = asset,
+                            modifier = Modifier.weight(1f),
+                            titleStyle = MaterialTheme.typography.bodyLarge,
+                        )
                     }
                 }
             }
@@ -587,22 +565,10 @@ internal fun BulkAssetScannerScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                     items(addedAssets, key = { it.id }) { asset ->
-                        Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                            Text(
-                                asset.decodedModelName.ifEmpty { asset.decodedName },
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            val subtitle = listOf(asset.decodedAssetTag, asset.decodedName)
-                                .filter { it.isNotEmpty() }
-                                .joinToString(" · ")
-                            if (subtitle.isNotEmpty()) {
-                                Text(
-                                    subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
+                        AssetCompactNameColumn(
+                            asset = asset,
+                            modifier = Modifier.padding(vertical = 6.dp),
+                        )
                     }
                 }
             }

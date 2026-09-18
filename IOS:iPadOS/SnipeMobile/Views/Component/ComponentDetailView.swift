@@ -61,6 +61,7 @@ struct ComponentDetailView: View {
             if selectedTab == 0 {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        DetailPageTitle(title: currentComponent.decodedName)
                         if let imageURL = resolvedImageURL {
                             VStack(spacing: 10) {
                                 Text(L10n.string("image"))
@@ -189,15 +190,6 @@ struct ComponentDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(currentComponent.decodedName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .minimumScaleFactor(0.85)
-                    .frame(maxWidth: 200)
-            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
                     Button(role: .destructive) {

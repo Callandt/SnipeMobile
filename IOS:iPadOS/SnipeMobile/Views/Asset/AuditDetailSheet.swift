@@ -161,7 +161,7 @@ struct AuditDetailSheet: View {
                     Text(L10n.string("asset"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+                    Text(AssetListDisplay.headingTitle(for: asset))
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)

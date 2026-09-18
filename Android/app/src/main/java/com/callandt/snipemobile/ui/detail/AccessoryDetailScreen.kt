@@ -52,6 +52,7 @@ import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
+import com.callandt.snipemobile.ui.components.DetailPageTitle
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemCard
@@ -117,7 +118,7 @@ fun AccessoryDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(accessory?.decodedName ?: L10n.string("category_type_accessory"), maxLines = 1) },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
@@ -295,6 +296,7 @@ private fun AccessoryDetailContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        DetailPageTitle(accessory.decodedName)
         if (!accessory.image.isNullOrBlank()) {
             ItemCard(title = accessory.decodedName, imageUrl = accessory.image)
         }

@@ -261,13 +261,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private var locationHeader: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(currentLocation.decodedName)
-                .font(.title2.weight(.semibold))
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.top, 12)
+            DetailPageTitle(title: currentLocation.decodedName)
 
             if let parent = displayParent {
                 VStack(alignment: .leading, spacing: 8) {

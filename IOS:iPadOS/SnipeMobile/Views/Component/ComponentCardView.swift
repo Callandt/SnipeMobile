@@ -3,27 +3,34 @@ import SwiftUI
 struct ComponentCardView: View {
     let component: Component
     var useExplicitBackground: Bool = true
+    @Environment(\.cardLayouts) private var cardLayouts
+
+    private var resolved: ResolvedCardLayout {
+        CardLayoutResolver.resolve(
+            kind: .component,
+            layout: cardLayouts.layout(for: .component),
+            fields: [
+                .value(CardFieldID.name, component.decodedName),
+                .labeled(CardFieldID.serial, component.decodedSerial),
+                .labeled(CardFieldID.modelNumber, component.decodedModelNumber),
+                .value(CardFieldID.category, component.decodedCategoryName),
+                .value(CardFieldID.manufacturer, component.decodedManufacturerName),
+                .value(CardFieldID.supplier, HTMLDecoder.decode(component.supplier?.name ?? "")),
+                .value(CardFieldID.company, component.decodedCompanyName),
+                .value(CardFieldID.location, component.decodedLocationName),
+                .labeled(CardFieldID.purchaseDate, component.purchaseDate ?? ""),
+                .labeled(CardFieldID.purchaseCost, component.purchaseCost ?? ""),
+                .labeled(CardFieldID.orderNumber, component.orderNumber ?? ""),
+                .labeled(CardFieldID.notes, HTMLDecoder.decode(component.notes ?? ""))
+            ]
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CardListIcon(systemName: "cpu", imagePath: component.image)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(component.decodedName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    if !component.decodedCategoryName.isEmpty {
-                        Text(component.decodedCategoryName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    if !component.decodedManufacturerName.isEmpty {
-                        Text(component.decodedManufacturerName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                CardLayoutHeader(resolved: resolved)
                 Spacer()
                 if let remaining = component.remaining, let qty = component.qty {
                     VStack(alignment: .trailing, spacing: 2) {
@@ -36,18 +43,7 @@ struct ComponentCardView: View {
                     }
                 }
             }
-            if !component.decodedLocationName.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "mappin.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                    Text(component.decodedLocationName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .lineSpacing(2)
-                }
-            }
+            CardLayoutMeta(items: resolved.meta)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

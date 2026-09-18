@@ -46,6 +46,7 @@ import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
+import com.callandt.snipemobile.ui.components.DetailPageTitle
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemCard
@@ -104,12 +105,7 @@ fun ComponentDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        component?.decodedName ?: L10n.string("category_type_component"),
-                        maxLines = 1,
-                    )
-                },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))
@@ -275,6 +271,7 @@ private fun ComponentDetailContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        DetailPageTitle(component.decodedName)
         if (!component.image.isNullOrBlank()) {
             ItemCard(title = component.decodedName, imageUrl = component.image)
         }

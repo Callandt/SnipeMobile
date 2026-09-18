@@ -50,6 +50,7 @@ import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
+import com.callandt.snipemobile.ui.components.DetailPageTitle
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemCard
@@ -144,7 +145,11 @@ fun UserDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(displayName, maxLines = 1) },
+                title = {
+                    if (isReadOnly) {
+                        Text(L10n.string("user_mode_my_profile"), maxLines = 1)
+                    }
+                },
                 navigationIcon = {
                     if (showNavigationIcon) {
                         IconButton(onClick = onBack) {
@@ -334,6 +339,7 @@ private fun UserDetailsBody(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        DetailPageTitle(userCardTitle(user))
         if (!user.image.isNullOrBlank()) {
             ItemCard(title = userCardTitle(user), subtitle = user.decodedEmail, imageUrl = user.image)
         }

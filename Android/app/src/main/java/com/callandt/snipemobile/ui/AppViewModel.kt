@@ -17,6 +17,9 @@ import com.callandt.snipemobile.data.prefs.AppModeStore
 import com.callandt.snipemobile.data.prefs.AppPreferences
 import com.callandt.snipemobile.data.secure.AppSecret
 import com.callandt.snipemobile.data.secure.SecureStore
+import com.callandt.snipemobile.ui.util.CardFieldID
+import com.callandt.snipemobile.ui.util.CardKind
+import com.callandt.snipemobile.ui.util.CardLayoutStore
 import com.callandt.snipemobile.ui.util.L10n
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -121,6 +125,16 @@ class AppViewModel(
 
     val showPhotosInCardList: StateFlow<Boolean> =
         preferences.showPhotosInCardList.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val preferAssetNameInLists: StateFlow<Boolean> =
+        preferences.preferAssetNameInLists.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val cardLayouts: StateFlow<CardLayoutStore> = combine(
+        preferences.cardLayoutsJSON,
+        preferences.preferAssetNameInLists,
+    ) { json, preferAssetName ->
+        CardLayoutStore.decode(json, preferAssetName)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, CardLayoutStore.Empty)
 
     val enableDellQrScan: StateFlow<Boolean> =
         preferences.enableDellQrScan.stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -333,6 +347,18 @@ class AppViewModel(
 
     fun setShowPhotosInCardList(enabled: Boolean) {
         viewModelScope.launch { preferences.setShowPhotosInCardList(enabled) }
+    }
+
+    fun setPreferAssetNameInLists(enabled: Boolean) {
+        viewModelScope.launch { preferences.setPreferAssetNameInLists(enabled) }
+    }
+
+    fun setCardLayouts(store: CardLayoutStore) {
+        viewModelScope.launch {
+            preferences.setCardLayoutsJSON(store.encodeJson())
+            val usesAssetName = store.layout(CardKind.Asset).title == CardFieldID.Name
+            preferences.setPreferAssetNameInLists(usesAssetName)
+        }
     }
 
     fun setEnableDellQrScan(enabled: Boolean) {

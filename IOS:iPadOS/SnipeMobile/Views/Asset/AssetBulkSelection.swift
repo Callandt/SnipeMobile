@@ -17,6 +17,7 @@ struct AssetBulkSelectionSection: View {
     @Binding var showPicker: Bool
     @Binding var showScanner: Bool
     var allowsScanning: Bool = true
+    @Environment(\.cardLayouts) private var cardLayouts
 
     private var selectedAssets: [Asset] {
         apiClient.assets
@@ -61,11 +62,9 @@ struct AssetBulkSelectionSection: View {
             Section {
                 ForEach(selectedAssets) { asset in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+                        Text(AssetListDisplay.title(for: asset, layouts: cardLayouts))
                             .font(.body)
-                        let subtitle = [asset.decodedAssetTag, asset.decodedName]
-                            .filter { !$0.isEmpty }
-                            .joined(separator: " · ")
+                        let subtitle = AssetListDisplay.compactSubtitle(for: asset, layouts: cardLayouts)
                         if !subtitle.isEmpty {
                             Text(subtitle)
                                 .font(.caption)
@@ -111,6 +110,7 @@ extension View {
 struct AssetMultiSelectView: View {
     let assets: [Asset]
     @Binding var selectedAssetIds: Set<Int>
+    @Environment(\.cardLayouts) private var cardLayouts
 
     @State private var searchText: String = ""
 
@@ -143,12 +143,10 @@ struct AssetMultiSelectView: View {
                             Image(systemName: selectedAssetIds.contains(asset.id) ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(selectedAssetIds.contains(asset.id) ? Color.accentColor : Color.secondary)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+                                Text(AssetListDisplay.title(for: asset, layouts: cardLayouts))
                                     .font(.body)
                                     .foregroundStyle(.primary)
-                                let subtitle = [asset.decodedAssetTag, asset.decodedName]
-                                    .filter { !$0.isEmpty }
-                                    .joined(separator: " · ")
+                                let subtitle = AssetListDisplay.compactSubtitle(for: asset, layouts: cardLayouts)
                                 if !subtitle.isEmpty {
                                     Text(subtitle)
                                         .font(.caption)
@@ -188,6 +186,7 @@ struct ContinuousScannerSheet: View {
     @Binding var selectedAssetIds: Set<Int>
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.cardLayouts) private var cardLayouts
 
     @State private var addedAssets: [Asset] = []
     @State private var manualTag: String = ""
@@ -229,11 +228,9 @@ struct ContinuousScannerSheet: View {
                         } else {
                             ForEach(addedAssets) { asset in
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
+                                    Text(AssetListDisplay.title(for: asset, layouts: cardLayouts))
                                         .font(.body)
-                                    let subtitle = [asset.decodedAssetTag, asset.decodedName]
-                                        .filter { !$0.isEmpty }
-                                        .joined(separator: " · ")
+                                    let subtitle = AssetListDisplay.compactSubtitle(for: asset, layouts: cardLayouts)
                                     if !subtitle.isEmpty {
                                         Text(subtitle)
                                             .font(.caption)

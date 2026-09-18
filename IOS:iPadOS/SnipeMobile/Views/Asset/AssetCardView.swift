@@ -2,13 +2,13 @@ import SwiftUI
 
 struct AssetCardView<Footer: View>: View {
     let asset: Asset
-    /// iPad: transparent row vs card background.
+    /// iPad list rows skip the card fill.
     var useExplicitBackground: Bool = true
-    /// Used in the audit subtab to show the next audit date on the card.
+    /// Audit subtab: next audit date.
     var showNextAuditDate: Bool = false
-    /// Optional tap on the info section.
     var onSelect: (() -> Void)? = nil
     @ViewBuilder private var footer: () -> Footer
+    @Environment(\.cardLayouts) private var cardLayouts
 
     init(
         asset: Asset,
@@ -49,6 +49,12 @@ struct AssetCardView<Footer: View>: View {
 
     @ViewBuilder
     private var infoSection: some View {
+        let resolved = AssetCardFields.resolve(
+            asset,
+            layouts: cardLayouts,
+            locationName: cardLocationName,
+            status: resolvedStatusLabel
+        )
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 CardListIcon(
@@ -56,76 +62,25 @@ struct AssetCardView<Footer: View>: View {
                     imagePath: asset.image,
                     cacheBuster: asset.updatedAt?.datetime ?? asset.updatedAt?.date
                 )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    Text(verbatim: L10n.string("tag_label", asset.decodedAssetTag))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    if !asset.decodedSerial.isEmpty {
-                        HStack(spacing: 4) {
-                            Text(verbatim: L10n.string("sn_label"))
-                            Text(verbatim: asset.decodedSerial)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-                    if let status = resolvedStatusLabel, !status.isEmpty {
-                        Text(verbatim: status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if showNextAuditDate,
-                       let nextAudit = asset.nextAuditDate?.formatted,
-                       !nextAudit.isEmpty {
-                        Text(verbatim: "\(L10n.string("next_audit_date")): \(nextAudit)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                CardLayoutHeader(
+                    resolved: resolved,
+                    extraLines: auditExtraLines
+                )
                 Spacer()
             }
-            let effectiveTitle = asset.decodedModelName.isEmpty ? asset.decodedName : asset.decodedModelName
-            let showAssetName = !asset.decodedName.isEmpty && asset.decodedName != effectiveTitle
-            if showAssetName || cardLocationName != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    if showAssetName {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "tag")
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
-                            Text(asset.decodedName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .lineSpacing(2)
-                        }
-                    }
-                    if let locationName = cardLocationName {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "mappin.circle")
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
-                            Text(locationName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .lineSpacing(2)
-                        }
-                    }
-                }
-            }
+            CardLayoutMeta(items: resolved.meta)
 
             if let assigneeName = checkedOutAssigneeName {
                 checkedOutBanner(assigneeName: assigneeName)
             }
         }
+    }
+
+    private var auditExtraLines: [String] {
+        guard showNextAuditDate,
+              let nextAudit = asset.nextAuditDate?.formatted,
+              !nextAudit.isEmpty else { return [] }
+        return ["\(L10n.string("next_audit_date")): \(nextAudit)"]
     }
 
     private func checkedOutBanner(assigneeName: String) -> some View {

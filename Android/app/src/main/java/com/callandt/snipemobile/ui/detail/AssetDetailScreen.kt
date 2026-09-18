@@ -183,14 +183,7 @@ fun AssetDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        asset?.let {
-                            it.decodedModelName.ifEmpty { it.decodedName.ifEmpty { it.decodedAssetTag } }
-                        } ?: L10n.string("asset"),
-                        maxLines = 1,
-                    )
-                },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("back"))

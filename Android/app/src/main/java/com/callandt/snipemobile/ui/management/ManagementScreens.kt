@@ -93,9 +93,6 @@ fun ManagementHubScreen(
     ) { padding ->
         LazyColumn(modifier = Modifier.padding(padding)) {
             item {
-                SettingsSectionFooter(L10n.string("settings_management_footer"))
-            }
-            item {
                 SettingsGroupedCard {
                     ManagementEntity.entries.forEach { entity ->
                         SettingsRow(
