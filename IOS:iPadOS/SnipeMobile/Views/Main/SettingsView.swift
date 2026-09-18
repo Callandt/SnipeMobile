@@ -29,6 +29,7 @@ struct SettingsView: View {
     @AppStorage("showComponentsTab") private var showComponentsSub: Bool = true
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
     @AppStorage("autoFillAssetTag") private var autoFillAssetTag: Bool = true
+    @AppStorage("returnToAssetsAfterCheckInOut") private var returnToAssetsAfterCheckInOut: Bool = true
     @AppStorage("showPhotosInCardList") private var showPhotosInCardList: Bool = false
     @AppStorage("preferAssetNameInLists") private var preferAssetNameInLists: Bool = false
 
@@ -136,7 +137,10 @@ struct SettingsView: View {
         case .dell:
             DellSettingsView()
         case .assets:
-            AssetSettingsView(autoFillAssetTag: $autoFillAssetTag)
+            AssetSettingsView(
+                autoFillAssetTag: $autoFillAssetTag,
+                returnToAssetsAfterCheckInOut: $returnToAssetsAfterCheckInOut
+            )
         case .cardLayout:
             CardLayoutSettingsView()
         case .cardLayoutKind(let kind):
@@ -171,6 +175,7 @@ struct SettingsView: View {
             settingsLanguage: $settingsLanguage,
             useCloudSync: $useCloudSync,
             autoFillAssetTag: $autoFillAssetTag,
+            returnToAssetsAfterCheckInOut: $returnToAssetsAfterCheckInOut,
             showPhotosInCardList: $showPhotosInCardList,
             preferAssetNameInLists: $preferAssetNameInLists
         )
@@ -585,6 +590,7 @@ private struct SettingsCloudObservers: ViewModifier {
     @Binding var settingsLanguage: String
     @Binding var useCloudSync: Bool
     @Binding var autoFillAssetTag: Bool
+    @Binding var returnToAssetsAfterCheckInOut: Bool
     @Binding var showPhotosInCardList: Bool
     @Binding var preferAssetNameInLists: Bool
 
@@ -607,6 +613,9 @@ private struct SettingsCloudObservers: ViewModifier {
             }
             .onChange(of: autoFillAssetTag) { _, newValue in
                 CloudSettingsStore.shared.setAutoFillAssetTag(newValue)
+            }
+            .onChange(of: returnToAssetsAfterCheckInOut) { _, newValue in
+                CloudSettingsStore.shared.setReturnToAssetsAfterCheckInOut(newValue)
             }
             .onChange(of: showPhotosInCardList) { _, newValue in
                 CloudSettingsStore.shared.setShowPhotosInCardList(newValue)
@@ -1488,6 +1497,7 @@ struct ModulesSettingsView: View {
 
 struct AssetSettingsView: View {
     @Binding var autoFillAssetTag: Bool
+    @Binding var returnToAssetsAfterCheckInOut: Bool
 
     var body: some View {
         Form {
@@ -1497,6 +1507,14 @@ struct AssetSettingsView: View {
                 Text(L10n.string("settings_assets_creation_header"))
             } footer: {
                 Text(L10n.string("auto_fill_asset_tag_footer"))
+            }
+
+            Section {
+                Toggle(L10n.string("return_to_assets_after_checkinout_toggle"), isOn: $returnToAssetsAfterCheckInOut)
+            } header: {
+                Text(L10n.string("settings_assets_checkinout_header"))
+            } footer: {
+                Text(L10n.string("return_to_assets_after_checkinout_footer"))
             }
         }
         .navigationTitle(L10n.string("settings_assets"))

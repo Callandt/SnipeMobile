@@ -125,12 +125,14 @@ fun AssetDetailScreen(
     val users by viewModel.users.collectAsState()
     val locations by viewModel.locations.collectAsState()
     val showMaintenancePref by viewModel.showMaintenanceSubtab.collectAsState()
+    val returnToAssetsAfterCheckInOut by viewModel.returnToAssetsAfterCheckInOut.collectAsState()
     val asset = assets.firstOrNull { it.id == assetId }
     val scope = rememberCoroutineScope()
 
     var tabIndex by remember { mutableIntStateOf(0) }
     var showCheckout by remember { mutableStateOf(false) }
     var showCheckin by remember { mutableStateOf(false) }
+    var pendingReturnToAssetsOverview by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
     var showAddMaintenance by remember { mutableStateOf(false) }
     var maintenanceReloadToken by remember { mutableIntStateOf(0) }
@@ -143,6 +145,29 @@ fun AssetDetailScreen(
         scope.launch {
             viewModel.apiClient.refreshHardwareAfterWrite(assetId)
             checkInOutReloadToken += 1
+        }
+    }
+
+    fun handleCheckInOutSuccess() {
+        refreshAfterWrite()
+        if (returnToAssetsAfterCheckInOut) {
+            pendingReturnToAssetsOverview = true
+        }
+    }
+
+    fun dismissCheckout() {
+        showCheckout = false
+        if (pendingReturnToAssetsOverview) {
+            pendingReturnToAssetsOverview = false
+            onBack()
+        }
+    }
+
+    fun dismissCheckin() {
+        showCheckin = false
+        if (pendingReturnToAssetsOverview) {
+            pendingReturnToAssetsOverview = false
+            onBack()
         }
     }
 
@@ -318,8 +343,8 @@ fun AssetDetailScreen(
         AssetCheckoutSheet(
             asset = asset,
             viewModel = viewModel,
-            onDismiss = { showCheckout = false },
-            onSuccess = { refreshAfterWrite() },
+            onDismiss = { dismissCheckout() },
+            onSuccess = { handleCheckInOutSuccess() },
         )
     }
 
@@ -327,8 +352,8 @@ fun AssetDetailScreen(
         AssetCheckinSheet(
             asset = asset,
             viewModel = viewModel,
-            onDismiss = { showCheckin = false },
-            onSuccess = { refreshAfterWrite() },
+            onDismiss = { dismissCheckin() },
+            onSuccess = { handleCheckInOutSuccess() },
         )
     }
 

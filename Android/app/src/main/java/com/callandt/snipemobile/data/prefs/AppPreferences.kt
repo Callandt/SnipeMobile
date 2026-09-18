@@ -42,6 +42,8 @@ class AppPreferences(private val context: Context) {
     val useBiometrics: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_BIOMETRICS] ?: false }
     val autoFillAssetTag: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.AUTO_FILL_ASSET_TAG] ?: true }
+    val returnToAssetsAfterCheckInOut: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.RETURN_TO_ASSETS_AFTER_CHECK_IN_OUT] ?: true }
     val showPhotosInCardList: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.SHOW_PHOTOS_IN_CARD_LIST] ?: false }
     val preferAssetNameInLists: Flow<Boolean> =
@@ -165,6 +167,10 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[Keys.AUTO_FILL_ASSET_TAG] = value }
     }
 
+    suspend fun setReturnToAssetsAfterCheckInOut(value: Boolean) {
+        context.dataStore.edit { it[Keys.RETURN_TO_ASSETS_AFTER_CHECK_IN_OUT] = value }
+    }
+
     suspend fun setShowPhotosInCardList(value: Boolean) {
         context.dataStore.edit { it[Keys.SHOW_PHOTOS_IN_CARD_LIST] = value }
     }
@@ -230,6 +236,7 @@ class AppPreferences(private val context: Context) {
         val APP_LANGUAGE = stringPreferencesKey("appLanguage")
         val USE_BIOMETRICS = booleanPreferencesKey("useBiometrics")
         val AUTO_FILL_ASSET_TAG = booleanPreferencesKey("autoFillAssetTag")
+        val RETURN_TO_ASSETS_AFTER_CHECK_IN_OUT = booleanPreferencesKey("returnToAssetsAfterCheckInOut")
         val SHOW_PHOTOS_IN_CARD_LIST = booleanPreferencesKey("showPhotosInCardList")
         val PREFER_ASSET_NAME_IN_LISTS = booleanPreferencesKey("preferAssetNameInLists")
         val CARD_LAYOUTS_JSON = stringPreferencesKey("cardLayoutsJSON")

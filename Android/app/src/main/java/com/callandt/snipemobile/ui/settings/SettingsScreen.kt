@@ -863,6 +863,7 @@ private fun AuditSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
 @Composable
 private fun AssetCreationSettingsScreen(viewModel: AppViewModel, onBack: () -> Unit) {
     val autoFill by viewModel.autoFillAssetTag.collectAsState()
+    val returnToList by viewModel.returnToAssetsAfterCheckInOut.collectAsState()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -875,7 +876,12 @@ private fun AssetCreationSettingsScreen(viewModel: AppViewModel, onBack: () -> U
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
             SettingsSectionHeader(L10n.string("settings_assets_creation_header"))
             SettingsGroupedCard {
                 SettingsToggleRow(
@@ -887,6 +893,18 @@ private fun AssetCreationSettingsScreen(viewModel: AppViewModel, onBack: () -> U
                 )
             }
             SettingsSectionFooter(L10n.string("auto_fill_asset_tag_footer"))
+
+            SettingsSectionHeader(L10n.string("settings_assets_checkinout_header"))
+            SettingsGroupedCard {
+                SettingsToggleRow(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    iconColor = Color(0xFF34C759),
+                    title = L10n.string("return_to_assets_after_checkinout_toggle"),
+                    checked = returnToList,
+                    onCheckedChange = viewModel::setReturnToAssetsAfterCheckInOut,
+                )
+            }
+            SettingsSectionFooter(L10n.string("return_to_assets_after_checkinout_footer"))
         }
     }
 }

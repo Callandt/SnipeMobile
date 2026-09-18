@@ -1539,6 +1539,9 @@ struct MainSplitView: View {
                         selectedAssetDetailTab = 0
                         skipClearSelectionOnSectionChange = true
                         selectedSection = .hardware
+                    },
+                    onReturnToAssetsOverview: {
+                        selectedAsset = nil
                     }
                 )
             } else {

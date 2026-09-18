@@ -27,6 +27,7 @@ private enum CloudKey: String, CaseIterable {
     case biometricsJustConfirmed
     case enableDellQrScan
     case autoFillAssetTag
+    case returnToAssetsAfterCheckInOut
     case showPhotosInCardList
     case preferAssetNameInLists
     case cardLayoutsJSON
@@ -231,6 +232,14 @@ final class CloudSettingsStore {
         }
     }
 
+    func setReturnToAssetsAfterCheckInOut(_ value: Bool) {
+        defaults.set(value, forKey: "returnToAssetsAfterCheckInOut")
+        if useCloudSync, isICloudAvailable {
+            store.set(value, forKey: CloudKey.returnToAssetsAfterCheckInOut.rawValue)
+            _ = store.synchronize()
+        }
+    }
+
     func setShowPhotosInCardList(_ value: Bool) {
         defaults.set(value, forKey: "showPhotosInCardList")
         if useCloudSync, isICloudAvailable {
@@ -339,6 +348,9 @@ final class CloudSettingsStore {
         if store.object(forKey: CloudKey.autoFillAssetTag.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.autoFillAssetTag.rawValue), forKey: "autoFillAssetTag")
         }
+        if store.object(forKey: CloudKey.returnToAssetsAfterCheckInOut.rawValue) != nil {
+            defaults.set(store.bool(forKey: CloudKey.returnToAssetsAfterCheckInOut.rawValue), forKey: "returnToAssetsAfterCheckInOut")
+        }
         if store.object(forKey: CloudKey.showPhotosInCardList.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.showPhotosInCardList.rawValue), forKey: "showPhotosInCardList")
         }
@@ -383,6 +395,7 @@ final class CloudSettingsStore {
         store.set(defaults.bool(forKey: "biometricsJustConfirmed"), forKey: CloudKey.biometricsJustConfirmed.rawValue)
         store.set(defaults.object(forKey: "enableDellQrScan") as? Bool ?? true, forKey: CloudKey.enableDellQrScan.rawValue)
         store.set(defaults.object(forKey: "autoFillAssetTag") as? Bool ?? true, forKey: CloudKey.autoFillAssetTag.rawValue)
+        store.set(defaults.object(forKey: "returnToAssetsAfterCheckInOut") as? Bool ?? true, forKey: CloudKey.returnToAssetsAfterCheckInOut.rawValue)
         store.set(defaults.bool(forKey: "showPhotosInCardList"), forKey: CloudKey.showPhotosInCardList.rawValue)
         store.set(defaults.bool(forKey: "preferAssetNameInLists"), forKey: CloudKey.preferAssetNameInLists.rawValue)
         if let v = defaults.string(forKey: "cardLayoutsJSON") {

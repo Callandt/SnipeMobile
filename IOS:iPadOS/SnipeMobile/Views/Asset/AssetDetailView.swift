@@ -13,6 +13,8 @@ struct AssetDetailView: View {
     var onOpenAccessory: ((Accessory) -> Void)? = nil
     var onOpenComponent: ((Component) -> Void)? = nil
     var onOpenAsset: ((Asset) -> Void)? = nil
+    /// iPad: clear selection instead of dismiss.
+    var onReturnToAssetsOverview: (() -> Void)? = nil
     @State private var userId: String = ""
     @State private var assetLicenses: [License] = []
     @State private var assetAccessories: [Accessory] = []
@@ -71,6 +73,8 @@ struct AssetDetailView: View {
     @State private var deleteErrorMessage = ""
     @Environment(\.dismiss) private var dismiss
     @AppStorage("showMaintenance") private var showMaintenance: Bool = true
+    @AppStorage("returnToAssetsAfterCheckInOut") private var returnToAssetsAfterCheckInOut: Bool = true
+    @State private var shouldReturnToAssetsOverview = false
 
     /// From apiClient or passed in.
     private var currentAsset: Asset {
@@ -440,14 +444,14 @@ struct AssetDetailView: View {
                 Task { await refreshDetailImage() }
             }
         }
-        .sheet(isPresented: $showCheckoutSheet) {
+        .sheet(isPresented: $showCheckoutSheet, onDismiss: { returnToAssetsOverviewIfNeeded() }) {
             AssetCheckoutSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckoutSheet, onSuccess: {
-                await refreshAfterCheckInOut()
+                await handleCheckInOutSuccess()
             })
         }
-        .sheet(isPresented: $showCheckinSheet) {
+        .sheet(isPresented: $showCheckinSheet, onDismiss: { returnToAssetsOverviewIfNeeded() }) {
             AssetCheckinSheet(apiClient: apiClient, asset: currentAsset, isPresented: $showCheckinSheet, onSuccess: {
-                await refreshAfterCheckInOut()
+                await handleCheckInOutSuccess()
             })
         }
         .onChange(of: asset.id) { _, _ in
@@ -541,6 +545,25 @@ struct AssetDetailView: View {
         }
         await reloadAssignedRelations()
         filesReloadToken = UUID()
+    }
+
+    private func handleCheckInOutSuccess() async {
+        await refreshAfterCheckInOut()
+        await MainActor.run {
+            if returnToAssetsAfterCheckInOut {
+                shouldReturnToAssetsOverview = true
+            }
+        }
+    }
+
+    private func returnToAssetsOverviewIfNeeded() {
+        guard shouldReturnToAssetsOverview else { return }
+        shouldReturnToAssetsOverview = false
+        if let onReturnToAssetsOverview {
+            onReturnToAssetsOverview()
+        } else {
+            dismiss()
+        }
     }
 
     private func reloadAssignedRelations() async {

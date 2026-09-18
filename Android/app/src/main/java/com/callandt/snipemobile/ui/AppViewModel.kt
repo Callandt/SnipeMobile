@@ -123,6 +123,9 @@ class AppViewModel(
     val autoFillAssetTag: StateFlow<Boolean> =
         preferences.autoFillAssetTag.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val returnToAssetsAfterCheckInOut: StateFlow<Boolean> =
+        preferences.returnToAssetsAfterCheckInOut.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     val showPhotosInCardList: StateFlow<Boolean> =
         preferences.showPhotosInCardList.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
@@ -343,6 +346,10 @@ class AppViewModel(
 
     fun setAutoFillAssetTag(enabled: Boolean) {
         viewModelScope.launch { preferences.setAutoFillAssetTag(enabled) }
+    }
+
+    fun setReturnToAssetsAfterCheckInOut(enabled: Boolean) {
+        viewModelScope.launch { preferences.setReturnToAssetsAfterCheckInOut(enabled) }
     }
 
     fun setShowPhotosInCardList(enabled: Boolean) {
