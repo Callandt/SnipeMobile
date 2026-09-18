@@ -130,9 +130,43 @@ struct Asset: Identifiable, Codable, Hashable {
         case id, name, assetTag = "asset_tag", serial, model, byod, requestable, modelNumber = "model_number", eol, assetEolDate = "asset_eol_date", statusLabel = "status_label", status, category, manufacturer, supplier, notes, orderNumber = "order_number", company, location, rtdLocation = "rtd_location", image, qr, altBarcode = "alt_barcode", assignedTo = "assigned_to", jobtitle, warrantyMonths = "warranty_months", warrantyExpires = "warranty_expires", createdBy = "created_by", createdAt = "created_at", updatedAt = "updated_at", lastAuditDate = "last_audit_date", nextAuditDate = "next_audit_date", deletedAt = "deleted_at", purchaseDate = "purchase_date", age, lastCheckout = "last_checkout", lastCheckin = "last_checkin", expectedCheckin = "expected_checkin", purchaseCost = "purchase_cost", checkinCounter = "checkin_counter", checkoutCounter = "checkout_counter", requestsCounter = "requests_counter", userCanCheckout = "user_can_checkout", bookValue = "book_value", customFields = "custom_fields", availableActions = "available_actions"
     }
 
-    // Identity only: `NavigationPath` uses Hashable as dictionary keys.
+    // Visible fields, so list cards update after check-in/out.
     static func == (lhs: Asset, rhs: Asset) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.decodedName == rhs.decodedName &&
+        lhs.decodedAssetTag == rhs.decodedAssetTag &&
+        lhs.decodedSerial == rhs.decodedSerial &&
+        lhs.decodedModelName == rhs.decodedModelName &&
+        lhs.decodedStatusLabelName == rhs.decodedStatusLabelName &&
+        lhs.statusLabel.id == rhs.statusLabel.id &&
+        lhs.statusLabel.statusMeta == rhs.statusLabel.statusMeta &&
+        lhs.assignedTo?.id == rhs.assignedTo?.id &&
+        lhs.assignedTo?.type == rhs.assignedTo?.type &&
+        lhs.decodedAssignedToName == rhs.decodedAssignedToName &&
+        lhs.decodedLocationName == rhs.decodedLocationName &&
+        lhs.rtdLocation?.id == rhs.rtdLocation?.id &&
+        lhs.rtdLocation?.name == rhs.rtdLocation?.name &&
+        lhs.decodedCategoryName == rhs.decodedCategoryName &&
+        lhs.decodedManufacturerName == rhs.decodedManufacturerName &&
+        lhs.decodedSupplierName == rhs.decodedSupplierName &&
+        lhs.decodedCompanyName == rhs.decodedCompanyName &&
+        lhs.modelNumber == rhs.modelNumber &&
+        lhs.purchaseDate == rhs.purchaseDate &&
+        lhs.purchaseCost == rhs.purchaseCost &&
+        lhs.orderNumber == rhs.orderNumber &&
+        lhs.bookValue == rhs.bookValue &&
+        lhs.assetEolDate == rhs.assetEolDate &&
+        lhs.warrantyExpires == rhs.warrantyExpires &&
+        lhs.decodedWarrantyMonths == rhs.decodedWarrantyMonths &&
+        lhs.lastAuditDate == rhs.lastAuditDate &&
+        lhs.nextAuditDate == rhs.nextAuditDate &&
+        lhs.expectedCheckin == rhs.expectedCheckin &&
+        lhs.lastCheckout == rhs.lastCheckout &&
+        lhs.lastCheckin == rhs.lastCheckin &&
+        lhs.decodedNotes == rhs.decodedNotes &&
+        lhs.image == rhs.image &&
+        lhs.userCanCheckout == rhs.userCanCheckout &&
+        lhs.updatedAt?.datetime == rhs.updatedAt?.datetime
     }
 
     func hash(into hasher: inout Hasher) {
