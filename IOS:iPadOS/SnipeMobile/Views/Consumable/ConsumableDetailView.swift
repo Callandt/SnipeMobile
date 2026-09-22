@@ -50,6 +50,7 @@ struct ConsumableDetailView: View {
                 Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
+            .labelsHidden()
             .padding(.horizontal)
             .padding(.top, 8)
             .padding(.bottom, 2)
@@ -183,7 +184,7 @@ struct ConsumableDetailView: View {
         .background(Color(.systemBackground))
         .onAppear { isDetailViewActive = true }
         .hidesTabBarWhenPushed()
-        .navigationTitle("")
+        .detailNavigationTitle(currentConsumable.decodedName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

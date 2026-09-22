@@ -41,6 +41,7 @@ struct LicenseDetailView: View {
                 Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
+            .labelsHidden()
             .padding(.horizontal)
             .padding(.top, 8)
             .padding(.bottom, 2)
@@ -124,7 +125,7 @@ struct LicenseDetailView: View {
         }
         .onAppear { isDetailViewActive = true }
         .hidesTabBarWhenPushed()
-        .navigationTitle("")
+        .detailNavigationTitle(currentLicense.decodedName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

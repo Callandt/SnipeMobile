@@ -55,6 +55,7 @@ fun SettingsRow(
     title: String,
     modifier: Modifier = Modifier,
     value: String? = null,
+    subtitle: String? = null,
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
     showChevron: Boolean = true,
     onClick: (() -> Unit)? = null,
@@ -68,12 +69,25 @@ fun SettingsRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingsIcon(icon = icon, iconColor = iconColor)
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = titleColor,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = titleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
         if (!value.isNullOrBlank()) {
             Text(
                 text = value,

@@ -199,7 +199,7 @@ struct LocationDetailView: View {
             }
         }
         .background(Color(.systemBackground))
-        .navigationTitle("")
+        .detailNavigationTitle(currentLocation.decodedName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

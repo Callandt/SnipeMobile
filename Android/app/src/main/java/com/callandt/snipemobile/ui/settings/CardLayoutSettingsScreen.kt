@@ -51,7 +51,6 @@ import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.CardLayoutPreviewCard
 import com.callandt.snipemobile.ui.components.SettingsGroupedCard
 import com.callandt.snipemobile.ui.components.SettingsRow
-import com.callandt.snipemobile.ui.components.SettingsSectionFooter
 import com.callandt.snipemobile.ui.components.SettingsSectionHeader
 import com.callandt.snipemobile.ui.components.cardFieldIcon
 import com.callandt.snipemobile.ui.util.CardIcons
@@ -85,9 +84,8 @@ fun CardLayoutSettingsScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            item { SettingsSectionHeader(L10n.string("card_layout_settings")) }
             item {
-                SettingsGroupedCard {
+                SettingsGroupedCard(modifier = Modifier.padding(top = 8.dp)) {
                     CardKind.entries.forEachIndexed { index, kind ->
                         val spec = CardKindSpec.spec(kind)
                         val layout = layouts.layout(kind).resolved(spec)
@@ -95,7 +93,7 @@ fun CardLayoutSettingsScreen(
                             icon = cardKindIcon(kind),
                             iconColor = cardKindColor(kind),
                             title = L10n.string(kind.titleKey),
-                            value = layoutSummary(layout),
+                            subtitle = layoutSummary(layout),
                             onClick = { onOpenKind(kind) },
                         )
                         if (index != CardKind.entries.lastIndex) {
@@ -231,7 +229,6 @@ fun CardLayoutKindEditorScreen(
                         )
                     }
                 }
-                SettingsSectionFooter(L10n.string("card_layout_tap_remove_footer"))
             }
             item { SettingsSectionHeader(L10n.string("card_layout_meta_slot")) }
             item {
@@ -263,7 +260,6 @@ fun CardLayoutKindEditorScreen(
                         )
                     }
                 }
-                SettingsSectionFooter(L10n.string("card_layout_tap_remove_footer"))
             }
         }
     }

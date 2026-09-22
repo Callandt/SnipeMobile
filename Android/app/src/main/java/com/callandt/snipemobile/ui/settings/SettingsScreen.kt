@@ -878,9 +878,10 @@ private fun AssetCreationSettingsScreen(viewModel: AppViewModel, onBack: () -> U
     ) { padding ->
         Column(
             modifier = Modifier
+                .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
         ) {
             SettingsSectionHeader(L10n.string("settings_assets_creation_header"))
             SettingsGroupedCard {

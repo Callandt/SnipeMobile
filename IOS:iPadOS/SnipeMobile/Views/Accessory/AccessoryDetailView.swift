@@ -57,6 +57,7 @@ struct AccessoryDetailView: View {
                 Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
+            .labelsHidden()
             .padding(.horizontal)
             .padding(.top, 8)
             .padding(.bottom, 2)
@@ -209,7 +210,7 @@ struct AccessoryDetailView: View {
         .background(Color(.systemBackground))
         .onAppear { isDetailViewActive = true }
         .hidesTabBarWhenPushed()
-        .navigationTitle("")
+        .detailNavigationTitle(currentAccessory.decodedName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

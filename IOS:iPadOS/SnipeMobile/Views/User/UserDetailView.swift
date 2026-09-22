@@ -124,6 +124,7 @@ struct UserDetailView: View {
                         Text(L10n.string("history")).tag(1)
                     }
                     .pickerStyle(SegmentedPickerStyle())
+                    .labelsHidden()
                     .padding(.horizontal)
                     .padding(.top, 8)
                     .padding(.bottom, 2)
@@ -206,7 +207,10 @@ struct UserDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .navigationTitle(isReadOnly ? L10n.string("user_mode_my_profile") : "")
+        .detailNavigationTitle(
+            isReadOnly ? L10n.string("user_mode_my_profile") : displayName,
+            hideInBar: !isReadOnly
+        )
         .navigationBarTitleDisplayMode(isReadOnly ? .large : .inline)
         .toolbar {
             if !isReadOnly {

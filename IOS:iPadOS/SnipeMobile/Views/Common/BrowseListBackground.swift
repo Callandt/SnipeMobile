@@ -39,6 +39,12 @@ extension View {
     func compactLayoutWhileSearching() -> some View {
         modifier(CompactLayoutWhileSearching())
     }
+
+    /// Sets the title used by the iOS back-button history without duplicating
+    /// the in-content `DetailPageTitle` in the current navigation bar.
+    func detailNavigationTitle(_ title: String, hideInBar: Bool = true) -> some View {
+        modifier(DetailNavigationTitleModifier(title: title, hideInBar: hideInBar))
+    }
 }
 
 private struct CompactLayoutWhileSearching: ViewModifier {
@@ -48,5 +54,28 @@ private struct CompactLayoutWhileSearching: ViewModifier {
         content
             .navigationBarTitleDisplayMode(isSearching ? .inline : .large)
             .contentMargins(.top, isSearching ? 0 : nil, for: .scrollContent)
+    }
+}
+
+private struct DetailNavigationTitleModifier: ViewModifier {
+    let title: String
+    var hideInBar: Bool = true
+
+    private var resolvedTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(resolvedTitle)
+            .toolbar {
+                if hideInBar {
+                    ToolbarItem(placement: .principal) {
+                        Color.clear
+                            .frame(width: 0, height: 0)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
     }
 }

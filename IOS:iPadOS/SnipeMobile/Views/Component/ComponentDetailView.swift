@@ -54,6 +54,7 @@ struct ComponentDetailView: View {
                 Text(L10n.string("history")).tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
+            .labelsHidden()
             .padding(.horizontal)
             .padding(.top, 8)
             .padding(.bottom, 2)
@@ -187,7 +188,7 @@ struct ComponentDetailView: View {
         .background(Color(.systemBackground))
         .onAppear { isDetailViewActive = true }
         .hidesTabBarWhenPushed()
-        .navigationTitle("")
+        .detailNavigationTitle(currentComponent.decodedName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

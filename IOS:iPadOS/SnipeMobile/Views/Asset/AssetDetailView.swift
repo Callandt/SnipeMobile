@@ -338,7 +338,7 @@ struct AssetDetailView: View {
         }
         .onAppear { isDetailViewActive = true }
         .hidesTabBarWhenPushed()
-        .navigationTitle("")
+        .detailNavigationTitle(AssetListDisplay.headingTitle(for: currentAsset))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
