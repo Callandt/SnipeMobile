@@ -53,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +76,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -90,6 +92,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.coroutineContext
 
 data class AssetTagGenerationSettings(
     val autoIncrementAssets: Boolean,
@@ -394,10 +397,12 @@ class SnipeApiClient(
         AppLog.network("Validating API credentials scheme=${url.scheme}")
         return try {
             val response = executeGet(url.toString(), reportConnectionError = false)
+            response.transportFailureMessage()?.let { return it }
             AppLog.network("Validate HTTP ${response.code} bytes=${response.body.length}")
             if (response.code in 200..299) null
             else localizedHttpFailureMessage(response.code)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             AppLog.network("Validate failed: ${e.javaClass.simpleName}")
             localizedConnectionFailureMessage(e)
         }
@@ -553,12 +558,14 @@ class SnipeApiClient(
         query.forEach { (key, value) -> builder.addQueryParameter(key, value) }
         return try {
             val response = executeGet(builder.build().toString(), reportConnectionError = false)
+            if (response.transportError != null) return null
             AuthorizedProbeResult(
                 statusCode = response.code,
                 data = response.body,
                 ok = response.code in 200..299,
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
             null
         }
     }
@@ -710,6 +717,7 @@ class SnipeApiClient(
                 reportConnectionError = reportErrors,
             ).orEmpty()
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (reportErrors) {
                 reportRefreshError(localizedConnectionFailureMessage(e))
             }
@@ -732,6 +740,7 @@ class SnipeApiClient(
             ?: return L10n.string("api_validate_invalid_url")
         return try {
             val response = executeJsonPost(url, emptyMap())
+            response.transportFailureMessage()?.let { return it }
             if (response.code in 200..299 && !isSnipeApiErrorResponse(response.json)) {
                 null
             } else {
@@ -739,6 +748,7 @@ class SnipeApiClient(
                     ?: localizedHttpFailureMessage(response.code)
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             localizedConnectionFailureMessage(e)
         }
     }
@@ -779,6 +789,10 @@ class SnipeApiClient(
         val url = "$baseUrl/api/v1/users/me"
         try {
             val response = executeGet(url)
+            response.transportFailureMessage()?.let { message ->
+                if (reportErrors) reportRefreshError(message)
+                return
+            }
             if (isUnauthorizedStatus(response.code)) {
                 withContext(Dispatchers.Main) {
                     reportUnauthorizedSession()
@@ -803,6 +817,7 @@ class SnipeApiClient(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (reportErrors) {
                 reportRefreshError(localizedConnectionFailureMessage(e))
             }
@@ -1021,8 +1036,10 @@ class SnipeApiClient(
             val response = try {
                 executeGet("$baseUrl$path")
             } catch (e: Exception) {
-                return null to e.message
+                if (e is CancellationException) throw e
+                return null to localizedConnectionFailureMessage(e)
             }
+            response.transportFailureMessage()?.let { return null to it }
             if (isSnipeApiHttpSuccess(response.code)) {
                 response.json?.let { json ->
                     fieldRows(json)?.let { return enrichFieldsetFieldRows(it) to null }
@@ -1565,7 +1582,7 @@ class SnipeApiClient(
             deployedStatusIdForCheckout()?.let { checkoutBody["status_id"] = it }
         }
         val response = executeJsonPost("$baseUrl/api/v1/hardware/$assetId/checkout", checkoutBody)
-        val result = evaluateWriteResponse(response.json, response.code, "Check-out successful!", "Check-out failed.")
+        val result = response.toWriteResult("Check-out successful!", "Check-out failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         refreshAssetInCache(assetId, response.json)
@@ -1579,7 +1596,7 @@ class SnipeApiClient(
 
     suspend fun checkinAssetCustom(assetId: Int, body: Map<String, Any?>): Boolean {
         val response = executeJsonPost("$baseUrl/api/v1/hardware/$assetId/checkin", body)
-        val result = evaluateWriteResponse(response.json, response.code, "Check-in successful!", "Check-in failed.")
+        val result = response.toWriteResult("Check-in successful!", "Check-in failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         refreshAssetInCache(assetId, response.json)
@@ -1592,7 +1609,7 @@ class SnipeApiClient(
 
     suspend fun checkoutAccessoryCustom(accessoryId: Int, body: Map<String, Any?>): Boolean {
         val response = executeJsonPost("$baseUrl/api/v1/accessories/$accessoryId/checkout", body)
-        val result = evaluateWriteResponse(response.json, response.code, "Check-out successful.", "Check-out failed.")
+        val result = response.toWriteResult("Check-out successful.", "Check-out failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         refreshAccessoryInCache(accessoryId)
@@ -1605,7 +1622,7 @@ class SnipeApiClient(
             "$baseUrl/api/v1/accessories/$checkedoutId/checkin",
             mapOf("note" to ""),
         )
-        val result = evaluateWriteResponse(response.json, response.code, "Check-in successful.", "Check-in failed.")
+        val result = response.toWriteResult("Check-in successful.", "Check-in failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         refreshAccessoryInCache(accessoryId)
@@ -1663,7 +1680,7 @@ class SnipeApiClient(
         val body = mutableMapOf<String, Any?>("assigned_to" to userId)
         if (!note.isNullOrEmpty()) body["note"] = note
         val response = executeJsonPost("$baseUrl/api/v1/consumables/$consumableId/checkout", body)
-        val result = evaluateWriteResponse(response.json, response.code, "Check-out successful.", "Check-out failed.")
+        val result = response.toWriteResult("Check-out successful.", "Check-out failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         refreshConsumableInCache(consumableId)
@@ -1678,7 +1695,7 @@ class SnipeApiClient(
         )
         if (!note.isNullOrEmpty()) body["note"] = note
         val response = executeJsonPost("$baseUrl/api/v1/components/$componentId/checkout", body)
-        val result = evaluateWriteResponse(response.json, response.code, "Check-out successful.", "Check-out failed.")
+        val result = response.toWriteResult("Check-out successful.", "Check-out failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         refreshComponentInCache(componentId)
@@ -1691,6 +1708,7 @@ class SnipeApiClient(
             "$baseUrl/api/v1/components/$componentAssetId/checkin",
             mapOf("checkin_qty" to maxOf(1, quantity)),
         )
+        response.transportFailureMessage()?.let { return it }
         if (!isSnipeApiHttpSuccess(response.code)) {
             return "HTTP ${response.code}: ${response.body.take(300)}"
         }
@@ -1722,6 +1740,10 @@ class SnipeApiClient(
 
         val response = if (image != null) {
             val multipart = sendHardwareMultipart(url, "POST", body, image)
+            multipart.transportFailureMessage()?.let { message ->
+                withContext(Dispatchers.Main) { _lastApiMessage.value = message }
+                return false
+            }
             val multipartOk = isSnipeApiHttpSuccess(multipart.code) && !isSnipeApiErrorResponse(multipart.json)
             if (multipartOk) {
                 multipart
@@ -1732,6 +1754,11 @@ class SnipeApiClient(
             }
         } else {
             executeJsonPost(url, body)
+        }
+
+        response.transportFailureMessage()?.let { message ->
+            withContext(Dispatchers.Main) { _lastApiMessage.value = message }
+            return false
         }
 
         if (!isSnipeApiHttpSuccess(response.code) || isSnipeApiErrorResponse(response.json)) {
@@ -1761,6 +1788,7 @@ class SnipeApiClient(
         } else {
             executeJsonPost(url, body)
         }
+        response.transportFailureMessage()?.let { return CreateResult(false, message = it) }
         if (!isSnipeApiHttpSuccess(response.code)) {
             return CreateResult(false, message = "HTTP ${response.code}: ${response.body.take(300)}")
         }
@@ -1783,7 +1811,7 @@ class SnipeApiClient(
         } else {
             executeJsonPatch(url, body)
         }
-        val result = evaluateWriteResponse(response.json, response.code, "Saved.", "Save failed.")
+        val result = response.toWriteResult("Saved.", "Save failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         withContext(Dispatchers.Main) {
@@ -1823,7 +1851,7 @@ class SnipeApiClient(
 
     suspend fun updateUser(userId: Int, body: Map<String, Any?>): Boolean {
         val response = executeJsonPatch("$baseUrl/api/v1/users/$userId", body)
-        val result = evaluateWriteResponse(response.json, response.code, "Saved.", "Save failed.")
+        val result = response.toWriteResult("Saved.", "Save failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         decodePayloadOrRoot<User>(response.body)?.let { updated ->
@@ -1838,7 +1866,7 @@ class SnipeApiClient(
 
     suspend fun updateLocation(locationId: Int, body: Map<String, Any?>): Boolean {
         val response = executeJsonPatch("$baseUrl/api/v1/locations/$locationId", body)
-        val result = evaluateWriteResponse(response.json, response.code, "Saved.", "Save failed.")
+        val result = response.toWriteResult("Saved.", "Save failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         decodePayloadOrRoot<Location>(response.body)?.let { updated ->
@@ -1853,6 +1881,7 @@ class SnipeApiClient(
 
     suspend fun updateLicense(licenseId: Int, body: Map<String, Any?>): String? {
         val response = executeJsonPatch("$baseUrl/api/v1/licenses/$licenseId", body)
+        response.transportFailureMessage()?.let { return it }
         if (!isSnipeApiHttpSuccess(response.code)) {
             return "HTTP ${response.code}: ${response.body.take(300)}"
         }
@@ -1895,12 +1924,11 @@ class SnipeApiClient(
 
         if (image != null) {
             val multipart = sendHardwareMultipart(url, "POST", mutableBody, image)
-            val multipartResult = evaluateWriteResponse(
-                multipart.json,
-                multipart.code,
-                "Maintenance created.",
-                "Create failed.",
-            )
+            val multipartResult = multipart.toWriteResult("Maintenance created.", "Create failed.")
+            if (multipart.transportError != null) {
+                withContext(Dispatchers.Main) { _lastApiMessage.value = multipartResult.message }
+                return null
+            }
             if (multipartResult.success) {
                 withContext(Dispatchers.Main) { _lastApiMessage.value = multipartResult.message }
                 scope.launch { fetchAllMaintenances() }
@@ -1911,7 +1939,7 @@ class SnipeApiClient(
         }
 
         val response = executeJsonPost(url, mutableBody)
-        val result = evaluateWriteResponse(response.json, response.code, "Maintenance created.", "Create failed.")
+        val result = response.toWriteResult("Maintenance created.", "Create failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return null
         scope.launch { fetchAllMaintenances() }
@@ -1944,7 +1972,7 @@ class SnipeApiClient(
             "$baseUrl/api/v1/maintenances/$id",
             withMirroredMaintenanceCompletion(body),
         )
-        val result = evaluateWriteResponse(response.json, response.code, "Changes saved.", "Update failed.")
+        val result = response.toWriteResult("Changes saved.", "Update failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return null
         decodePayloadOrRoot<AssetMaintenance>(response.body)?.let { record ->
@@ -1988,7 +2016,7 @@ class SnipeApiClient(
 
     suspend fun deleteMaintenance(id: Int): Boolean {
         val response = executeDeleteWithFallback("$baseUrl/api/v1/maintenances/$id")
-        val result = evaluateWriteResponse(response.json, response.code, "Deleted.", "Delete failed.")
+        val result = response.toWriteResult("Deleted.", "Delete failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (result.success) scope.launch { fetchAllMaintenances() }
         return result.success
@@ -2403,11 +2431,9 @@ class SnipeApiClient(
         }
         val url = "$baseUrl$path"
         val response = executeDeleteWithFallback(url)
-        val result = evaluateWriteResponse(
-            json = response.json,
-            httpStatus = response.code,
-            defaultSuccessMessage = L10n.string("delete_success"),
-            defaultFailureMessage = L10n.string("delete_failed"),
+        val result = response.toWriteResult(
+            L10n.string("delete_success"),
+            L10n.string("delete_failed"),
         )
         val message = if (!result.success) {
             extractApiErrorMessage(response.json)?.takeIf { it.isNotEmpty() } ?: result.message
@@ -2502,7 +2528,7 @@ class SnipeApiClient(
         if (baseUrl.isEmpty() || apiToken.isEmpty()) return false
         val body = note?.trim()?.takeIf { it.isNotEmpty() }?.let { mapOf("note" to it) } ?: emptyMap()
         val response = executeJsonPost("$baseUrl/api/v1/maintenances/$id/complete", body)
-        val result = evaluateWriteResponse(response.json, response.code, "Onderhoud afgerond.", "Afronden mislukt.")
+        val result = response.toWriteResult("Onderhoud afgerond.", "Afronden mislukt.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (result.success) scope.launch { fetchAllMaintenances() }
         return result.success
@@ -2538,8 +2564,10 @@ class SnipeApiClient(
             val response = try {
                 executeGet(url)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 return null to localizedConnectionFailureMessage(e)
             }
+            response.transportFailureMessage()?.let { return null to it }
             if (!isSnipeApiHttpSuccess(response.code)) {
                 return null to (extractApiErrorMessage(response.json) ?: "HTTP ${response.code}")
             }
@@ -2596,9 +2624,7 @@ class SnipeApiClient(
                 return withContext(Dispatchers.IO) {
                     val requestBody = "_method=$formOverride".toRequestBody("application/x-www-form-urlencoded".toMediaType())
                     val request = authorizedRequest(url).method(httpMethod, requestBody).build()
-                    val response = client.newCall(request).execute()
-                    val responseBody = response.body?.string().orEmpty()
-                    HttpResult(response.code, responseBody, parseJsonObject(responseBody))
+                    client.newCall(request).executeSafely()
                 }
             }
             return when (httpMethod) {
@@ -2610,9 +2636,10 @@ class SnipeApiClient(
         }
 
         var response = send(method)
-        if (method == "DELETE" && response.code == 405) {
+        if (response.transportError == null && method == "DELETE" && response.code == 405) {
             response = send("POST", formOverride = "DELETE")
         }
+        response.transportFailureMessage()?.let { return ManagementWriteResult(false, it) }
         val success = isSnipeApiHttpSuccess(response.code) && !isSnipeApiErrorResponse(response.json)
         val message = extractApiErrorMessage(response.json)
             ?: if (success) {
@@ -2921,7 +2948,12 @@ class SnipeApiClient(
 
     // region HTTP layer
 
-    private data class HttpResult(val code: Int, val body: String, val json: JsonObject?)
+    private data class HttpResult(
+        val code: Int,
+        val body: String,
+        val json: JsonObject?,
+        val transportError: IOException? = null,
+    )
 
     private suspend fun <T> fetchAllPaginated(
         path: String,
@@ -2944,10 +2976,17 @@ class SnipeApiClient(
             val response = try {
                 executeGet(url, reportConnectionError = reportConnectionError)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 if (reportConnectionError) {
                     withContext(Dispatchers.Main) {
                         reportRefreshError(localizedConnectionFailureMessage(e))
                     }
+                }
+                return null
+            }
+            response.transportFailureMessage()?.let { message ->
+                if (reportConnectionError) {
+                    withContext(Dispatchers.Main) { reportRefreshError(message) }
                 }
                 return null
             }
@@ -2993,9 +3032,7 @@ class SnipeApiClient(
     ): HttpResult =
         withContext(Dispatchers.IO) {
             val request = authorizedRequest(url, bypassCache = bypassCache).build()
-            val response = client.newCall(request).execute()
-            val body = response.body?.string().orEmpty()
-            HttpResult(response.code, body, parseJsonObject(body))
+            client.newCall(request).executeSafely()
         }
 
     private suspend fun executeJsonPost(url: String, body: Map<String, Any?>): HttpResult =
@@ -3006,7 +3043,7 @@ class SnipeApiClient(
 
     private suspend fun executeJsonPut(url: String, body: Map<String, Any?>): HttpResult {
         val response = executeJsonRequest("PUT", url, body)
-        if (response.code != 405) return response
+        if (response.transportError != null || response.code != 405) return response
         // Hosts that block PUT accept POST + _method.
         return executeJsonRequest("POST", url, body + ("_method" to "PUT"))
     }
@@ -3014,21 +3051,17 @@ class SnipeApiClient(
     private suspend fun executeDelete(url: String): HttpResult =
         withContext(Dispatchers.IO) {
             val request = authorizedRequest(url).delete().build()
-            val response = client.newCall(request).execute()
-            val body = response.body?.string().orEmpty()
-            HttpResult(response.code, body, parseJsonObject(body))
+            client.newCall(request).executeSafely()
         }
 
     private suspend fun executeDeleteWithFallback(url: String): HttpResult {
         var response = executeDelete(url)
-        if (response.code == 405) {
+        if (response.transportError == null && response.code == 405) {
             response = withContext(Dispatchers.IO) {
                 val formMediaType = "application/x-www-form-urlencoded".toMediaType()
                 val requestBody = "_method=DELETE".toRequestBody(formMediaType)
                 val request = authorizedRequest(url).post(requestBody).build()
-                val httpResponse = client.newCall(request).execute()
-                val body = httpResponse.body?.string().orEmpty()
-                HttpResult(httpResponse.code, body, parseJsonObject(body))
+                client.newCall(request).executeSafely()
             }
         }
         return response
@@ -3037,11 +3070,35 @@ class SnipeApiClient(
     private suspend fun executeJsonRequest(method: String, url: String, body: Map<String, Any?>): HttpResult =
         withContext(Dispatchers.IO) {
             val jsonBody = mapToJson(body).toString().toRequestBody(jsonMediaType)
-            val builder = authorizedRequest(url).method(method, jsonBody)
-            val response = client.newCall(builder.build()).execute()
-            val responseBody = response.body?.string().orEmpty()
-            HttpResult(response.code, responseBody, parseJsonObject(responseBody))
+            val request = authorizedRequest(url).method(method, jsonBody).build()
+            client.newCall(request).executeSafely()
         }
+
+    /**
+     * Turns a socket failure (no route, DNS, timeout, TLS) into a result.
+     * Cancellation still propagates, so a closed screen does not look like a host error.
+     */
+    private suspend fun Call.executeSafely(): HttpResult {
+        return try {
+            execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                HttpResult(response.code, body, parseJsonObject(body))
+            }
+        } catch (error: IOException) {
+            coroutineContext.ensureActive()
+            HttpResult(code = 0, body = "", json = null, transportError = error)
+        }
+    }
+
+    private fun HttpResult.transportFailureMessage(): String? =
+        transportError?.let { localizedConnectionFailureMessage(it) }
+
+    private fun HttpResult.toWriteResult(successMessage: String, failureMessage: String): WriteResult {
+        transportFailureMessage()?.let { message ->
+            return WriteResult(success = false, message = message)
+        }
+        return evaluateWriteResponse(json, code, successMessage, failureMessage)
+    }
 
     /** Multipart hardware write (POST + `_method` for PUT/PATCH). */
     private suspend fun sendHardwareMultipart(
@@ -3069,9 +3126,7 @@ class SnipeApiClient(
             builder.addFormDataPart("image", file.filename, file.data.toRequestBody(mediaType))
         }
         val request = authorizedRequest(url).method(httpMethod, builder.build()).build()
-        val httpResponse = client.newCall(request).execute()
-        val responseBody = httpResponse.body?.string().orEmpty()
-        HttpResult(httpResponse.code, responseBody, parseJsonObject(responseBody))
+        client.newCall(request).executeSafely()
     }
 
     private suspend fun putLicenseSeatUpdate(
@@ -3080,6 +3135,7 @@ class SnipeApiClient(
         body: Map<String, Any?>,
     ): String? {
         val response = executeJsonPut("$baseUrl/api/v1/licenses/$licenseId/seats/$seatId", body)
+        response.transportFailureMessage()?.let { return it }
         if (!isSnipeApiHttpSuccess(response.code)) {
             return "HTTP ${response.code}: ${response.body.take(300)}"
         }
@@ -3098,6 +3154,7 @@ class SnipeApiClient(
             return CreateResult(false, message = "API not configured.")
         }
         val response = executeJsonPost(url, body)
+        response.transportFailureMessage()?.let { return CreateResult(false, message = it) }
         if (!isSnipeApiHttpSuccess(response.code)) {
             return CreateResult(
                 false,
@@ -3115,7 +3172,7 @@ class SnipeApiClient(
 
     private suspend fun patchEntity(url: String, body: Map<String, Any?>, onSuccess: suspend () -> Unit): Boolean {
         val response = executeJsonPatch(url, body)
-        val result = evaluateWriteResponse(response.json, response.code, "Saved.", "Save failed.")
+        val result = response.toWriteResult("Saved.", "Save failed.")
         withContext(Dispatchers.Main) { _lastApiMessage.value = result.message }
         if (!result.success) return false
         onSuccess()
@@ -3142,16 +3199,21 @@ class SnipeApiClient(
                 .header("Accept", "*/*")
                 .header("User-Agent", USER_AGENT)
                 .build()
-            val response = client.newCall(request).execute()
-            response.use { http ->
-                if (http.code != 200) return@withContext null
-                val bytes = http.body?.bytes() ?: return@withContext null
-                if (!isBinaryFilePayload(bytes)) return@withContext null
-                val dir = java.io.File(appContext.cacheDir, "snipe-files").apply { mkdirs() }
-                val name = sanitizedDownloadFilename(preferredFilename, fileId)
-                val file = java.io.File(dir, "${java.util.UUID.randomUUID()}-$name")
-                file.writeBytes(bytes)
-                file
+            try {
+                val response = client.newCall(request).execute()
+                response.use { http ->
+                    if (http.code != 200) return@withContext null
+                    val bytes = http.body?.bytes() ?: return@withContext null
+                    if (!isBinaryFilePayload(bytes)) return@withContext null
+                    val dir = java.io.File(appContext.cacheDir, "snipe-files").apply { mkdirs() }
+                    val name = sanitizedDownloadFilename(preferredFilename, fileId)
+                    val file = java.io.File(dir, "${java.util.UUID.randomUUID()}-$name")
+                    file.writeBytes(bytes)
+                    file
+                }
+            } catch (error: IOException) {
+                ensureActive()
+                null
             }
         }
 

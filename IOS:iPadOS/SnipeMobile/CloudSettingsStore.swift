@@ -33,12 +33,15 @@ private enum CloudKey: String, CaseIterable {
     case cardLayoutsJSON
     case dellTechDirectClientId
     case dellTechDirectClientSecret
+    /// API token revision. Newer wins.
+    case apiTokenRevision
     /// Unix timestamp of last wipe. Other devices mirror it locally.
     case lastWipeAt
 }
 
 private let useCloudSyncKey = "useCloudSync"
 private let lastSeenWipeAtKey = "lastSeenWipeAt"
+private let apiTokenRevisionAppliedKey = "apiTokenRevisionApplied"
 
 final class CloudSettingsStore {
     static let shared = CloudSettingsStore()
@@ -87,6 +90,7 @@ final class CloudSettingsStore {
         guard useCloudSync, isICloudAvailable else { return }
         _ = store.synchronize()
         mergeCloudValuesIntoUserDefaults()
+        _ = store.synchronize()
     }
 
     func pushToCloud() {
@@ -102,9 +106,18 @@ final class CloudSettingsStore {
         KeychainSecretStore.set(apiToken, for: .apiToken)
         defaults.removeObject(forKey: "apiToken")
         defaults.set(isConfigured, forKey: "isConfigured")
+        let revision = Date().timeIntervalSince1970
+        defaults.set(revision, forKey: apiTokenRevisionAppliedKey)
         if useCloudSync, isICloudAvailable {
             store.set(baseURL, forKey: CloudKey.baseURL.rawValue)
-            store.removeObject(forKey: CloudKey.apiToken.rawValue)
+            if apiToken.isEmpty {
+                store.removeObject(forKey: CloudKey.apiToken.rawValue)
+                store.removeObject(forKey: CloudKey.apiTokenRevision.rawValue)
+            } else {
+                // Long tokens sync via KVS.
+                store.set(apiToken, forKey: CloudKey.apiToken.rawValue)
+                store.set(revision, forKey: CloudKey.apiTokenRevision.rawValue)
+            }
             store.set(isConfigured, forKey: CloudKey.isConfigured.rawValue)
             _ = store.synchronize()
         }
@@ -298,11 +311,7 @@ final class CloudSettingsStore {
         if let v = store.string(forKey: CloudKey.baseURL.rawValue), !v.isEmpty {
             defaults.set(v, forKey: "baseURL")
         }
-        if let v = store.string(forKey: CloudKey.apiToken.rawValue), !v.isEmpty {
-            KeychainSecretStore.set(v, for: .apiToken)
-            defaults.removeObject(forKey: "apiToken")
-            store.removeObject(forKey: CloudKey.apiToken.rawValue)
-        }
+        applyRemoteAPITokenIfNeeded()
         if store.object(forKey: CloudKey.isConfigured.rawValue) != nil {
             defaults.set(store.bool(forKey: CloudKey.isConfigured.rawValue), forKey: "isConfigured")
         }
@@ -372,10 +381,48 @@ final class CloudSettingsStore {
         }
     }
 
+    /// Newer iCloud token replaces the local one.
+    private func applyRemoteAPITokenIfNeeded() {
+        guard let remote = store.string(forKey: CloudKey.apiToken.rawValue), !remote.isEmpty else { return }
+        let remoteRevision = store.double(forKey: CloudKey.apiTokenRevision.rawValue)
+        let applied = defaults.double(forKey: apiTokenRevisionAppliedKey)
+        let local = KeychainSecretStore.localString(for: .apiToken)
+        guard remoteRevision > applied || local.isEmpty else { return }
+
+        KeychainSecretStore.setLocal(remote, for: .apiToken)
+        defaults.removeObject(forKey: "apiToken")
+        let stamp = remoteRevision > 0 ? remoteRevision : Date().timeIntervalSince1970
+        defaults.set(stamp, forKey: apiTokenRevisionAppliedKey)
+        if remoteRevision == 0 {
+            store.set(stamp, forKey: CloudKey.apiTokenRevision.rawValue)
+        }
+    }
+
+    private func pushAPITokenToStore() {
+        guard useCloudSync, isICloudAvailable else { return }
+        let local = KeychainSecretStore.localString(for: .apiToken)
+        // No local token yet.
+        guard !local.isEmpty else { return }
+
+        let remote = store.string(forKey: CloudKey.apiToken.rawValue) ?? ""
+        let remoteRevision = store.double(forKey: CloudKey.apiTokenRevision.rawValue)
+        let applied = defaults.double(forKey: apiTokenRevisionAppliedKey)
+        if !remote.isEmpty, remoteRevision > applied {
+            return
+        }
+
+        store.set(local, forKey: CloudKey.apiToken.rawValue)
+        let stamp = applied > 0 ? applied : Date().timeIntervalSince1970
+        store.set(stamp, forKey: CloudKey.apiTokenRevision.rawValue)
+        if applied == 0 {
+            defaults.set(stamp, forKey: apiTokenRevisionAppliedKey)
+        }
+    }
+
     private func copyRelevantDefaultsToStore() {
         guard useCloudSync, isICloudAvailable else { return }
         if let v = defaults.string(forKey: "baseURL") { store.set(v, forKey: CloudKey.baseURL.rawValue) }
-        store.removeObject(forKey: CloudKey.apiToken.rawValue)
+        pushAPITokenToStore()
         store.set(defaults.bool(forKey: "isConfigured"), forKey: CloudKey.isConfigured.rawValue)
         store.set(defaults.bool(forKey: "hasCompletedOnboarding"), forKey: CloudKey.hasCompletedOnboarding.rawValue)
         store.set(defaults.bool(forKey: "hasSeenModulesIntro"), forKey: CloudKey.hasSeenModulesIntro.rawValue)

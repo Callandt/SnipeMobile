@@ -419,9 +419,15 @@ class SnipeITAPIClient: ObservableObject {
         NotificationCenter.default.addObserver(forName: .cloudSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
+                let wasMissingToken = self.errorMessage == L10n.string("configure_api_short")
                 let newValue = UserDefaults.standard.bool(forKey: "isConfigured")
                 if self.isConfigured != newValue {
                     self.isConfigured = newValue
+                }
+                // iCloud token arrived after the first fetch.
+                if wasMissingToken, self.isConfigured, !self.baseURL.isEmpty, !self.apiToken.isEmpty {
+                    self.errorMessage = nil
+                    await self.syncForCurrentAppMode()
                 }
             }
         }
