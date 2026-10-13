@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersionCode = 18
+val appVersionCode = 19
 val appVersionName = "1.0"
 
 android {

@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,10 +32,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -42,6 +44,7 @@ import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.LoadingOverlay
 import com.callandt.snipemobile.ui.components.PrimaryButton
 import com.callandt.snipemobile.ui.util.L10n
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class SetupPhase {
@@ -339,15 +342,27 @@ fun ApiSetupScreen(
 
 @Composable
 private fun ApiKeyField(token: String, onTokenChange: (String) -> Unit) {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(L10n.string("login_api_key"), fontWeight = FontWeight.SemiBold)
         TextField(
             value = token,
             onValueChange = onTokenChange,
             placeholder = { Text(L10n.string("login_api_key_placeholder")) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .bringIntoViewRequester(bringIntoViewRequester)
+                .onFocusEvent { state ->
+                    if (state.isFocused) {
+                        scope.launch {
+                            // Keyboard inset lands after focus; scroll once it has.
+                            delay(300)
+                            bringIntoViewRequester.bringIntoView()
+                        }
+                    }
+                },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
             shape = RoundedCornerShape(12.dp),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surface,

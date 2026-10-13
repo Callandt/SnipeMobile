@@ -1248,9 +1248,10 @@ struct APISettingsView: View {
 
             if showsAPIKey {
                 Section {
-                    SecureField(L10n.string("login_api_key_placeholder"), text: $apiToken)
-                        .textContentType(.password)
+                    TextField(L10n.string("login_api_key_placeholder"), text: $apiToken)
                         .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.asciiCapable)
                 } header: {
                     Text(L10n.string("login_api_key"))
                 } footer: {

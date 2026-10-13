@@ -2,10 +2,13 @@ package com.callandt.snipemobile.ui.onboarding
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -37,9 +40,11 @@ fun OnboardingShell(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
+                // Leave the card in the space above the keyboard.
+                .imePadding()
                 .padding(24.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -47,6 +52,7 @@ fun OnboardingShell(
                 modifier = Modifier
                     .widthIn(max = 420.dp)
                     .fillMaxWidth()
+                    .heightIn(max = maxHeight)
                     .shadow(
                         elevation = 12.dp,
                         shape = RoundedCornerShape(32.dp),

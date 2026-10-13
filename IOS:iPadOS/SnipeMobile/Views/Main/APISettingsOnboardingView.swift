@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct APISettingsOnboardingView: View {
     var onContinue: (_ apiUrl: String, _ apiKey: String) -> Void
@@ -13,6 +14,11 @@ struct APISettingsOnboardingView: View {
         case error
     }
 
+    private enum Field: Hashable {
+        case serverURL
+        case apiKey
+    }
+
     @State private var apiUrl: String = ""
     @State private var apiKey: String = ""
     @State private var phase: Phase = .domain
@@ -22,6 +28,9 @@ struct APISettingsOnboardingView: View {
     @State private var alertMessage = ""
     @State private var showSkipConfirm = false
     @State private var checkGeneration = 0
+    // How far the keyboard covers the screen, so the card can sit above it.
+    @State private var keyboardOverlap: CGFloat = 0
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         ZStack {
@@ -30,17 +39,32 @@ struct APISettingsOnboardingView: View {
                 .scaledToFill()
                 .ignoresSafeArea()
             GeometryReader { geometry in
-                ScrollView {
-                    VStack {
-                        Spacer(minLength: 24)
-                        card
-                        Spacer(minLength: 24)
+                // Keep the scroll view in the gap above the keyboard.
+                let visibleHeight = max(geometry.size.height - keyboardOverlap, 0)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack {
+                            Spacer(minLength: 24)
+                            card
+                            Spacer(minLength: 24)
+                        }
+                        .frame(minWidth: geometry.size.width, minHeight: visibleHeight)
                     }
-                    .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
+                    .frame(height: visibleHeight, alignment: .top)
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .onChange(of: focusedField) { _, field in
+                        scrollToFocusedField(field, proxy: proxy)
+                    }
+                    .onChange(of: keyboardOverlap) { _, overlap in
+                        guard overlap > 0 else { return }
+                        scrollToFocusedField(focusedField, proxy: proxy)
+                    }
                 }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+            updateKeyboardOverlap(from: notification)
         }
         .alert(isPresented: $showAlert) {
             Alert(title: Text(alertMessage))
@@ -79,6 +103,8 @@ struct APISettingsOnboardingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Snipe-IT URL").font(.headline)
                     TextField("https://snipeit.yourcompany.com", text: $apiUrl)
+                        .focused($focusedField, equals: .serverURL)
+                        .id(Field.serverURL)
                         .textContentType(.URL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
@@ -226,12 +252,36 @@ struct APISettingsOnboardingView: View {
     private var apiKeyFields: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("login_api_key")).font(.headline)
-            SecureField(L10n.string("login_api_key_placeholder"), text: $apiKey)
-                .textContentType(.password)
+            TextField(L10n.string("login_api_key_placeholder"), text: $apiKey)
+                .focused($focusedField, equals: .apiKey)
+                .id(Field.apiKey)
                 .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.asciiCapable)
                 .padding()
                 .background(Color(UIColor.tertiarySystemBackground))
                 .cornerRadius(12)
+        }
+    }
+
+    private func scrollToFocusedField(_ field: Field?, proxy: ScrollViewProxy) {
+        guard let field else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.25)) {
+                proxy.scrollTo(field, anchor: .center)
+            }
+        }
+    }
+
+    private func updateKeyboardOverlap(from notification: Notification) {
+        guard
+            let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+            let screen = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen
+        else { return }
+        let overlap = max(0, screen.bounds.maxY - frame.minY)
+        let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        withAnimation(.easeOut(duration: duration)) {
+            keyboardOverlap = overlap
         }
     }
 
