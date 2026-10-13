@@ -4339,6 +4339,8 @@ class SnipeITAPIClient: ObservableObject {
         let name: String
         let type: String?
         let field_values_array: [String]?
+        /// Newline-separated options when `field_values_array` is absent.
+        let field_values: String?
         let db_column_name: String?
         let db_column: String?
         let db_field: String?
@@ -4350,6 +4352,7 @@ class SnipeITAPIClient: ObservableObject {
             case name
             case type
             case field_values_array
+            case field_values
             case db_column_name
             case db_column
             case db_field
@@ -4556,6 +4559,7 @@ class SnipeITAPIClient: ObservableObject {
         let name: String
         let type: String
         let field_values_array: [String]?
+        let field_values: String?
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -4571,10 +4575,11 @@ class SnipeITAPIClient: ObservableObject {
             name = (try? c.decode(String.self, forKey: .name)) ?? ""
             type = (try? c.decode(String.self, forKey: .type)) ?? "text"
             field_values_array = try? c.decodeIfPresent([String].self, forKey: .field_values_array)
+            field_values = try? c.decodeIfPresent(String.self, forKey: .field_values)
         }
 
         enum CodingKeys: String, CodingKey {
-            case id, name, type, field_values_array
+            case id, name, type, field_values_array, field_values
         }
     }
 
@@ -4592,6 +4597,7 @@ class SnipeITAPIClient: ObservableObject {
                 name: f.name,
                 type: f.type,
                 field_values_array: f.field_values_array,
+                field_values: f.field_values,
                 db_column_name: nil,
                 db_column: nil,
                 db_field: nil,

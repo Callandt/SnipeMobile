@@ -393,31 +393,16 @@ struct AddAssetSheet: View {
             if !displayedFieldDefinitions.isEmpty {
                 Section(header: Text(L10n.string("custom_fields"))) {
                     ForEach(displayedFieldDefinitions, id: \.name) { fieldDef in
-                        let key = fieldDef.name
-                        if fieldDef.type == "listbox", let options = fieldDef.field_values_array, !options.isEmpty {
-                            let sortedOptions = options.sorted {
-                                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-                            }
-                            AdaptivePickerRow(
-                                title: key,
-                                items: sortedOptions.map { (value: $0, label: $0) },
-                                selection: Binding(
-                                    get: { customFields[key] ?? "" },
-                                    set: { customFields[key] = $0 }
-                                ),
-                                emptyOption: ("", "—")
+                        CustomFieldInput(
+                            name: fieldDef.name,
+                            type: fieldDef.type,
+                            fieldValues: fieldDef.field_values_array,
+                            rawFieldValues: fieldDef.field_values,
+                            value: Binding(
+                                get: { customFields[fieldDef.name] ?? "" },
+                                set: { customFields[fieldDef.name] = $0 }
                             )
-                        } else {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(key)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                TextField(key, text: Binding(
-                                    get: { customFields[key] ?? "" },
-                                    set: { customFields[key] = $0 }
-                                ))
-                            }
-                        }
+                        )
                     }
                 }
             }

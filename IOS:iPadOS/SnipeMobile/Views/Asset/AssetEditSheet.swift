@@ -199,11 +199,17 @@ struct AssetEditSheet: View {
                 shouldClearUnchangedBookValue
                 ? .null
                 : (normalizedBookValue.map { .value($0) } ?? .null)
-            // custom_fields wants the internal key (e.g. "_snipeit_xxx_1"), not the label
+            // custom_fields wants the internal key (e.g. "_snipeit_xxx_1"), not the label.
+            // empty checkbox string clears all options
+            let checkboxFieldNames = Set(
+                (apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions)
+                    .filter { CustomCheckboxValue.isCheckbox($0.type) }
+                    .map(\.name)
+            )
             let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
                 uniqueKeysWithValues: editCustomFields.compactMap { key, value in
                     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return nil }
+                    guard !trimmed.isEmpty || checkboxFieldNames.contains(key) else { return nil }
                     let apiKey = resolveCustomFieldAPIKey(forDisplayName: key)
                     return (apiKey, .init(value: trimmed))
                 }
@@ -431,6 +437,19 @@ struct AssetEditSheet: View {
         }
     }
 
+    private func customFieldInput(name: String, definition: SnipeITAPIClient.FieldDefinition?) -> some View {
+        CustomFieldInput(
+            name: name,
+            type: definition?.type,
+            fieldValues: definition?.field_values_array,
+            rawFieldValues: definition?.field_values,
+            value: Binding(
+                get: { editCustomFields[name] ?? "" },
+                set: { editCustomFields[name] = $0 }
+            )
+        )
+    }
+
     private var customFieldsSection: some View {
         Section(header: Text(L10n.string("custom_fields"))) {
             let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
@@ -439,59 +458,14 @@ struct AssetEditSheet: View {
                     .foregroundColor(.secondary)
             } else if !customFieldDefs.isEmpty {
                 ForEach(customFieldDefs, id: \.name) { fieldDef in
-                    let key = fieldDef.name
-                    if fieldDef.type == "listbox", let options = fieldDef.field_values_array, !options.isEmpty {
-                        let sortedOptions = options.sorted {
-                            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-                        }
-                        AdaptivePickerRow(
-                            title: key,
-                            items: sortedOptions.map { (value: $0, label: $0) },
-                            selection: Binding(
-                                get: { editCustomFields[key] ?? "" },
-                                set: { editCustomFields[key] = $0 }
-                            ),
-                            emptyOption: ("", "—")
-                        )
-                    } else {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(key)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField(key, text: Binding(
-                                get: { editCustomFields[key] ?? "" },
-                                set: { editCustomFields[key] = $0 }
-                            ))
-                        }
-                    }
+                    customFieldInput(name: fieldDef.name, definition: fieldDef)
                 }
             } else {
                 ForEach(Array(editCustomFields.keys.sorted()), id: \.self) { key in
-                    let fieldDef = customFieldDefs.first(where: { $0.name == key })
-                    if let fieldDef = fieldDef, fieldDef.type == "listbox", let options = fieldDef.field_values_array {
-                        let sortedOptions = options.sorted {
-                            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-                        }
-                        AdaptivePickerRow(
-                            title: key,
-                            items: sortedOptions.map { (value: $0, label: $0) },
-                            selection: Binding(
-                                get: { editCustomFields[key] ?? "" },
-                                set: { editCustomFields[key] = $0 }
-                            ),
-                            emptyOption: ("", "—")
-                        )
-                    } else {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(key)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField(key, text: Binding(
-                                get: { editCustomFields[key] ?? "" },
-                                set: { editCustomFields[key] = $0 }
-                            ))
-                        }
-                    }
+                    customFieldInput(
+                        name: key,
+                        definition: customFieldDefs.first(where: { $0.name == key })
+                    )
                 }
             }
         }
