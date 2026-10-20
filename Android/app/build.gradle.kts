@@ -4,8 +4,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val appVersionCode = 19
-val appVersionName = "1.0"
+val appVersionCode = 20
+val appVersionName = "1.0.1"
 
 android {
     namespace = "com.callandt.snipemobile"
