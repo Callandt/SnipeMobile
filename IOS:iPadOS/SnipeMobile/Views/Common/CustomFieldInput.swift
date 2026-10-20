@@ -73,7 +73,8 @@ struct CustomFieldInput: View {
                 title: name,
                 items: sortedOptions.map { (value: $0, label: $0) },
                 selection: $value,
-                emptyOption: ("", "—")
+                emptyOption: ("", "—"),
+                forceSearchable: true
             )
         } else {
             VStack(alignment: .leading, spacing: 4) {

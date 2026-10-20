@@ -43,13 +43,55 @@ import coil.compose.AsyncImage
 import com.callandt.snipemobile.ui.util.L10n
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.util.UUID
 
 /** Pending gallery/camera image. */
 internal data class PendingAssetImage(val mimeType: String, val bytes: ByteArray)
 
+private const val UPLOAD_MAX_PX = 1280
+private const val PREVIEW_MAX_PX = 720
+
+/** Power-of-two sample so decode stays near the size we actually keep. */
+private fun sampleSize(width: Int, height: Int, maxPx: Int): Int {
+    val largest = maxOf(width, height).coerceAtLeast(1)
+    var sample = 1
+    while (largest / sample > maxPx * 2) sample *= 2
+    return sample
+}
+
+private fun decodeSampledFile(path: String, maxPx: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val opts = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxPx)
+    }
+    return BitmapFactory.decodeFile(path, opts)
+}
+
+private fun decodeSampledStream(open: () -> InputStream?, maxPx: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    open()?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val opts = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxPx)
+    }
+    return open()?.use { BitmapFactory.decodeStream(it, null, opts) }
+}
+
+private fun decodeSampledBytes(bytes: ByteArray, maxPx: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val opts = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxPx)
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+}
+
 /** Resize for upload (max 1280px, ~0.8 quality). */
-private fun Bitmap.toUploadJpegBytes(maxDimension: Int = 1280, quality: Int = 80): ByteArray {
+private fun Bitmap.toUploadJpegBytes(maxDimension: Int = UPLOAD_MAX_PX, quality: Int = 80): ByteArray {
     val largestSide = maxOf(width, height)
     val scaled = if (largestSide > maxDimension && largestSide > 0) {
         val scale = maxDimension.toFloat() / largestSide
@@ -75,7 +117,7 @@ private fun createCameraCaptureUri(context: Context): Pair<File, Uri> {
 private fun decodeCapturedFile(file: File): PendingAssetImage? {
     if (!file.exists()) return null
     return runCatching {
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+        val bitmap = decodeSampledFile(file.absolutePath, UPLOAD_MAX_PX) ?: return null
         PendingAssetImage("image/jpeg", bitmap.toUploadJpegBytes())
     }.getOrNull().also { file.delete() }
 }
@@ -149,7 +191,7 @@ internal fun AssetPhotoSection(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val bitmap = runCatching {
-            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+            decodeSampledStream({ context.contentResolver.openInputStream(uri) }, UPLOAD_MAX_PX)
         }.getOrNull()
         if (bitmap != null) {
             onPendingImageChange(PendingAssetImage("image/jpeg", bitmap.toUploadJpegBytes()))
@@ -166,7 +208,7 @@ internal fun AssetPhotoSection(
         FormSectionTitle(L10n.string("image"))
 
         val previewBitmap = remember(pendingImage) {
-            pendingImage?.let { BitmapFactory.decodeByteArray(it.bytes, 0, it.bytes.size) }
+            pendingImage?.let { decodeSampledBytes(it.bytes, PREVIEW_MAX_PX) }
         }
         when {
             previewBitmap != null -> {
@@ -247,7 +289,7 @@ internal fun AssetMultiPhotoSection(
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         val loaded = uris.mapNotNull { uri ->
             val bitmap = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                decodeSampledStream({ context.contentResolver.openInputStream(uri) }, UPLOAD_MAX_PX)
             }.getOrNull() ?: return@mapNotNull null
             PendingAssetImage("image/jpeg", bitmap.toUploadJpegBytes())
         }
@@ -259,7 +301,7 @@ internal fun AssetMultiPhotoSection(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val bitmap = runCatching {
-            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+            decodeSampledStream({ context.contentResolver.openInputStream(uri) }, UPLOAD_MAX_PX)
         }.getOrNull() ?: return@rememberLauncherForActivityResult
         onPendingImagesChange(pendingImages + PendingAssetImage("image/jpeg", bitmap.toUploadJpegBytes()))
     }
@@ -273,8 +315,8 @@ internal fun AssetMultiPhotoSection(
 
         pendingImages.forEachIndexed { index, image ->
             val previewBitmap = remember(image) {
-                BitmapFactory.decodeByteArray(image.bytes, 0, image.bytes.size)
-            }
+                decodeSampledBytes(image.bytes, PREVIEW_MAX_PX)
+            } ?: return@forEachIndexed
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),

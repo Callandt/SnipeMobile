@@ -46,11 +46,12 @@ private struct SearchablePickerSheetContent<Value: Hashable>: View {
                         selection = option.value
                         dismiss()
                     } label: {
-                        HStack {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Text(option.label)
                                 .foregroundStyle(.primary)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             if option.value == selection {
-                                Spacer()
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(Color.accentColor)
                             }
@@ -71,6 +72,8 @@ struct SearchablePickerRow<Value: Hashable>: View {
     let emptyOption: (value: Value, label: String)?
     var addNewLabel: String? = nil
     var onAddNew: (() -> Void)? = nil
+    /// Puts the current value under the title so long listbox labels stay readable.
+    var stackValue: Bool = false
 
     @State private var showSheet = false
 
@@ -79,15 +82,35 @@ struct SearchablePickerRow<Value: Hashable>: View {
         return items.first(where: { $0.value == value })?.label ?? "—"
     }
 
+    private var selectionIsEmpty: Bool {
+        emptyOption?.value == selection
+    }
+
     var body: some View {
         Button {
             showSheet = true
         } label: {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(displayLabel(for: selection))
-                    .foregroundStyle(.secondary)
+            if stackValue {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(displayLabel(for: selection))
+                        .foregroundStyle(selectionIsEmpty ? .secondary : .primary)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(title)
+                        .foregroundStyle(.primary)
+                        .layoutPriority(1)
+                    Text(displayLabel(for: selection))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(4)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
         }
         .buttonStyle(.plain)
@@ -142,13 +165,15 @@ struct AdaptivePickerRow<Value: Hashable>: View {
     let emptyOption: (value: Value, label: String)?
     var addNewLabel: String? = nil
     var onAddNew: (() -> Void)? = nil
+    /// Long option labels do not fit in the compact menu picker.
+    var forceSearchable: Bool = false
 
     private var totalCount: Int {
         items.count + (emptyOption != nil ? 1 : 0)
     }
 
     private var useSearchable: Bool {
-        totalCount > kLargeListThreshold || onAddNew != nil
+        forceSearchable || totalCount > kLargeListThreshold || onAddNew != nil
     }
 
     /// Picker crashes when selection has no matching tag.
@@ -169,7 +194,8 @@ struct AdaptivePickerRow<Value: Hashable>: View {
                 selection: $selection,
                 emptyOption: emptyOption,
                 addNewLabel: addNewLabel,
-                onAddNew: onAddNew
+                onAddNew: onAddNew,
+                stackValue: forceSearchable
             )
         } else {
             Picker(title, selection: $selection) {

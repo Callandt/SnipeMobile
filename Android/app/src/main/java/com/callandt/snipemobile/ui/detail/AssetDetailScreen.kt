@@ -467,26 +467,37 @@ private fun AssetDetailsTab(
             DetailRow(L10n.string("category"), asset.decodedCategoryName)
         }
 
-        DetailSectionCard(title = L10n.string("location_details")) {
+        run {
             val currentLocation = asset.location
             val defaultLocation = asset.rtdLocation
-            DetailRow(
-                L10n.string("location"),
-                currentLocation?.decodedName ?: locationName ?: asset.decodedLocationName,
-                onClick = onOpenLocation?.let { open ->
-                    currentLocation?.id?.takeIf { it > 0 }?.let { id -> { open(id) } }
-                },
-            )
-            if (defaultLocation != null && defaultLocation.id != currentLocation?.id) {
-                DetailRow(
-                    L10n.string("default_location"),
-                    defaultLocation.decodedName,
-                    onClick = onOpenLocation?.let { open ->
-                        defaultLocation.id.takeIf { it > 0 }?.let { id -> { open(id) } }
-                    },
-                )
+            val locationLabel = currentLocation?.decodedName ?: locationName ?: asset.decodedLocationName
+            val showDefaultLocation = defaultLocation != null &&
+                defaultLocation.id != currentLocation?.id &&
+                defaultLocation.decodedName.isNotBlank()
+            val showLocationCard = !locationLabel.isNullOrBlank() ||
+                showDefaultLocation ||
+                asset.decodedCompanyName.isNotBlank()
+            if (showLocationCard) {
+                DetailSectionCard(title = L10n.string("location_details")) {
+                    DetailRow(
+                        L10n.string("location"),
+                        locationLabel,
+                        onClick = onOpenLocation?.let { open ->
+                            currentLocation?.id?.takeIf { it > 0 }?.let { id -> { open(id) } }
+                        },
+                    )
+                    if (showDefaultLocation && defaultLocation != null) {
+                        DetailRow(
+                            L10n.string("default_location"),
+                            defaultLocation.decodedName,
+                            onClick = onOpenLocation?.let { open ->
+                                defaultLocation.id.takeIf { it > 0 }?.let { id -> { open(id) } }
+                            },
+                        )
+                    }
+                    DetailRow(L10n.string("company"), asset.decodedCompanyName)
+                }
             }
-            DetailRow(L10n.string("company"), asset.decodedCompanyName)
         }
 
         asset.assignedTo?.takeIf { isAssetDeployed(asset) }?.let { assignedTo ->
@@ -582,20 +593,36 @@ private fun AssetDetailsTab(
             }
         }
 
-        DetailSectionCard(title = L10n.string("dates")) {
-            DetailRow(L10n.string("last_audit_date"), asset.lastAuditDate?.localizedDisplay())
-            DetailRow(L10n.string("next_audit_date"), asset.nextAuditDate?.localizedDisplay())
-            DetailRow(L10n.string("expected_checkin"), asset.expectedCheckin?.localizedDisplay())
-            DetailRow(L10n.string("purchase_date"), asset.purchaseDate?.localizedDisplay())
-            WarrantyExpiresRow(asset)
-            DetailRow(L10n.string("eol_date"), asset.assetEolDate?.localizedDisplay())
+        val hasDates = listOf(
+            asset.lastAuditDate?.localizedDisplay(),
+            asset.nextAuditDate?.localizedDisplay(),
+            asset.expectedCheckin?.localizedDisplay(),
+            asset.purchaseDate?.localizedDisplay(),
+            asset.assetEolDate?.localizedDisplay(),
+        ).any { !it.isNullOrBlank() } || WarrantyHelper.expiresDate(asset) != null
+        if (hasDates) {
+            DetailSectionCard(title = L10n.string("dates")) {
+                DetailRow(L10n.string("last_audit_date"), asset.lastAuditDate?.localizedDisplay())
+                DetailRow(L10n.string("next_audit_date"), asset.nextAuditDate?.localizedDisplay())
+                DetailRow(L10n.string("expected_checkin"), asset.expectedCheckin?.localizedDisplay())
+                DetailRow(L10n.string("purchase_date"), asset.purchaseDate?.localizedDisplay())
+                WarrantyExpiresRow(asset)
+                DetailRow(L10n.string("eol_date"), asset.assetEolDate?.localizedDisplay())
+            }
         }
 
-        DetailSectionCard(title = L10n.string("financial")) {
-            DetailRow(L10n.string("purchase_cost"), asset.purchaseCost)
-            DetailRow(L10n.string("book_value"), asset.bookValue)
-            DetailRow(L10n.string("order_number"), asset.orderNumber)
-            DetailRow(L10n.string("warranty_months"), asset.decodedWarrantyMonths)
+        val hasFinancial = !asset.purchaseCost.isNullOrBlank() ||
+            !asset.orderNumber.isNullOrBlank() ||
+            asset.decodedWarrantyMonths.isNotBlank()
+        if (hasFinancial) {
+            DetailSectionCard(title = L10n.string("financial")) {
+                DetailRow(L10n.string("purchase_cost"), asset.purchaseCost)
+                if (!asset.purchaseCost.isNullOrBlank()) {
+                    DetailRow(L10n.string("book_value"), asset.bookValue)
+                }
+                DetailRow(L10n.string("order_number"), asset.orderNumber)
+                DetailRow(L10n.string("warranty_months"), asset.decodedWarrantyMonths)
+            }
         }
 
         if (asset.decodedNotes.isNotBlank()) {
