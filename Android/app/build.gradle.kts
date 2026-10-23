@@ -26,10 +26,9 @@ android {
 
     buildTypes {
         release {
-            // Minify off until R8 keep-rules are validated on-device.
-            // Enabling it previously caused Play closed-test startup crashes.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // App classes kept. Mapping goes in the bundle.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
