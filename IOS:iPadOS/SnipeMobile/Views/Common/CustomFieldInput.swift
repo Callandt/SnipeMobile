@@ -1,24 +1,70 @@
 import SwiftUI
 
+struct CustomFieldOption: Hashable {
+    let value: String
+    let label: String
+}
+
+enum CustomFieldOptions {
+    // API array only splits on CRLF. Web splits every newline and `value|label`.
+    static func parse(values: [String]?, raw: String?) -> [CustomFieldOption] {
+        let fromRaw = splitLines(raw ?? "")
+        let fromArray = (values ?? []).flatMap(splitLines)
+        // Use whichever side actually split the options.
+        let lines: [String]
+        if fromRaw.count > fromArray.count {
+            lines = fromRaw
+        } else if !fromArray.isEmpty {
+            lines = fromArray
+        } else {
+            lines = fromRaw
+        }
+        var result: [CustomFieldOption] = []
+        var indexByValue: [String: Int] = [:]
+        for line in lines {
+            let decoded = HTMLDecoder.decode(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !decoded.isEmpty else { continue }
+            let pieces = decoded.split(separator: "|", omittingEmptySubsequences: false).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let value = pieces.first ?? ""
+            guard !value.isEmpty else { continue }
+            let label = pieces.count > 1 && !pieces[1].isEmpty ? pieces[1] : value
+            let option = CustomFieldOption(value: value, label: label)
+            if let index = indexByValue[value] {
+                result[index] = option
+            } else {
+                indexByValue[value] = result.count
+                result.append(option)
+            }
+        }
+        return result
+    }
+
+    private static func splitLines(_ text: String) -> [String] {
+        text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
 enum CustomCheckboxValue {
-    /// Snipe-IT joins checked options with a comma and a space.
+    // Checked options are joined with ", ".
     static let separator = ", "
 
     static func isCheckbox(_ type: String?) -> Bool {
         type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "checkbox"
     }
 
-    static func options(from values: [String]?, rawFieldValues: String?) -> [String] {
-        let fromArray = uniqueOptions(values ?? [])
-        if !fromArray.isEmpty { return fromArray }
-        guard let rawFieldValues else { return [] }
-        return uniqueOptions(rawFieldValues.components(separatedBy: .newlines))
+    static func options(from values: [String]?, rawFieldValues: String?) -> [CustomFieldOption] {
+        CustomFieldOptions.parse(values: values, raw: rawFieldValues)
     }
 
-    static func selected(in stored: String, options: [String]) -> Set<String> {
+    static func selected(in stored: String, options: [CustomFieldOption]) -> Set<String> {
         let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let known = Set(options)
+        let known = Set(options.map(\.value))
         if known.contains(trimmed) { return [trimmed] }
 
         let spaced = tokens(in: trimmed, separatedBy: separator)
@@ -31,19 +77,8 @@ enum CustomCheckboxValue {
         return Set(commas.filter { known.contains($0) })
     }
 
-    static func storedValue(selected: Set<String>, options: [String]) -> String {
-        options.filter { selected.contains($0) }.joined(separator: separator)
-    }
-
-    private static func uniqueOptions(_ values: [String]) -> [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for raw in values {
-            let option = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !option.isEmpty, seen.insert(option).inserted else { continue }
-            result.append(option)
-        }
-        return result
+    static func storedValue(selected: Set<String>, options: [CustomFieldOption]) -> String {
+        options.map(\.value).filter { selected.contains($0) }.joined(separator: separator)
     }
 
     private static func tokens(in stored: String, separatedBy separator: String) -> [String] {
@@ -62,16 +97,16 @@ struct CustomFieldInput: View {
     @Binding var value: String
 
     var body: some View {
-        let checkboxOptions = CustomCheckboxValue.options(from: fieldValues, rawFieldValues: rawFieldValues)
-        if CustomCheckboxValue.isCheckbox(type), !checkboxOptions.isEmpty {
-            CustomCheckboxField(title: name, options: checkboxOptions, value: $value)
-        } else if type == "listbox", let options = fieldValues, !options.isEmpty {
-            let sortedOptions = options.sorted {
-                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        let parsedOptions = CustomFieldOptions.parse(values: fieldValues, raw: rawFieldValues)
+        if CustomCheckboxValue.isCheckbox(type), !parsedOptions.isEmpty {
+            CustomCheckboxField(title: name, options: parsedOptions, value: $value)
+        } else if type == "listbox", !parsedOptions.isEmpty {
+            let sortedOptions = parsedOptions.sorted {
+                $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending
             }
             AdaptivePickerRow(
                 title: name,
-                items: sortedOptions.map { (value: $0, label: $0) },
+                items: sortedOptions.map { (value: $0.value, label: $0.label) },
                 selection: $value,
                 emptyOption: ("", "—"),
                 forceSearchable: true
@@ -89,7 +124,7 @@ struct CustomFieldInput: View {
 
 private struct CustomCheckboxField: View {
     let title: String
-    let options: [String]
+    let options: [CustomFieldOption]
     @Binding var value: String
 
     var body: some View {
@@ -97,8 +132,8 @@ private struct CustomCheckboxField: View {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            ForEach(options, id: \.self) { option in
-                Toggle(option, isOn: binding(for: option))
+            ForEach(options, id: \.value) { option in
+                Toggle(option.label, isOn: binding(for: option.value))
                     .toggleStyle(CheckboxToggleStyle())
             }
         }

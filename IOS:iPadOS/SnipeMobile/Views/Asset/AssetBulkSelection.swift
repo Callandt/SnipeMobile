@@ -8,9 +8,7 @@ import UIKit
 
 // MARK: - Selection section
 
-// Pick assets from a list or scan them. Both feed the same set of IDs.
-// The picker/scanner presentations live in `assetBulkSelectionDestinations`
-// so they sit outside the lazy Form/List container.
+// Picker and scanner live outside the Form. A sheet inside a lazy list gets dropped.
 struct AssetBulkSelectionSection: View {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var selectedAssetIds: Set<Int>

@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
+import com.callandt.snipemobile.ui.asset.putOptionalForeignKey
 import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.asset.FormSectionTitle
 import com.callandt.snipemobile.ui.components.PickerItem
@@ -112,8 +113,8 @@ private fun UserFormSheet(
         phone.trim().takeIf { it.isNotEmpty() }?.let { body["phone"] = it }
         employeeNumber.trim().takeIf { it.isNotEmpty() }?.let { body["employee_num"] = it }
         notes.trim().takeIf { it.isNotEmpty() }?.let { body["notes"] = it }
-        if (selectedCompanyId > 0) body["company_id"] = selectedCompanyId
-        if (selectedLocationId > 0) body["location_id"] = selectedLocationId
+        putOptionalForeignKey(body, "company_id", selectedCompanyId, !isNew)
+        putOptionalForeignKey(body, "location_id", selectedLocationId, !isNew)
         if (password.isNotEmpty()) {
             body["password"] = password
             body["password_confirmation"] = passwordConfirmation
@@ -205,12 +206,16 @@ private fun UserFormSheet(
                 label = L10n.string("company"),
                 items = companies.map { PickerItem(it.id, it.name) },
                 selectedId = selectedCompanyId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_company"),
+                onClear = { selectedCompanyId = 0 },
                 onSelected = { selectedCompanyId = it.id },
             )
             SearchablePickerField(
                 label = L10n.string("location"),
                 items = locations.map { PickerItem(it.id, it.decodedName) },
                 selectedId = selectedLocationId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_location"),
+                onClear = { selectedLocationId = 0 },
                 onSelected = { selectedLocationId = it.id },
             )
 

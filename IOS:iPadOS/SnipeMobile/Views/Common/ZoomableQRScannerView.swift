@@ -75,8 +75,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     private var previewLayer: AVCaptureVideoPreviewLayer!
     private var videoDevice: AVCaptureDevice?
 
-    // Serialize all session calls. Starting/stopping across threads races
-    // inside libdispatch and can crash, especially during long scan sessions.
+    // One queue. Start/stop from two threads crashes inside libdispatch.
     private let sessionQueue = DispatchQueue(label: "com.snipemobile.scanner.session")
     private var isConfigured = false
 

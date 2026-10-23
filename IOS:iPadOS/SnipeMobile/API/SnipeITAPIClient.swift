@@ -164,7 +164,7 @@ class SnipeITAPIClient: ObservableObject {
         let rows: [T]?
     }
 
-    /// Fetches all pages from a Snipe-IT list endpoint. Returns nil on error or cancellation.
+    /// Nil on error or cancel.
     func fetchAllPaginated<T: Decodable>(
         path: String,
         as type: T.Type,
@@ -570,8 +570,7 @@ class SnipeITAPIClient: ObservableObject {
         return token
     }
 
-    // Reused so overlapping callers (e.g. two onAppear triggers) await the same
-    // sync instead of starting a second one that cancels the first mid-flight.
+    // Shared so two onAppear calls don't start a second sync.
     var primaryFetchTask: Task<Void, Never>? = nil
 
     /// - Parameter clearRefreshError: true for pull-to-refresh / user refresh.
@@ -877,10 +876,7 @@ class SnipeITAPIClient: ObservableObject {
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200...299).contains(httpResponse.statusCode) else { continue }
 
-                // Most common cases:
-                // - response is an Asset-like object
-                // - response is wrapped with { payload: {...} }
-                // - response is wrapped with { rows: [ {...} ] }
+                // Bare asset, `{ payload }`, or `{ rows: [...] }`.
                 if let asset = try? JSONDecoder().decode(Asset.self, from: data) {
                     return asset
                 }
@@ -1837,9 +1833,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Accessories checked out to a user.
-    /// Prefers the user accessories endpoint; admin may scan checkouts.
-    /// User mode skips the catalog scan.
+    // User endpoint first. Admin can fall back to scanning checkouts.
     func fetchUserAccessories(userId: Int, reportErrors: Bool = false) async -> [Accessory] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         do {
@@ -2005,8 +1999,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Licenses on a hardware asset. Seat rows reference the parent license id;
-    /// we resolve against the cached list (fetch by id as fallback).
+    // Seat rows point at the parent license. Cache first, then fetch by id.
     func fetchAssetLicenses(assetId: Int) async -> [License] {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return [] }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/licenses") else { return [] }
@@ -2320,7 +2313,6 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     /// Assigns a license seat to a user (`assigned_to`) or asset (`asset_id`).
-    /// Returns nil on success, otherwise a user-facing error message.
     func checkoutLicenseSeat(licenseId: Int, seatId: Int, userId: Int?, assetId: Int?, note: String?) async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
 
@@ -2404,7 +2396,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Creates a new license. Returns the new id on success, otherwise an error message via `lastApiMessage`.
     func createLicense(body: [String: Any]) async -> (success: Bool, id: Int?, message: String?) {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return (false, nil, "API not configured.") }
         guard let url = URL(string: "\(baseURL)/api/v1/licenses") else {
@@ -2438,7 +2429,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Updates the editable fields of a license. Returns nil on success, otherwise an error message.
     func updateLicense(licenseId: Int, body: [String: Any]) async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)") else {
@@ -2473,7 +2463,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Creates a new user. Returns the new id on success, otherwise an error message.
     func createUser(body: [String: Any]) async -> (success: Bool, id: Int?, message: String?) {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return (false, nil, "API not configured.") }
         guard let url = URL(string: "\(baseURL)/api/v1/users") else {
@@ -2507,7 +2496,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Updates the editable fields of a user. Returns nil on success, otherwise an error message.
     func updateUser(userId: Int, body: [String: Any]) async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/users/\(userId)") else {
@@ -2542,7 +2530,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Creates a new location. Returns the new id on success, otherwise an error message.
     func createLocation(body: [String: Any]) async -> (success: Bool, id: Int?, message: String?) {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return (false, nil, "API not configured.") }
         guard let url = URL(string: "\(baseURL)/api/v1/locations") else {
@@ -2576,7 +2563,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Updates the editable fields of a location. Returns nil on success, otherwise an error message.
     func updateLocation(locationId: Int, body: [String: Any]) async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/locations/\(locationId)") else {
@@ -2611,7 +2597,6 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Frees a license seat. Returns nil on success, otherwise an error message.
     func checkinLicenseSeat(licenseId: Int, seatId: Int) async -> String? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)/seats/\(seatId)") else {
@@ -3304,8 +3289,7 @@ class SnipeITAPIClient: ObservableObject {
             let value: String
         }
 
-        /// Codable wrapper to encode an explicit JSON `null`.
-        /// When `String?` is `nil`, the key is typically omitted, so the server keeps the old value.
+        // Explicit JSON null. A missing key leaves the old server value.
         enum NullableString: Encodable {
             case value(String)
             case null
@@ -4196,7 +4180,7 @@ class SnipeITAPIClient: ObservableObject {
 
     @Published private(set) var assetTagSettings: AssetTagGenerationSettings?
 
-    /// Fetches Snipe-IT asset-tag settings (prefix, zerofill, next number). Requires superuser API access; silently no-ops otherwise.
+    // Needs superuser. No-ops otherwise.
     func fetchAssetTagSettings() async {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return }
         guard let url = URL(string: "\(baseURL)/api/v1/settings/1") else { return }
@@ -4216,7 +4200,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// Next asset tag respecting Snipe-IT prefix/zerofill when available, otherwise inferred from existing tags.
+    // Prefix/zerofill when we have settings, else guess from existing tags.
     func nextAvailableAssetTag() -> String {
         let tags = assets
             .map { $0.assetTag.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -5275,7 +5259,6 @@ class SnipeITAPIClient: ObservableObject {
         (await createMaintenanceReturningId(body, image: image)) != nil
     }
 
-    /// Returns the new maintenance id from the create response payload.
     private func createMaintenanceReturningId(_ body: MaintenanceCreateRequest, image: UIImage? = nil) async -> Int? {
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances") else { return nil }

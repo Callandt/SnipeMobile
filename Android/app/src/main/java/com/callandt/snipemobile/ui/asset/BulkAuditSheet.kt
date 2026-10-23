@@ -210,6 +210,7 @@ fun BulkAuditSheet(
                     items = locations.map { PickerItem(it.id, it.decodedName) },
                     selectedId = selectedLocationId.takeIf { it > 0 },
                     placeholder = L10n.string("none"),
+                    onClear = { selectedLocationId = 0 },
                     onSelected = { selectedLocationId = it.id },
                 )
                 if (selectedLocationId != 0) {

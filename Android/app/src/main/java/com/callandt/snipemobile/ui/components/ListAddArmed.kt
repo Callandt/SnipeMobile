@@ -12,10 +12,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import kotlinx.coroutines.delay
 
-/**
- * False until this destination has settled after a NavHost pop/push.
- * Clicks during the back animation otherwise open a blank screen.
- */
+// Ignore taps until the destination has settled. Back animation opens a blank screen.
 @Composable
 fun rememberListReadyAfterResume(): Boolean {
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()

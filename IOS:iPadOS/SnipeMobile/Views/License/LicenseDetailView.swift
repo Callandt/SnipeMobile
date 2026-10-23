@@ -386,17 +386,13 @@ struct LicenseDetailView: View {
         case assigned, free, consumed
     }
 
-    /// Splits seats into assigned / free / consumed, using the server's freeSeatsCount
-    /// as the source of truth for the unassigned ones (server already accounts for
-    /// disabled / unreassignable seats).
+    // freeSeatsCount is the server's count of seats you can still assign.
     private func categorizedSeats() -> (assigned: [SnipeITAPIClient.LicenseSeatRow],
                                         free: [SnipeITAPIClient.LicenseSeatRow],
                                         consumed: [SnipeITAPIClient.LicenseSeatRow]) {
         let assigned = seats.filter { $0.assignedUser != nil || $0.assignedAsset != nil }
         let unassigned = seats.filter { $0.assignedUser == nil && $0.assignedAsset == nil }
-        // Server marks unreassignable / inactive seats as disabled — use that as the
-        // primary signal. Fall back to the freeSeatsCount when the field is missing
-        // (older Snipe-IT versions).
+        // `disabled` when the server sends it. Older builds only have freeSeatsCount.
         var free: [SnipeITAPIClient.LicenseSeatRow] = []
         var consumed: [SnipeITAPIClient.LicenseSeatRow] = []
         if unassigned.contains(where: { $0.disabled != nil }) {

@@ -572,6 +572,8 @@ fun ManagementFormSheet(
                                     creatableEntity = creatable,
                                     creatableLocation = locationCreate,
                                     createDefaults = source?.createDefaults().orEmpty(),
+                                    placeholder = L10n.string("mgmt_none"),
+                                    onClear = { values = values + (field.bodyKey to "") },
                                     onSelected = { values = values + (field.bodyKey to it.id.toString()) },
                                 )
                             } else {
@@ -579,6 +581,8 @@ fun ManagementFormSheet(
                                     label = field.displayLabel(),
                                     items = options.intItems,
                                     selectedId = value.toIntOrNull()?.takeIf { it > 0 },
+                                    placeholder = L10n.string("mgmt_none"),
+                                    onClear = { values = values + (field.bodyKey to "") },
                                     onSelected = { values = values + (field.bodyKey to it.id.toString()) },
                                 )
                             }
@@ -587,6 +591,7 @@ fun ManagementFormSheet(
                                 label = field.displayLabel(),
                                 options = options.stringOptions,
                                 selectedValue = value,
+                                emptyOption = "" to L10n.string("mgmt_none"),
                                 onSelected = { values = values + (field.bodyKey to it) },
                             )
                         }

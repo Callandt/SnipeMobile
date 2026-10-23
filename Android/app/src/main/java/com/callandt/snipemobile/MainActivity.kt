@@ -131,10 +131,7 @@ class MainActivity : FragmentActivity() {
         ensurePrivacyShield()
     }
 
-    /**
-     * Fires before the system takes the Recents thumbnail — unlike onPause.
-     * Solid privacy cover while the app is in the background.
-     */
+    // Before the Recents thumbnail. onPause is too late.
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!privacyEnabled) {

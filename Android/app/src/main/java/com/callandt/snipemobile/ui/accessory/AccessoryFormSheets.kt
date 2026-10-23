@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
+import com.callandt.snipemobile.ui.asset.putOptionalForeignKey
 import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.asset.FormSectionTitle
 import com.callandt.snipemobile.ui.asset.formatApiDate
@@ -133,10 +134,11 @@ private fun AccessoryFormSheet(
             parseApiDate(purchaseDateText)?.let { body["purchase_date"] = formatApiDate(it) }
         }
         body["notes"] = notes.trim()
-        if (selectedLocationId > 0) body["location_id"] = selectedLocationId
-        if (selectedCompanyId > 0) body["company_id"] = selectedCompanyId
-        if (selectedManufacturerId > 0) body["manufacturer_id"] = selectedManufacturerId
-        if (selectedSupplierId > 0) body["supplier_id"] = selectedSupplierId
+        val isEdit = existing != null
+        putOptionalForeignKey(body, "location_id", selectedLocationId, isEdit)
+        putOptionalForeignKey(body, "company_id", selectedCompanyId, isEdit)
+        putOptionalForeignKey(body, "manufacturer_id", selectedManufacturerId, isEdit)
+        putOptionalForeignKey(body, "supplier_id", selectedSupplierId, isEdit)
         return body
     }
 
@@ -190,6 +192,7 @@ private fun AccessoryFormSheet(
                 placeholder = L10n.string("choose_category"),
                 creatableEntity = ManagementEntity.Categories,
                 createDefaults = mapOf("category_type" to "accessory"),
+                onClear = { selectedCategoryId = 0 },
                 onSelected = { selectedCategoryId = it.id },
             )
             OutlinedTextField(
@@ -208,24 +211,32 @@ private fun AccessoryFormSheet(
                 label = L10n.string("location"),
                 items = locations.map { PickerItem(it.id, it.decodedName) },
                 selectedId = selectedLocationId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_location"),
+                onClear = { selectedLocationId = 0 },
                 onSelected = { selectedLocationId = it.id },
             )
             SearchablePickerField(
                 label = L10n.string("company"),
                 items = companies.map { PickerItem(it.id, it.name) },
                 selectedId = selectedCompanyId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_company"),
+                onClear = { selectedCompanyId = 0 },
                 onSelected = { selectedCompanyId = it.id },
             )
             SearchablePickerField(
                 label = L10n.string("manufacturer"),
                 items = manufacturers.map { PickerItem(it.id, it.name) },
                 selectedId = selectedManufacturerId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_manufacturer"),
+                onClear = { selectedManufacturerId = 0 },
                 onSelected = { selectedManufacturerId = it.id },
             )
             SearchablePickerField(
                 label = L10n.string("supplier"),
                 items = suppliers.map { PickerItem(it.id, it.name) },
                 selectedId = selectedSupplierId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_supplier"),
+                onClear = { selectedSupplierId = 0 },
                 onSelected = { selectedSupplierId = it.id },
             )
             OutlinedTextField(

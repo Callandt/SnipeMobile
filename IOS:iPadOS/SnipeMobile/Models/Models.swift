@@ -424,8 +424,7 @@ struct Location: Codable, Identifiable, Hashable {
     let createdAt: DateInfo?
     let updatedAt: DateInfo?
 
-    /// Some API fields contain HTML entities (e.g. `&#039;` for `'`).
-    /// Use this everywhere we display the location name.
+    // Names can contain HTML entities.
     var decodedName: String { HTMLDecoder.decode(name) }
 
     enum CodingKeys: String, CodingKey {
@@ -1077,7 +1076,7 @@ extension Accessory {
         return nil
     }
 
-    /// Snipe-IT returns `purchase_date` as `{date, formatted}` on reads, but sometimes as a plain string.
+    // `{ date, formatted }` or a plain string.
     private static func decodeOptionalPurchaseDate(
         from container: KeyedDecodingContainer<CodingKeys>
     ) -> String? {

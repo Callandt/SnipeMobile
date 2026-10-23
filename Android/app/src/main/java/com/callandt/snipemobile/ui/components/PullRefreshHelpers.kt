@@ -7,10 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 
-/**
- * Pull-to-refresh indicator only while the user pulled.
- * Background sync (e.g. launch) does not show the spinner.
- */
+// Spinner only for a user pull, not a background sync.
 @Composable
 fun rememberUserPullRefreshing(
     isLoading: Boolean,

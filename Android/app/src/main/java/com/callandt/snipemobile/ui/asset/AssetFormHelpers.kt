@@ -35,11 +35,18 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +66,7 @@ import com.callandt.snipemobile.data.model.CustomField
 import com.callandt.snipemobile.data.model.FieldDefinition
 import com.callandt.snipemobile.data.model.StatusLabel
 import com.callandt.snipemobile.ui.components.StringPickerField
+import com.callandt.snipemobile.ui.components.readOnlyOutlinedTextFieldColors
 import com.callandt.snipemobile.ui.util.AssetStatusFilterSupport
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.WindowAdaptive
@@ -107,6 +115,7 @@ internal fun FormDateField(
             label = { Text(label) },
             modifier = Modifier.fillMaxWidth(),
             enabled = false,
+            colors = readOnlyOutlinedTextFieldColors(),
         )
     }
 
@@ -193,11 +202,81 @@ internal fun AssetFormSheetScaffold(
     }
 }
 
+class SheetLayer(
+    val id: Any,
+    val content: @Composable () -> Unit,
+)
+
+// Covers the tab bar. Title stays under the status bar.
+class MainSheetOverlay {
+    private val entries = mutableStateListOf<SheetLayer>()
+
+    val occupied: Boolean get() = entries.isNotEmpty()
+    val layers: List<SheetLayer> get() = entries
+
+    fun upsert(id: Any, content: @Composable () -> Unit) {
+        if (entries.none { it.id == id }) {
+            entries.add(SheetLayer(id, content))
+        }
+    }
+
+    fun remove(id: Any) {
+        entries.removeAll { it.id == id }
+    }
+}
+
+val LocalMainSheetOverlay = compositionLocalOf<MainSheetOverlay?> { null }
+
+// Sheet layer above the whole nav host.
+@Composable
+fun MainSheetOverlayHost(content: @Composable () -> Unit) {
+    val overlay = remember { MainSheetOverlay() }
+    CompositionLocalProvider(LocalMainSheetOverlay provides overlay) {
+        Box(Modifier.fillMaxSize()) {
+            content()
+            overlay.layers.forEach { layer ->
+                key(layer.id) {
+                    val scrimClicks = remember { MutableInteractionSource() }
+                    Box(Modifier.fillMaxSize()) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background)
+                                .clickable(
+                                    interactionSource = scrimClicks,
+                                    indication = null,
+                                    onClick = {},
+                                ),
+                        )
+                        Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                            layer.content()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 internal fun AssetFullScreenSheet(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val overlay = LocalMainSheetOverlay.current
+    val isTablet = WindowAdaptive.isTabletLayout()
+    if (overlay != null && !isTablet) {
+        val id = remember { Any() }
+        val latestContent = rememberUpdatedState(content)
+        val latestDismiss = rememberUpdatedState(onDismiss)
+        BackHandler { latestDismiss.value() }
+        DisposableEffect(overlay, id) {
+            overlay.upsert(id) { latestContent.value() }
+            onDispose { overlay.remove(id) }
+        }
+        return
+    }
+
     val density = LocalDensity.current
     val windowSize = LocalWindowInfo.current.containerSize
     val metrics = LocalContext.current.resources.displayMetrics
@@ -205,7 +284,6 @@ internal fun AssetFullScreenSheet(
     val heightPx = windowSize.height.takeIf { it > 0 } ?: metrics.heightPixels
     val widthDp = with(density) { widthPx.toDp() }
     val heightDp = with(density) { heightPx.toDp() }
-    val isTablet = WindowAdaptive.isTabletLayout()
     val windowAnchor = remember {
         object : PopupPositionProvider {
             override fun calculatePosition(
@@ -217,8 +295,7 @@ internal fun AssetFullScreenSheet(
         }
     }
 
-    // Popup stays in the activity window. A Compose Dialog after several
-    // NavHost back navigations can measure as 0 and show a blank white screen.
+    // Dialog goes blank after a few NavHost backs.
     Popup(
         popupPositionProvider = windowAnchor,
         onDismissRequest = onDismiss,
@@ -281,13 +358,12 @@ internal fun FormSectionTitle(title: String) {
     )
 }
 
-/** Prefer the existing value; otherwise use the field default. */
 internal fun initialCustomFieldValue(existing: String?, defaultValue: String?): String {
     if (!existing.isNullOrBlank()) return existing
     return defaultValue?.trim().orEmpty()
 }
 
-/** API key for a custom field (existing key, then fieldset columns, then slug). */
+// Existing key, then fieldset column, then slug.
 internal fun resolveCustomFieldApiKey(
     displayName: String,
     existingAssetFields: Map<String, CustomField>?,
@@ -307,7 +383,7 @@ internal fun resolveCustomFieldApiKey(
     return "_snipeit_${slug}_${def.id}"
 }
 
-/** Editable custom fields, including orphan keys still present in [values]. */
+// Includes keys still stored on the asset but missing from the fieldset.
 @Composable
 internal fun CustomFieldsFormSection(
     fieldDefs: List<FieldDefinition>,
@@ -333,6 +409,7 @@ internal fun CustomFieldsFormSection(
             label = fieldDef.name,
             type = fieldDef.type,
             options = fieldDef.fieldValuesArray,
+            rawValues = fieldDef.fieldValues,
             value = values[fieldDef.name].orEmpty(),
             onValueChange = { onValueChange(fieldDef.name, it) },
         )
@@ -353,15 +430,17 @@ private fun CustomFieldRow(
     label: String,
     type: String?,
     options: List<String>?,
+    rawValues: String? = null,
     value: String,
     onValueChange: (String) -> Unit,
 ) {
+    val listOptions = if (type == "listbox") customFieldOptions(options, rawValues) else emptyList()
     when {
-        type == "listbox" && !options.isNullOrEmpty() -> {
-            val sortedOptions = options.sortedWith(String.CASE_INSENSITIVE_ORDER)
+        type == "listbox" && listOptions.isNotEmpty() -> {
+            val sortedOptions = listOptions.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
             StringPickerField(
                 label = label,
-                options = listOf("" to "—") + sortedOptions.map { it to it },
+                options = listOf("" to "—") + sortedOptions.map { it.value to it.label },
                 selectedValue = value,
                 onSelected = onValueChange,
             )
@@ -389,4 +468,15 @@ private fun CustomFieldRow(
             )
         }
     }
+}
+
+// Null on edit clears the link.
+internal fun putOptionalForeignKey(
+    body: MutableMap<String, Any?>,
+    key: String,
+    id: Int,
+    isEdit: Boolean,
+) {
+    if (id > 0) body[key] = id
+    else if (isEdit) body[key] = null
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import com.callandt.snipemobile.data.model.Location
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
+import com.callandt.snipemobile.ui.asset.putOptionalForeignKey
 import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.asset.FormSectionTitle
 import com.callandt.snipemobile.ui.components.PickerItem
@@ -99,7 +100,7 @@ private fun LocationFormSheet(
         country.trim().takeIf { it.isNotEmpty() }?.let { body["country"] = it }
         zip.trim().takeIf { it.isNotEmpty() }?.let { body["zip"] = it }
         currency.trim().takeIf { it.isNotEmpty() }?.let { body["currency"] = it }
-        if (selectedParentId > 0) body["parent_id"] = selectedParentId
+        putOptionalForeignKey(body, "parent_id", selectedParentId, existing != null)
         return body
     }
 
@@ -150,6 +151,8 @@ private fun LocationFormSheet(
                     label = L10n.string("parent_location"),
                     items = parentLocations.map { PickerItem(it.id, it.decodedName) },
                     selectedId = selectedParentId.takeIf { it > 0 },
+                    placeholder = L10n.string("choose_location"),
+                    onClear = { selectedParentId = 0 },
                     onSelected = { selectedParentId = it.id },
                 )
             }

@@ -25,6 +25,7 @@ import com.callandt.snipemobile.data.model.FieldDefinition
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.PickerItem
 import com.callandt.snipemobile.ui.components.SearchablePickerField
+import com.callandt.snipemobile.ui.components.readOnlyOutlinedTextFieldColors
 import com.callandt.snipemobile.ui.util.L10n
 import com.callandt.snipemobile.ui.util.resolveSnipeImageUrl
 import kotlinx.coroutines.launch
@@ -240,6 +241,7 @@ fun EditAssetSheet(
                     label = { Text(L10n.string("model")) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    colors = readOnlyOutlinedTextFieldColors(),
                 )
             }
             if (statusLabels.isNotEmpty()) {
@@ -255,6 +257,7 @@ fun EditAssetSheet(
                 items = locations.map { PickerItem(it.id, it.decodedName) },
                 selectedId = selectedLocationId.takeIf { it > 0 },
                 placeholder = L10n.string("choose_location"),
+                onClear = { selectedLocationId = 0 },
                 onSelected = { selectedLocationId = it.id },
             )
             if (companies.isNotEmpty()) {
@@ -263,6 +266,7 @@ fun EditAssetSheet(
                     items = companies.map { PickerItem(it.id, it.decodedName) },
                     selectedId = selectedCompanyId.takeIf { it > 0 },
                     placeholder = L10n.string("mgmt_none"),
+                    onClear = { selectedCompanyId = 0 },
                     onSelected = { selectedCompanyId = it.id },
                 )
             }
@@ -272,6 +276,7 @@ fun EditAssetSheet(
                     items = suppliers.map { PickerItem(it.id, it.decodedName) },
                     selectedId = selectedSupplierId.takeIf { it > 0 },
                     placeholder = L10n.string("mgmt_none"),
+                    onClear = { selectedSupplierId = 0 },
                     onSelected = { selectedSupplierId = it.id },
                 )
             }

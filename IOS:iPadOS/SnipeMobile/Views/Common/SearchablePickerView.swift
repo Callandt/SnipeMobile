@@ -31,36 +31,56 @@ private struct SearchablePickerSheetContent<Value: Hashable>: View {
     }
 
     var body: some View {
-        List {
-            if let onAddNew, let addNewLabel {
-                Section {
-                    Button(action: onAddNew) {
-                        Label(addNewLabel, systemImage: "plus.circle.fill")
-                            .foregroundStyle(Color.accentColor)
-                    }
-                }
-            }
-            Section {
-                ForEach(filteredOptions) { option in
-                    Button {
-                        selection = option.value
-                        dismiss()
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text(option.label)
-                                .foregroundStyle(.primary)
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if option.value == selection {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.accentColor)
-                            }
+        VStack(spacing: 0) {
+            TextField(L10n.string("search"), text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            List {
+                if let onAddNew, let addNewLabel {
+                    Section {
+                        Button(action: onAddNew) {
+                            Label(addNewLabel, systemImage: "plus.circle.fill")
+                                .foregroundStyle(Color.accentColor)
                         }
                     }
                 }
+                Section {
+                    ForEach(filteredOptions) { option in
+                        Button {
+                            selection = option.value
+                            dismiss()
+                        } label: {
+                            HStack(alignment: .center, spacing: 12) {
+                                Text(option.label)
+                                    .foregroundStyle(.primary)
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                if option.value == selection {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+                        .listRowSeparator(.visible, edges: .bottom)
+                        .listRowBackground(
+                            option.value == selection ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground)
+                        )
+                    }
+                }
             }
+            .listStyle(.plain)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .searchable(text: $searchText, prompt: Text(L10n.string("search")))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -150,6 +170,7 @@ struct SearchablePickerRow<Value: Hashable>: View {
                     }
                 }
             }
+            .presentationDetents([.large])
         }
     }
 }

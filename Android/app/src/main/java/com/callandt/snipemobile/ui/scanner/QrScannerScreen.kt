@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.net.URI
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -76,6 +78,7 @@ fun QrScannerScreen(
         )
     }
     var handled by remember { mutableStateOf(false) }
+    val scannerClosed = remember { AtomicBoolean(false) }
     val errorThrottle = remember { AtomicLong(0L) }
     val lastRawScan = remember { AtomicReference("") }
     val lastRawTime = remember { AtomicLong(0L) }
@@ -88,6 +91,16 @@ fun QrScannerScreen(
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
+    DisposableEffect(lifecycleOwner) {
+        onDispose {
+            scannerClosed.set(true)
+            val future = ProcessCameraProvider.getInstance(context)
+            if (future.isDone) {
+                runCatching { future.get().unbindAll() }
+            }
+        }
+    }
+
     val title = when (mode) {
         QrScannerMode.SnipeIT -> L10n.string("scan_qr")
         QrScannerMode.Dell -> L10n.string("scan_dell_qr")
@@ -98,6 +111,7 @@ fun QrScannerScreen(
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
                 title = { Text(title) },
@@ -124,8 +138,12 @@ fun QrScannerScreen(
                 AndroidView(
                     factory = { ctx ->
                         PreviewView(ctx).also { previewView ->
+                            // SurfaceView punches a hole in the sheet and stays black.
+                            previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                            previewView.scaleType = PreviewView.ScaleType.FILL_CENTER
                             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                             cameraProviderFuture.addListener({
+                                if (scannerClosed.get()) return@addListener
                                 val cameraProvider = cameraProviderFuture.get()
                                 val preview = Preview.Builder().build().also {
                                     it.surfaceProvider = previewView.surfaceProvider

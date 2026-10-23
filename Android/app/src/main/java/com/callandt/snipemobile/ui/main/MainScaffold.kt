@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.DellAddPrefill
+import com.callandt.snipemobile.ui.asset.LocalMainSheetOverlay
 import com.callandt.snipemobile.ui.util.L10n
 
 enum class MainTab(val labelKey: String, val icon: ImageVector) {
@@ -64,23 +65,27 @@ fun MainScaffold(
         add(MainTab.Directory)
     }
 
-    // Avoid double status-bar padding under nested tab scaffolds.
+    val sheetCoversTabs = LocalMainSheetOverlay.current?.occupied == true
+
+    // Tab scaffolds already inset the status bar.
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp,
-                windowInsets = NavigationBarDefaults.windowInsets,
-            ) {
-                visibleTabs.forEach { tab ->
-                    val label = L10n.string(tab.labelKey)
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { onTabSelected(tab) },
-                        icon = { Icon(tab.icon, contentDescription = label) },
-                        label = { Text(label) },
-                    )
+            if (!sheetCoversTabs) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                    windowInsets = NavigationBarDefaults.windowInsets,
+                ) {
+                    visibleTabs.forEach { tab ->
+                        val label = L10n.string(tab.labelKey)
+                        NavigationBarItem(
+                            selected = selectedTab == tab,
+                            onClick = { onTabSelected(tab) },
+                            icon = { Icon(tab.icon, contentDescription = label) },
+                            label = { Text(label) },
+                        )
+                    }
                 }
             }
         },
@@ -105,7 +110,6 @@ fun MainScaffold(
     }
 }
 
-/** Shared list content for phone tabs and tablet list column. */
 @Composable
 fun MainTabContent(
     viewModel: AppViewModel,

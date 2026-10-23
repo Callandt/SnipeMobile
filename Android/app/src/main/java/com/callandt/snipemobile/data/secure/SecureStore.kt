@@ -17,10 +17,7 @@ enum class AppSecret(val storageKey: String) {
     DELL_TECH_DIRECT_CLIENT_SECRET("dellTechDirectClientSecret"),
 }
 
-/**
- * Secrets encrypted with an AES key in the Android Keystore.
- * Ciphertext is stored in ordinary SharedPreferences.
- */
+// AES key in the Keystore. Ciphertext in SharedPreferences.
 class SecureStore(context: Context) {
 
     private val prefs: SharedPreferences =

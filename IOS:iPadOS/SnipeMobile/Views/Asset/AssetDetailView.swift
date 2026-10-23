@@ -1284,7 +1284,12 @@ struct AssetDetailView: View {
                     .foregroundColor(.secondary)
             } else {
                 ForEach(Array(editCustomFields.keys.sorted()), id: \.self) { key in
-                    if let fieldDef = customFieldDefs.first(where: { $0.name == key }), fieldDef.type == "listbox", let options = fieldDef.field_values_array {
+                    let fieldDef = customFieldDefs.first(where: { $0.name == key })
+                    let options = CustomFieldOptions.parse(
+                        values: fieldDef?.field_values_array,
+                        raw: fieldDef?.field_values
+                    ).sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+                    if fieldDef?.type == "listbox", !options.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(key)
                                 .font(.caption)
@@ -1293,8 +1298,8 @@ struct AssetDetailView: View {
                                 get: { editCustomFields[key] ?? "" },
                                 set: { editCustomFields[key] = $0 }
                             )) {
-                                ForEach(options, id: \.self) { option in
-                                    Text(option).tag(option)
+                                ForEach(options, id: \.value) { option in
+                                    Text(option.label).tag(option.value)
                                 }
                             }
                         }

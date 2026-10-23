@@ -12,10 +12,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,14 +27,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.ui.util.L10n
+
+// Disabled outline is 12% and looks thin.
+@Composable
+fun readOnlyOutlinedTextFieldColors(): TextFieldColors {
+    val scheme = MaterialTheme.colorScheme
+    return OutlinedTextFieldDefaults.colors(
+        disabledTextColor = scheme.onSurface,
+        disabledContainerColor = Color.Transparent,
+        disabledBorderColor = scheme.outline,
+        disabledLeadingIconColor = scheme.onSurfaceVariant,
+        disabledTrailingIconColor = scheme.onSurfaceVariant,
+        disabledLabelColor = scheme.onSurfaceVariant,
+        disabledPlaceholderColor = scheme.onSurfaceVariant,
+    )
+}
 
 data class PickerItem(
     val id: Int,
     val title: String,
     val subtitle: String? = null,
-    /** Extra text used only for search filtering (not shown in the UI). */
+    // Search only. Not shown.
     val searchText: String? = null,
 )
 
@@ -44,11 +64,18 @@ fun SearchablePickerField(
     addNewLabel: String? = null,
     onAddNew: (() -> Unit)? = null,
     allowClear: Boolean = false,
+    clearLabel: String? = null,
     onClear: (() -> Unit)? = null,
     onSelected: (PickerItem) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
     val selectedTitle = items.firstOrNull { it.id == selectedId }?.title
+    val genericPlaceholder = L10n.string("select") + "…"
+    val resolvedClearLabel = clearLabel ?: if (placeholder == genericPlaceholder) {
+        L10n.string("mgmt_none")
+    } else {
+        placeholder
+    }
 
     Box(modifier = modifier.fillMaxWidth().clickable { showDialog = true }) {
         OutlinedTextField(
@@ -59,6 +86,7 @@ fun SearchablePickerField(
             placeholder = { Text(placeholder) },
             modifier = Modifier.fillMaxWidth(),
             enabled = false,
+            colors = readOnlyOutlinedTextFieldColors(),
         )
     }
 
@@ -73,10 +101,13 @@ fun SearchablePickerField(
                     add()
                 }
             },
-            allowClear = allowClear && selectedId != null,
-            onClear = {
-                showDialog = false
-                onClear?.invoke()
+            allowClear = onClear != null || allowClear,
+            clearLabel = resolvedClearLabel,
+            onClear = onClear?.let { clear ->
+                {
+                    showDialog = false
+                    clear()
+                }
             },
             onDismiss = { showDialog = false },
             onSelected = { item ->
@@ -96,6 +127,7 @@ fun SearchablePickerDialog(
     addNewLabel: String? = null,
     onAddNew: (() -> Unit)? = null,
     allowClear: Boolean = false,
+    clearLabel: String = L10n.string("mgmt_none"),
     onClear: (() -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
@@ -128,16 +160,13 @@ fun SearchablePickerDialog(
                         }
                     }
                 }
-                if (allowClear && onClear != null) {
-                    TextButton(
-                        onClick = onClear,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(L10n.string("clear_selection"))
-                    }
-                }
+                val clearSelection = onClear
+                val clearQuery = query.trim().lowercase()
+                val showClear = allowClear &&
+                    clearSelection != null &&
+                    (clearQuery.isEmpty() || clearLabel.lowercase().contains(clearQuery))
                 LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                    item {
+                    item(key = "picker-search") {
                         OutlinedTextField(
                             value = query,
                             onValueChange = { query = it },
@@ -145,6 +174,21 @@ fun SearchablePickerDialog(
                             placeholder = { Text(L10n.string("search") + "…") },
                             singleLine = true,
                         )
+                    }
+                    if (showClear) {
+                        item(key = "picker-clear") {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = clearLabel,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { clearSelection?.invoke() }
+                                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                                )
+                                HorizontalDivider()
+                            }
+                        }
                     }
                     items(filtered, key = { it.id }) { item ->
                         Text(

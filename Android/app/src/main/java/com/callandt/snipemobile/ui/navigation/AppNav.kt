@@ -26,6 +26,7 @@ import com.callandt.snipemobile.data.api.SnipeITQRLink
 import com.callandt.snipemobile.data.prefs.AppMode
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.DellAddPrefill
+import com.callandt.snipemobile.ui.asset.MainSheetOverlayHost
 import com.callandt.snipemobile.ui.components.CardPhotoSettings
 import com.callandt.snipemobile.ui.components.LocalCardLayouts
 import com.callandt.snipemobile.ui.components.LocalCardPhotoSettings
@@ -167,7 +168,7 @@ fun AppNav(viewModel: AppViewModel) {
     }
 
     fun openEntityFromQr(route: String) {
-        // Don't pop the scanner first — Main isn't resumed yet so detail nav is dropped.
+        // Don't pop the scanner first. Main isn't resumed, so the detail push is dropped.
         when {
             route.startsWith("asset/") -> {
                 val id = route.removePrefix("asset/").toIntOrNull() ?: return
@@ -252,6 +253,7 @@ fun AppNav(viewModel: AppViewModel) {
         ),
         LocalCardLayouts provides cardLayouts,
     ) {
+        MainSheetOverlayHost {
         NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.Welcome) {
             WelcomeScreen(onContinue = { navController.navigate(Routes.ApiSetup) })
@@ -498,6 +500,7 @@ fun AppNav(viewModel: AppViewModel) {
             MaintenanceDetailScreen(id, viewModel) { navController.popWhenResumed() }
         }
     }
+        }
     }
 }
 

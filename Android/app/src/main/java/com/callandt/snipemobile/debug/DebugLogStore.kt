@@ -20,7 +20,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.concurrent.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/** Privacy-scrubbed diagnostic lines for support (safe for public GitHub issues). */
+// Scrubbed log lines. Safe to attach on a public issue.
 object AppLog {
     fun info(message: String, category: String = "app") {
         DebugLogStore.append(message, category)
@@ -60,10 +60,7 @@ object DebugLogStore {
 
     fun snapshot(): List<String> = lock.withLock { lines.toList() }
 
-    /**
-     * Builds a public-safe zip with diagnostics + recent log.
-     * Runs a live connection check first so the zip shows connect OK/FAIL.
-     */
+    // Zip of diagnostics plus the log. Live connect check first.
     suspend fun exportZip(context: Context, apiClient: SnipeApiClient): File {
         startIfNeeded()
         val extras = knownPrivateStrings(apiClient)

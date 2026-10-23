@@ -25,7 +25,7 @@ struct ListFilter: Equatable {
     }
 }
 
-/// Distinct, sorted filter values. Prefer a Snipe-IT catalog when available; otherwise fall back to values on loaded items.
+/// Catalog names when we have them, else whatever is on the loaded rows.
 func listFilterValues(catalog: [String], itemValues: [String]) -> [String] {
     let fromCatalog = distinctSortedFilterValues(catalog)
     if !fromCatalog.isEmpty { return fromCatalog }

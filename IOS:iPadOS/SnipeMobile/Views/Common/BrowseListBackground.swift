@@ -40,8 +40,7 @@ extension View {
         modifier(CompactLayoutWhileSearching())
     }
 
-    /// Sets the title used by the iOS back-button history without duplicating
-    /// the in-content `DetailPageTitle` in the current navigation bar.
+    // Back-button title only. The in-content title stays.
     func detailNavigationTitle(_ title: String, hideInBar: Bool = true) -> some View {
         modifier(DetailNavigationTitleModifier(title: title, hideInBar: hideInBar))
     }

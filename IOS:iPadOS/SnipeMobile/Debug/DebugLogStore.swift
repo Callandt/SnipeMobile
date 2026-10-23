@@ -1,8 +1,7 @@
 import Foundation
 import UIKit
 
-/// In-memory ring buffer of privacy-scrubbed diagnostic lines, plus zip export for support.
-/// Exports are intended to be safe to attach on a **public** GitHub issue.
+// Scrubbed log lines. Safe to attach on a public issue.
 enum AppLog {
     static func info(_ message: String, category: String = "app") {
         DebugLogStore.shared.append(message, category: category)
@@ -37,8 +36,7 @@ final class DebugLogStore: @unchecked Sendable {
             lines.removeFirst(lines.count - maxLines)
         }
         lock.unlock()
-        // Intentionally no print(): Xcode console mixes system noise (CFPrefs/LaunchServices)
-        // with app logs and looks like the export failed. Use the zip's app.log instead.
+        // Don't print. Xcode mixes this with system noise and the export looks broken.
     }
 
     func snapshot() -> [String] {
@@ -47,14 +45,12 @@ final class DebugLogStore: @unchecked Sendable {
         return lines
     }
 
-    /// Start the ring buffer early so connection attempts during the session are captured.
     func startIfNeeded() {
-        // Accessing shared already runs init; keep an explicit hook for app launch.
+        // Touching shared runs init. Kept so launch has an obvious hook.
         _ = Self.shared
     }
 
-    /// Builds a zip with diagnostics + recent log. Returns a file URL suitable for sharing.
-    /// Runs a live connection check first so the zip shows whether connect succeeded/failed.
+    // Zip of diagnostics plus the log. Live connect check first.
     @MainActor
     func exportZip(
         apiClient: SnipeITAPIClient,

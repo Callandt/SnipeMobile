@@ -47,10 +47,7 @@ val SnipeJson: Json = Json {
     encodeDefaults = true
 }
 
-// ---------------------------------------------------------------------------
 // Decode helpers
-// ---------------------------------------------------------------------------
-
 internal object SnipeDecoders {
     fun flexibleInt(element: JsonElement?): Int? {
         if (element == null || element is JsonNull) return null
@@ -143,10 +140,7 @@ internal object SnipeDecoders {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Core types
-// ---------------------------------------------------------------------------
-
 @Serializable(with = DateInfoSerializer::class)
 data class DateInfo(
     val date: String? = null,
@@ -430,17 +424,15 @@ data class CustomField(
     val decodedValue: String get() = HtmlDecoder.decode(value ?: "")
 }
 
-// ---------------------------------------------------------------------------
 // Custom field definitions / fieldsets
-// ---------------------------------------------------------------------------
-
-/** A custom field definition, as returned by `/api/v1/fields` and fieldset endpoints. */
 @Serializable
 data class FieldDefinition(
     val id: Int,
     val name: String,
     val type: String? = null,
     @SerialName("field_values_array") val fieldValuesArray: List<String>? = null,
+    // Raw options. The array only splits on CRLF.
+    @SerialName("field_values") val fieldValues: String? = null,
     @SerialName("db_column_name") val dbColumnName: String? = null,
     @SerialName("db_column") val dbColumn: String? = null,
     @SerialName("db_field") val dbField: String? = null,
@@ -457,13 +449,10 @@ data class FieldsetField(
     val name: String,
     val type: String? = null,
     @SerialName("field_values_array") val fieldValuesArray: List<String>? = null,
+    @SerialName("field_values") val fieldValues: String? = null,
 )
 
-/**
- * A Snipe-IT fieldset, mapping a set of custom fields to one or more asset models.
- * The `models` key can arrive as either `{ "rows": [...] }` or a plain array depending on
- * server version, so this uses a manual [Decoder].
- */
+// `models` is `{ rows }` or a plain array, depending on the server.
 @Serializable(with = FieldsetSerializer::class)
 data class Fieldset(
     val id: Int,
@@ -519,10 +508,7 @@ data class UserGroup(
     val decodedName: String get() = HtmlDecoder.decode(name)
 }
 
-// ---------------------------------------------------------------------------
 // Asset
-// ---------------------------------------------------------------------------
-
 @Serializable(with = AssetSerializer::class)
 data class Asset(
     val id: Int,
@@ -586,9 +572,7 @@ data class Asset(
     val decodedWarrantyMonths: String get() = HtmlDecoder.decode(warrantyMonths ?: "")
 }
 
-/**
- * Soft Asset decode: ignore bad fields instead of dropping the row.
- */
+// Skip bad fields instead of dropping the row.
 object AssetSerializer : KSerializer<Asset> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("Asset")
 
@@ -776,10 +760,7 @@ object AssetSerializer : KSerializer<Asset> {
     )
 }
 
-// ---------------------------------------------------------------------------
 // User
-// ---------------------------------------------------------------------------
-
 @Serializable(with = UserSerializer::class)
 data class User(
     val id: Int,
@@ -875,10 +856,7 @@ object UserSerializer : KSerializer<User> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Accessory / Consumable / Component (flexible numeric + date fields)
-// ---------------------------------------------------------------------------
-
 @Serializable(with = AccessorySerializer::class)
 data class Accessory(
     val id: Int,
@@ -1238,10 +1216,7 @@ object ComponentSerializer : KSerializer<Component> {
     )
 }
 
-// ---------------------------------------------------------------------------
 // License
-// ---------------------------------------------------------------------------
-
 @Serializable
 data class License(
     val id: Int,
@@ -1340,10 +1315,7 @@ data class LicenseSeatRow(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Activity & files
-// ---------------------------------------------------------------------------
-
 @Serializable
 data class Activity(
     val id: Int,
@@ -1461,10 +1433,7 @@ data class AssetFile(
         }
 }
 
-// ---------------------------------------------------------------------------
 // Maintenance
-// ---------------------------------------------------------------------------
-
 @Serializable
 data class MaintenanceAssetRef(
     val id: Int? = null,
@@ -1702,10 +1671,7 @@ object MaintenanceUpdateRequestSerializer : KSerializer<MaintenanceUpdateRequest
     }
 }
 
-// ---------------------------------------------------------------------------
 // Checkout / detail helper rows
-// ---------------------------------------------------------------------------
-
 @Serializable
 data class AssignedToCheckedOut(
     val id: Int? = null,
@@ -1868,10 +1834,7 @@ data class AssetAssignedComponent(
     val id: Int get() = component.id
 }
 
-// ---------------------------------------------------------------------------
 // API helpers & response wrappers
-// ---------------------------------------------------------------------------
-
 data class CreateResult(
     val success: Boolean,
     val message: String = "",
@@ -1912,10 +1875,7 @@ data class AssetFileResponse(
     val rows: List<AssetFile>? = null,
 )
 
-// ---------------------------------------------------------------------------
 // Local cache snapshot
-// ---------------------------------------------------------------------------
-
 @Serializable
 data class SnipeDataCacheSnapshot(
     val assets: List<Asset> = emptyList(),

@@ -176,8 +176,7 @@ struct ContentView: View {
     @State private var stockPath = NavigationPath()
     @State private var directoryPath = NavigationPath()
     @State private var isDetailViewActive = false
-    /// True when a detail screen is pushed on the selected tab.
-    /// Derived from the path so nested pushes don't flip parent state mid-transition.
+    // From the path. A flag flips too early on nested pushes.
     private var isDetailPushedOnSelectedTab: Bool {
         switch selectedTab {
         case .hardware: return !hardwarePath.isEmpty
@@ -861,10 +860,7 @@ struct ContentView: View {
 
 // MARK: - Shared navigation destinations
 
-/// Registers detail destinations for every entity type on a single `NavigationStack`,
-/// so cross-module links (e.g. user → asset → license) push onto the *current* tab's
-/// stack instead of switching tabs. This keeps the native back button and the
-/// edge-swipe-to-go-back gesture working as users expect.
+// One stack per tab so cross-links don't switch tabs.
 private struct AppNavigationDestinations: ViewModifier {
     @ObservedObject var apiClient: SnipeITAPIClient
     @Binding var navigationPath: NavigationPath

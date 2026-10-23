@@ -81,6 +81,7 @@ fun AssetAuditSheet(
                     items = locations,
                     selectedId = locationId.takeIf { it > 0 },
                     placeholder = L10n.string("none"),
+                    onClear = { locationId = 0 },
                     onSelected = { locationId = it.id },
                 )
                 if (locationId != 0) {

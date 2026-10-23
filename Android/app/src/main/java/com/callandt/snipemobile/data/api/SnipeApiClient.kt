@@ -122,9 +122,6 @@ data class AuthorizedProbeResult(
     val ok: Boolean,
 )
 
-/**
- * OkHttp-based Snipe-IT API client.
- */
 class SnipeApiClient(
     context: Context,
     private val preferences: AppPreferences,
@@ -967,7 +964,7 @@ class SnipeApiClient(
         }
     }
 
-    /** Field definitions for a model, derived from the cached fieldsets (no per-model defaults). */
+    // From cached fieldsets. No per-model defaults.
     fun modelFieldDefinitionsFromFieldsets(modelId: Int): List<FieldDefinition> {
         val fieldset = _fieldsets.value?.firstOrNull { it.modelIds.contains(modelId) } ?: return emptyList()
         return fieldset.fields.map { f ->
@@ -976,6 +973,7 @@ class SnipeApiClient(
                 name = f.name,
                 type = f.type,
                 fieldValuesArray = f.fieldValuesArray,
+                fieldValues = f.fieldValues,
             )
         }
     }
@@ -1777,7 +1775,7 @@ class SnipeApiClient(
 
     // region CRUD (JSON body)
 
-    /** Creates an asset; when [image] is set, uploads it as `image` via multipart. */
+    // Optional photo goes out as multipart `image`.
     suspend fun createAsset(body: Map<String, Any?>, image: UploadFile? = null): CreateResult {
         if (baseUrl.isEmpty() || apiToken.isEmpty()) {
             return CreateResult(false, message = "API not configured.")
@@ -1946,10 +1944,7 @@ class SnipeApiClient(
         return idFromPayload(response.json) ?: decodePayloadOrRoot<AssetMaintenance>(response.body)?.id
     }
 
-    /**
-     * Update maintenance. May return a new id when the image changes
-     * (API has no in-place image update).
-     */
+    // Image changes come back as a new id. No in-place update.
     suspend fun updateMaintenance(
         id: Int,
         assetId: Int,
@@ -3074,10 +3069,7 @@ class SnipeApiClient(
             client.newCall(request).executeSafely()
         }
 
-    /**
-     * Turns a socket failure (no route, DNS, timeout, TLS) into a result.
-     * Cancellation still propagates, so a closed screen does not look like a host error.
-     */
+    // Socket errors become a result. Cancel still throws.
     private suspend fun Call.executeSafely(): HttpResult {
         return try {
             execute().use { response ->
@@ -3259,10 +3251,7 @@ class SnipeApiClient(
         return builder
     }
 
-    /**
-     * Snipe-IT 8.7+ prefers `expected_completion_date`; older servers only know
-     * `completion_date`. Mirror whichever key the caller set so both work.
-     */
+    // 8.7 wants expected_completion_date. Older servers want completion_date.
     private fun withMirroredMaintenanceCompletion(body: Map<String, Any?>): Map<String, Any?> {
         if (!body.containsKey("completion_date") && !body.containsKey("expected_completion_date")) {
             return body

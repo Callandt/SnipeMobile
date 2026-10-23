@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.asset.LocalMainSheetOverlay
 import com.callandt.snipemobile.ui.components.AccessoryCard
 import com.callandt.snipemobile.ui.components.AssetCard
 import com.callandt.snipemobile.ui.components.LicenseCard
@@ -131,9 +132,11 @@ fun UserModeScaffold(
     val openAccessory: (Int) -> Unit = { id -> if (listReady) onAccessoryClick(id) }
     val openLicense: (Int) -> Unit = { id -> if (listReady) onLicenseClick(id) }
 
+    val sheetCoversTabs = LocalMainSheetOverlay.current?.occupied == true
+
     Scaffold(
         bottomBar = {
-            NavigationBar(windowInsets = NavigationBarDefaults.windowInsets) {
+            if (!sheetCoversTabs) NavigationBar(windowInsets = NavigationBarDefaults.windowInsets) {
                 UserModeTab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = selectedTab == tab,

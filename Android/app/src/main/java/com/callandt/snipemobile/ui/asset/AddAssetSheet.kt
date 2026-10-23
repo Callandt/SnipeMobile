@@ -26,6 +26,7 @@ import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.CreatableSearchablePickerField
 import com.callandt.snipemobile.ui.components.PickerItem
+import com.callandt.snipemobile.ui.components.readOnlyOutlinedTextFieldColors
 import com.callandt.snipemobile.ui.management.ManagementEntity
 import com.callandt.snipemobile.ui.scanner.QrScannerMode
 import com.callandt.snipemobile.ui.scanner.QrScannerScreen
@@ -246,6 +247,7 @@ fun AddAssetSheet(
                     label = { Text(L10n.fieldLabel("asset_tag", required = true)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    colors = readOnlyOutlinedTextFieldColors(),
                 )
             } else {
                 OutlinedTextField(
@@ -287,6 +289,7 @@ fun AddAssetSheet(
                 viewModel = viewModel,
                 placeholder = L10n.string("choose_model"),
                 creatableEntity = ManagementEntity.Models,
+                onClear = { selectedModelId = 0 },
                 onSelected = { selectedModelId = it.id },
             )
             CreatableSearchablePickerField(
@@ -296,6 +299,7 @@ fun AddAssetSheet(
                 viewModel = viewModel,
                 placeholder = L10n.string("choose_status"),
                 creatableEntity = ManagementEntity.StatusLabels,
+                onClear = { selectedStatusId = 0 },
                 onSelected = { selectedStatusId = it.id },
             )
             CreatableSearchablePickerField(
@@ -305,6 +309,7 @@ fun AddAssetSheet(
                 viewModel = viewModel,
                 placeholder = L10n.string("choose_location"),
                 creatableLocation = true,
+                onClear = { selectedLocationId = 0 },
                 onSelected = { selectedLocationId = it.id },
             )
             CreatableSearchablePickerField(
@@ -314,6 +319,7 @@ fun AddAssetSheet(
                 viewModel = viewModel,
                 placeholder = L10n.string("choose_company"),
                 creatableEntity = ManagementEntity.Companies,
+                onClear = { selectedCompanyId = 0 },
                 onSelected = { selectedCompanyId = it.id },
             )
             CreatableSearchablePickerField(
@@ -323,6 +329,7 @@ fun AddAssetSheet(
                 viewModel = viewModel,
                 placeholder = L10n.string("choose_supplier"),
                 creatableEntity = ManagementEntity.Suppliers,
+                onClear = { selectedSupplierId = 0 },
                 onSelected = { selectedSupplierId = it.id },
             )
 
@@ -389,20 +396,23 @@ fun AddAssetSheet(
         }
     }
 
+    // Scanner has to sit on top of this sheet or the button does nothing.
     if (showingDellScanner) {
-        QrScannerScreen(
-            mode = QrScannerMode.Dell,
-            onBack = { showingDellScanner = false },
-            onLinkParsed = {},
-            onDellUrlScanned = { url ->
-                showingDellScanner = false
-                scope.launch { handleDellUrl(url) }
-            },
-            onError = { message ->
-                showingDellScanner = false
-                errorMessage = message
-            },
-        )
+        AssetFullScreenSheet(onDismiss = { showingDellScanner = false }) {
+            QrScannerScreen(
+                mode = QrScannerMode.Dell,
+                onBack = { showingDellScanner = false },
+                onLinkParsed = {},
+                onDellUrlScanned = { url ->
+                    showingDellScanner = false
+                    scope.launch { handleDellUrl(url) }
+                },
+                onError = { message ->
+                    showingDellScanner = false
+                    errorMessage = message
+                },
+            )
+        }
     }
 
     if (errorMessage != null) {

@@ -7,10 +7,7 @@ import com.callandt.snipemobile.data.prefs.AppPreferences
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
-/**
- * Fires the daily audit reminder and reschedules the next alarm.
- * Also handles [Intent.ACTION_BOOT_COMPLETED] to restore the schedule after reboot.
- */
+// Daily reminder. Also restores the alarm after reboot.
 class AuditNotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         when (intent?.action) {

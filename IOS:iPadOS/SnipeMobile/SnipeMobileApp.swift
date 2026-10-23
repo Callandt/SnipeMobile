@@ -147,8 +147,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             let intent = AuditNotificationIntent(rawValue: intentStr)
         else { return }
 
-        // Persist fallback for cold-start: NotificationCenter event can fire
-        // before SwiftUI `onReceive` observers are attached.
+        // Tap can arrive before SwiftUI observers exist.
         UserDefaults.standard.set(intent.rawValue, forKey: pendingAuditIntentDefaultsKey)
 
         NotificationCenter.default.post(
@@ -323,8 +322,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             .onAppear {
                 WidgetBackgroundRefreshService.configure(apiClient: apiClient)
 
-                // Cold boot fallback: if notification tap happened before observers
-                // attached, recover the pending intent from UserDefaults.
+                // Cold boot: the tap was stored before observers existed.
                 if let raw = UserDefaults.standard.string(forKey: pendingAuditIntentDefaultsKey),
                    let intent = AuditNotificationIntent(rawValue: raw) {
                     auditNotificationRouter.set(intent: intent)
@@ -2380,8 +2378,7 @@ struct MainSplitView: View {
             }
         }
         .onAppear {
-            // Self-heal if the shared initial sync skipped/failed the components page
-            // (it's fetched last, so a transient hiccup can leave this list empty).
+            // Components are fetched last and sometimes never land.
             if apiClient.isConfigured && apiClient.components.isEmpty && !apiClient.isLoading {
                 Task { await apiClient.fetchComponents() }
             }

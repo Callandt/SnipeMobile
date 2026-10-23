@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import com.callandt.snipemobile.data.model.License
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.asset.AssetFormSheetScaffold
+import com.callandt.snipemobile.ui.asset.putOptionalForeignKey
 import com.callandt.snipemobile.ui.asset.AssetFullScreenSheet
 import com.callandt.snipemobile.ui.asset.FormSectionTitle
 import com.callandt.snipemobile.ui.asset.formatApiDate
@@ -158,9 +159,9 @@ private fun LicenseFormSheet(
         body["termination_date"] = if (hasTerminationDate) {
             parseApiDate(terminationDateText)?.let { formatApiDate(it) }
         } else null
-        if (selectedManufacturerId > 0) body["manufacturer_id"] = selectedManufacturerId
-        if (selectedSupplierId > 0) body["supplier_id"] = selectedSupplierId
-        if (selectedCompanyId > 0) body["company_id"] = selectedCompanyId
+        putOptionalForeignKey(body, "manufacturer_id", selectedManufacturerId, existing != null)
+        putOptionalForeignKey(body, "supplier_id", selectedSupplierId, existing != null)
+        putOptionalForeignKey(body, "company_id", selectedCompanyId, existing != null)
         notes.trim().takeIf { it.isNotEmpty() }?.let { body["notes"] = it }
         return body
     }
@@ -221,18 +222,23 @@ private fun LicenseFormSheet(
                 placeholder = L10n.string("choose_category"),
                 creatableEntity = ManagementEntity.Categories,
                 createDefaults = mapOf("category_type" to "license"),
+                onClear = { selectedCategoryId = 0 },
                 onSelected = { selectedCategoryId = it.id },
             )
             SearchablePickerField(
                 label = L10n.string("manufacturer"),
                 items = manufacturers.map { PickerItem(it.id, it.name) },
                 selectedId = selectedManufacturerId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_manufacturer"),
+                onClear = { selectedManufacturerId = 0 },
                 onSelected = { selectedManufacturerId = it.id },
             )
             SearchablePickerField(
                 label = L10n.string("company"),
                 items = companies.map { PickerItem(it.id, it.name) },
                 selectedId = selectedCompanyId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_company"),
+                onClear = { selectedCompanyId = 0 },
                 onSelected = { selectedCompanyId = it.id },
             )
 
@@ -301,6 +307,8 @@ private fun LicenseFormSheet(
                 label = L10n.string("supplier"),
                 items = suppliers.map { PickerItem(it.id, it.name) },
                 selectedId = selectedSupplierId.takeIf { it > 0 },
+                placeholder = L10n.string("choose_supplier"),
+                onClear = { selectedSupplierId = 0 },
                 onSelected = { selectedSupplierId = it.id },
             )
             DateToggleRow(L10n.string("purchase_date"), hasPurchaseDate, { hasPurchaseDate = it })

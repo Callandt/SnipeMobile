@@ -13,7 +13,6 @@ import com.callandt.snipemobile.ui.management.ManagementFormSheet
 import com.callandt.snipemobile.ui.management.config
 import com.callandt.snipemobile.ui.util.L10n
 
-/** Searchable picker with optional inline create. */
 @Composable
 fun CreatableSearchablePickerField(
     label: String,
@@ -25,6 +24,8 @@ fun CreatableSearchablePickerField(
     creatableEntity: ManagementEntity? = null,
     creatableLocation: Boolean = false,
     createDefaults: Map<String, String> = emptyMap(),
+    clearLabel: String? = null,
+    onClear: (() -> Unit)? = null,
     onSelected: (PickerItem) -> Unit,
 ) {
     var showManagementCreate by remember { mutableStateOf(false) }
@@ -61,6 +62,8 @@ fun CreatableSearchablePickerField(
         } else {
             null
         },
+        clearLabel = clearLabel,
+        onClear = onClear,
         onSelected = { item ->
             pendingCreated = null
             onSelected(item)

@@ -41,6 +41,7 @@ fun AssetCheckinSheet(
     var name by remember(asset.id) { mutableStateOf(asset.decodedName) }
     var notes by remember { mutableStateOf("") }
     var selectedStatusId by remember { mutableIntStateOf(0) }
+    var statusCleared by remember { mutableStateOf(false) }
     var selectedLocationId by remember { mutableIntStateOf(0) }
     var pendingImages: List<PendingAssetImage> by remember { mutableStateOf(emptyList()) }
     var isSaving by remember { mutableStateOf(false) }
@@ -55,6 +56,7 @@ fun AssetCheckinSheet(
     }
 
     fun ensureDefaultStatus(labels: List<StatusLabel>) {
+        if (statusCleared && selectedStatusId == 0) return
         val deployable = labels.filter { it.isDeployableType }
         val pool = deployable.ifEmpty { labels }
         val validIds = pool.map { it.id }.toSet()
@@ -127,7 +129,14 @@ fun AssetCheckinSheet(
                     items = statusPickerItems,
                     selectedId = selectedStatusId.takeIf { it > 0 },
                     placeholder = L10n.string("none"),
-                    onSelected = { selectedStatusId = it.id },
+                    onClear = {
+                        selectedStatusId = 0
+                        statusCleared = true
+                    },
+                    onSelected = {
+                        statusCleared = false
+                        selectedStatusId = it.id
+                    },
                 )
             }
             OutlinedTextField(
@@ -149,6 +158,7 @@ fun AssetCheckinSheet(
                 items = locations.map { PickerItem(it.id, it.decodedName) },
                 selectedId = selectedLocationId.takeIf { it > 0 },
                 placeholder = L10n.string("none"),
+                onClear = { selectedLocationId = 0 },
                 onSelected = { selectedLocationId = it.id },
             )
             Text(
