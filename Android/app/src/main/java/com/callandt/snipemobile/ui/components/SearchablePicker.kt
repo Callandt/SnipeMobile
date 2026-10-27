@@ -2,33 +2,22 @@ package com.callandt.snipemobile.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
 import com.callandt.snipemobile.ui.util.L10n
 
 // Disabled outline is 12% and looks thin.
@@ -76,6 +65,7 @@ fun SearchablePickerField(
     } else {
         placeholder
     }
+    val canClear = onClear != null || allowClear
 
     Box(modifier = modifier.fillMaxWidth().clickable { showDialog = true }) {
         OutlinedTextField(
@@ -84,6 +74,9 @@ fun SearchablePickerField(
             readOnly = true,
             label = { Text(label) },
             placeholder = { Text(placeholder) },
+            trailingIcon = {
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+            },
             modifier = Modifier.fillMaxWidth(),
             enabled = false,
             colors = readOnlyOutlinedTextFieldColors(),
@@ -91,9 +84,25 @@ fun SearchablePickerField(
     }
 
     if (showDialog) {
-        SearchablePickerDialog(
+        val options = buildList {
+            if (canClear) {
+                add(OptionPickerEntry(value = "", label = resolvedClearLabel))
+            }
+            items.forEach { item ->
+                add(
+                    OptionPickerEntry(
+                        value = item.id.toString(),
+                        label = item.title,
+                        subtitle = item.subtitle,
+                        searchText = item.searchText,
+                    ),
+                )
+            }
+        }
+        OptionPickerDialog(
             title = label,
-            items = items,
+            options = options,
+            selectedValue = selectedId?.toString() ?: if (canClear) "" else null,
             addNewLabel = addNewLabel,
             onAddNew = onAddNew?.let { add ->
                 {
@@ -101,17 +110,15 @@ fun SearchablePickerField(
                     add()
                 }
             },
-            allowClear = onClear != null || allowClear,
-            clearLabel = resolvedClearLabel,
-            onClear = onClear?.let { clear ->
-                {
-                    showDialog = false
-                    clear()
-                }
-            },
             onDismiss = { showDialog = false },
-            onSelected = { item ->
-                onSelected(item)
+            onSelected = { entry ->
+                if (entry.value.isEmpty() && canClear) {
+                    onClear?.invoke()
+                } else {
+                    val id = entry.value.toIntOrNull()
+                    val item = items.firstOrNull { it.id == id }
+                    if (item != null) onSelected(item)
+                }
                 showDialog = false
             },
         )
@@ -130,83 +137,36 @@ fun SearchablePickerDialog(
     clearLabel: String = L10n.string("mgmt_none"),
     onClear: (() -> Unit)? = null,
 ) {
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(items, query) {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) items
-        else items.filter {
-            it.title.lowercase().contains(q) ||
-                (it.subtitle?.lowercase()?.contains(q) == true) ||
-                (it.searchText?.lowercase()?.contains(q) == true)
+    val options = buildList {
+        if (allowClear && onClear != null) {
+            add(OptionPickerEntry(value = "", label = clearLabel))
+        }
+        items.forEach { item ->
+            add(
+                OptionPickerEntry(
+                    value = item.id.toString(),
+                    label = item.title,
+                    subtitle = item.subtitle,
+                    searchText = item.searchText,
+                ),
+            )
         }
     }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column {
-                if (onAddNew != null && !addNewLabel.isNullOrBlank()) {
-                    TextButton(
-                        onClick = onAddNew,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Text(
-                                text = addNewLabel,
-                                modifier = Modifier.padding(start = 6.dp),
-                            )
-                        }
-                    }
-                }
-                val clearSelection = onClear
-                val clearQuery = query.trim().lowercase()
-                val showClear = allowClear &&
-                    clearSelection != null &&
-                    (clearQuery.isEmpty() || clearLabel.lowercase().contains(clearQuery))
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                    item(key = "picker-search") {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(L10n.string("search") + "…") },
-                            singleLine = true,
-                        )
-                    }
-                    if (showClear) {
-                        item(key = "picker-clear") {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(
-                                    text = clearLabel,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { clearSelection?.invoke() }
-                                        .padding(vertical = 12.dp, horizontal = 4.dp),
-                                )
-                                HorizontalDivider()
-                            }
-                        }
-                    }
-                    items(filtered, key = { it.id }) { item ->
-                        Text(
-                            text = buildString {
-                                append(item.title)
-                                if (!item.subtitle.isNullOrBlank()) append("\n${item.subtitle}")
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelected(item) }
-                                .padding(vertical = 12.dp, horizontal = 4.dp),
-                        )
-                    }
-                }
+    OptionPickerDialog(
+        title = title,
+        options = options,
+        selectedValue = null,
+        addNewLabel = addNewLabel,
+        onAddNew = onAddNew,
+        onDismiss = onDismiss,
+        onSelected = { entry ->
+            if (entry.value.isEmpty() && onClear != null) {
+                onClear()
+            } else {
+                val id = entry.value.toIntOrNull()
+                val item = items.firstOrNull { it.id == id }
+                if (item != null) onSelected(item)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(L10n.string("close")) }
         },
     )
 }

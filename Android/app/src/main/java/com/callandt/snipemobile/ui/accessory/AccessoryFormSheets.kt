@@ -2,6 +2,7 @@ package com.callandt.snipemobile.ui.accessory
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -95,6 +96,8 @@ private fun AccessoryFormSheet(
         mutableStateOf(!existing?.purchaseDate.isNullOrBlank())
     }
     var notes by remember(existing?.id) { mutableStateOf(existing?.decodedNotes.orEmpty()) }
+    var requestable by remember(existing?.id) { mutableStateOf(existing?.requestable == true) }
+    var archived by remember(existing?.id) { mutableStateOf(existing?.archived == true) }
     var selectedCategoryId by remember(existing?.id) { mutableIntStateOf(existing?.category?.id ?: 0) }
     var selectedLocationId by remember(existing?.id) { mutableIntStateOf(existing?.location?.id ?: 0) }
     var selectedCompanyId by remember(existing?.id) { mutableIntStateOf(existing?.company?.id ?: 0) }
@@ -134,6 +137,8 @@ private fun AccessoryFormSheet(
             parseApiDate(purchaseDateText)?.let { body["purchase_date"] = formatApiDate(it) }
         }
         body["notes"] = notes.trim()
+        body["requestable"] = requestable
+        body["archived"] = archived
         val isEdit = existing != null
         putOptionalForeignKey(body, "location_id", selectedLocationId, isEdit)
         putOptionalForeignKey(body, "company_id", selectedCompanyId, isEdit)
@@ -284,7 +289,50 @@ private fun AccessoryFormSheet(
                 minLines = 3,
             )
 
-            errorMessage?.let { Text(it, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
+            val archiveLocked = (existing?.checkoutsCount ?: 0) > 0
+            AccessoryFlagRow(
+                label = L10n.string("mgmt_requestable"),
+                checked = requestable,
+                onCheckedChange = { checked ->
+                    requestable = checked
+                    if (checked) archived = false
+                },
+            )
+            AccessoryFlagRow(
+                label = L10n.string("status_archived"),
+                checked = archived,
+                enabled = !archiveLocked || archived,
+                onCheckedChange = { checked ->
+                    if (checked && archiveLocked) return@AccessoryFlagRow
+                    archived = checked
+                    if (checked) requestable = false
+                },
+            )
+            if (archiveLocked) {
+                Text(
+                    L10n.string("accessory_archive_blocked"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
+    }
+}
+
+@Composable
+private fun AccessoryFlagRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }

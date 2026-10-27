@@ -878,6 +878,8 @@ data class Accessory(
     val modelNumber: String? = null,
     val image: String? = null,
     val notes: String? = null,
+    val requestable: Boolean = false,
+    val archived: Boolean = false,
     val createdAt: DateInfo? = null,
     val updatedAt: DateInfo? = null,
 ) {
@@ -917,6 +919,8 @@ object AccessorySerializer : KSerializer<Accessory> {
             modelNumber = SnipeDecoders.flexibleStringOrNumber(obj["model_number"]),
             image = SnipeDecoders.flexibleStringOrNumber(obj["image"]),
             notes = SnipeDecoders.flexibleStringOrNumber(obj["notes"]),
+            requestable = SnipeDecoders.flexibleBool(obj["requestable"]),
+            archived = SnipeDecoders.flexibleBool(obj["archived"]),
             createdAt = SnipeDecoders.flexibleDateInfo(obj["created_at"]),
             updatedAt = SnipeDecoders.flexibleDateInfo(obj["updated_at"]),
         )
@@ -945,6 +949,8 @@ object AccessorySerializer : KSerializer<Accessory> {
                     modelNumber = value.modelNumber,
                     image = value.image,
                     notes = value.notes,
+                    requestable = value.requestable,
+                    archived = value.archived,
                     createdAt = value.createdAt,
                     updatedAt = value.updatedAt,
                 ),
@@ -973,6 +979,8 @@ object AccessorySerializer : KSerializer<Accessory> {
         @SerialName("model_number") val modelNumber: String? = null,
         val image: String? = null,
         val notes: String? = null,
+        val requestable: Boolean = false,
+        val archived: Boolean = false,
         @SerialName("created_at") val createdAt: DateInfo? = null,
         @SerialName("updated_at") val updatedAt: DateInfo? = null,
     )

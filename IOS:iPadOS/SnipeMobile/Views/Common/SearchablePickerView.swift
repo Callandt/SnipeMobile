@@ -1,14 +1,75 @@
 import SwiftUI
 
-// MARK: - Picker item
+// One option list for every picklist in the app: search, selection mark, same sheet.
+
+struct PickerSearchField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(L10n.string("search"), text: $text)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.string("close"))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.tertiarySystemFill))
+        )
+    }
+}
+
+struct PickerOptionRow: View {
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(label)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.4))
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+        .listRowSeparator(.visible, edges: .bottom)
+        .listRowBackground(
+            isSelected ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground)
+        )
+    }
+}
+
 private struct PickableItem<Value: Hashable>: Identifiable {
     let value: Value
     let label: String
     var id: Value { value }
 }
 
-// MARK: - Searchable sheet
-private struct SearchablePickerSheetContent<Value: Hashable>: View {
+struct OptionPickerSheet<Value: Hashable>: View {
     let title: String
     let items: [(value: Value, label: String)]
     @Binding var selection: Value
@@ -31,60 +92,78 @@ private struct SearchablePickerSheetContent<Value: Hashable>: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            TextField(L10n.string("search"), text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-            List {
+        NavigationStack {
+            VStack(spacing: 0) {
+                PickerSearchField(text: $searchText)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+
                 if let onAddNew, let addNewLabel {
-                    Section {
-                        Button(action: onAddNew) {
-                            Label(addNewLabel, systemImage: "plus.circle.fill")
-                                .foregroundStyle(Color.accentColor)
+                    Button(action: onAddNew) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "plus.circle.fill")
+                            Text(addNewLabel)
+                                .font(.body.weight(.semibold))
+                            Spacer(minLength: 0)
                         }
-                    }
-                }
-                Section {
-                    ForEach(filteredOptions) { option in
-                        Button {
-                            selection = option.value
-                            dismiss()
-                        } label: {
-                            HStack(alignment: .center, spacing: 12) {
-                                Text(option.label)
-                                    .foregroundStyle(.primary)
-                                    .multilineTextAlignment(.leading)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                if option.value == selection {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(Color.accentColor)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                         .contentShape(Rectangle())
-                        .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-                        .listRowSeparator(.visible, edges: .bottom)
-                        .listRowBackground(
-                            option.value == selection ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground)
-                        )
+                    }
+                    .buttonStyle(.plain)
+                    Divider()
+                }
+
+                if filteredOptions.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollViewReader { proxy in
+                        List {
+                            ForEach(filteredOptions) { option in
+                                PickerOptionRow(label: option.label, isSelected: option.value == selection) {
+                                    selection = option.value
+                                    dismiss()
+                                }
+                                .id(option.id)
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollDismissesKeyboard(.interactively)
+                        .onAppear {
+                            guard filteredOptions.contains(where: { $0.value == selection }) else { return }
+                            DispatchQueue.main.async {
+                                proxy.scrollTo(selection, anchor: .center)
+                            }
+                        }
                     }
                 }
             }
-            .listStyle(.plain)
-            .scrollDismissesKeyboard(.interactively)
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("cancel")) { dismiss() }
+                }
+                if let onAddNew {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(action: onAddNew) {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel(addNewLabel ?? L10n.string("create"))
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 }
 
-/// Tap opens searchable sheet. No NavigationLink.
+/// Closed row that always opens the shared option sheet.
 struct SearchablePickerRow<Value: Hashable>: View {
     let title: String
     let items: [(value: Value, label: String)]
@@ -94,6 +173,10 @@ struct SearchablePickerRow<Value: Hashable>: View {
     var onAddNew: (() -> Void)? = nil
     /// Puts the current value under the title so long listbox labels stay readable.
     var stackValue: Bool = false
+    /// Shows only the current value. The title is still the sheet title.
+    var valueOnly: Bool = false
+    var leadingSymbol: String? = nil
+    var leadingTint: Color = .accentColor
 
     @State private var showSheet = false
 
@@ -106,11 +189,50 @@ struct SearchablePickerRow<Value: Hashable>: View {
         emptyOption?.value == selection
     }
 
+    private var usesStack: Bool {
+        leadingSymbol == nil && !valueOnly && (stackValue || displayLabel(for: selection).count > 42)
+    }
+
     var body: some View {
         Button {
             showSheet = true
         } label: {
-            if stackValue {
+            rowLabel
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(displayLabel(for: selection))
+        .sheet(isPresented: $showSheet) {
+            OptionPickerSheet(
+                title: title,
+                items: items,
+                selection: $selection,
+                emptyOption: emptyOption,
+                addNewLabel: addNewLabel,
+                onAddNew: onAddNew.map { add in
+                    {
+                        showSheet = false
+                        DispatchQueue.main.async {
+                            add()
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var rowLabel: some View {
+        if valueOnly {
+            HStack(alignment: .center, spacing: 12) {
+                Text(displayLabel(for: selection))
+                    .foregroundStyle(selectionIsEmpty ? .secondary : .primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                pickerChevron
+            }
+        } else if usesStack {
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.caption)
@@ -120,65 +242,52 @@ struct SearchablePickerRow<Value: Hashable>: View {
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(title)
-                        .foregroundStyle(.primary)
-                        .layoutPriority(1)
-                    Text(displayLabel(for: selection))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(4)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                pickerChevron
+            }
+        } else {
+            HStack(alignment: .center, spacing: 12) {
+                if let leadingSymbol {
+                    PickerLeadingIcon(symbol: leadingSymbol, tint: leadingTint)
                 }
+                Text(title)
+                    .foregroundStyle(.primary)
+                    .layoutPriority(1)
+                Text(displayLabel(for: selection))
+                    .foregroundStyle(selectionIsEmpty ? .secondary : .primary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                pickerChevron
             }
         }
-        .buttonStyle(.plain)
-        .sheet(isPresented: $showSheet) {
-            NavigationStack {
-                SearchablePickerSheetContent(
-                    title: title,
-                    items: items,
-                    selection: $selection,
-                    emptyOption: emptyOption,
-                    addNewLabel: addNewLabel,
-                    onAddNew: {
-                        showSheet = false
-                        DispatchQueue.main.async {
-                            onAddNew?()
-                        }
-                    }
-                )
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(L10n.string("cancel")) { showSheet = false }
-                    }
-                    if let onAddNew {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button {
-                                showSheet = false
-                                DispatchQueue.main.async {
-                                    onAddNew()
-                                }
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                            .accessibilityLabel(addNewLabel ?? L10n.string("create"))
-                        }
-                    }
-                }
-            }
-            .presentationDetents([.large])
-        }
+    }
+
+    private var pickerChevron: some View {
+        Image(systemName: "chevron.up.chevron.down")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
     }
 }
 
-// MARK: - Size threshold
-private let kLargeListThreshold = 12
+private struct PickerLeadingIcon: View {
+    let symbol: String
+    let tint: Color
 
-/// Small list = Picker. Large = sheet.
+    var body: some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(tint.gradient)
+            .frame(width: 29, height: 29)
+            .overlay(
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+/// Every list size opens the same option sheet.
 struct AdaptivePickerRow<Value: Hashable>: View {
     let title: String
     let items: [(value: Value, label: String)]
@@ -186,18 +295,13 @@ struct AdaptivePickerRow<Value: Hashable>: View {
     let emptyOption: (value: Value, label: String)?
     var addNewLabel: String? = nil
     var onAddNew: (() -> Void)? = nil
-    /// Long option labels do not fit in the compact menu picker.
-    var forceSearchable: Bool = false
+    /// Long option labels stay readable under the title.
+    var stackValue: Bool = false
+    var valueOnly: Bool = false
+    var leadingSymbol: String? = nil
+    var leadingTint: Color = .accentColor
 
-    private var totalCount: Int {
-        items.count + (emptyOption != nil ? 1 : 0)
-    }
-
-    private var useSearchable: Bool {
-        forceSearchable || totalCount > kLargeListThreshold || onAddNew != nil
-    }
-
-    /// Picker crashes when selection has no matching tag.
+    /// Keeps a selection that is not in the loaded options visible.
     private var taggedItems: [(value: Value, label: String)] {
         var result = items
         let known = result.map(\.value)
@@ -208,26 +312,18 @@ struct AdaptivePickerRow<Value: Hashable>: View {
     }
 
     var body: some View {
-        if useSearchable {
-            SearchablePickerRow(
-                title: title,
-                items: taggedItems,
-                selection: $selection,
-                emptyOption: emptyOption,
-                addNewLabel: addNewLabel,
-                onAddNew: onAddNew,
-                stackValue: forceSearchable
-            )
-        } else {
-            Picker(title, selection: $selection) {
-                if let e = emptyOption {
-                    Text(e.label).tag(e.value)
-                }
-                ForEach(Array(taggedItems.enumerated()), id: \.offset) { _, item in
-                    Text(item.label).tag(item.value)
-                }
-            }
-        }
+        SearchablePickerRow(
+            title: title,
+            items: taggedItems,
+            selection: $selection,
+            emptyOption: emptyOption,
+            addNewLabel: addNewLabel,
+            onAddNew: onAddNew,
+            stackValue: stackValue,
+            valueOnly: valueOnly,
+            leadingSymbol: leadingSymbol,
+            leadingTint: leadingTint
+        )
     }
 }
 

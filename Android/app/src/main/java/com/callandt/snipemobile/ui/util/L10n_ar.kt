@@ -143,6 +143,7 @@ internal object L10n_ar {
         "cancel" to "إلغاء",
         "cannot_archive" to "تعذّر الأرشفة",
         "cannot_archive_msg" to "هذا الأصل ما زال معيَّنًا لمستخدم أو موقع. يُرجى إرجاع الأصل قبل تعيينه إلى «مؤرشف».",
+        "accessory_archive_blocked" to "أرجع جميع الوحدات المُسلَّمة قبل أرشفة هذا الملحق.",
         "card_layout_add_field" to "إضافة حقل",
         "card_layout_detail_slot" to "أسفل العنوان",
         "card_layout_line_n" to "السطر %d",

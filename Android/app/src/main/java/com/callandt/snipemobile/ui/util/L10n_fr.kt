@@ -143,6 +143,7 @@ internal object L10n_fr {
         "cancel" to "Annuler",
         "cannot_archive" to "Impossible d'archiver",
         "cannot_archive_msg" to "Cet actif est encore affecté à un utilisateur ou à un emplacement. Veuillez le remettre en retour avant de le définir sur « archivé ».",
+        "accessory_archive_blocked" to "Remettez toutes les unités encore sorties avant d'archiver cet accessoire.",
         "card_layout_add_field" to "Ajouter un champ",
         "card_layout_detail_slot" to "Sous le titre",
         "card_layout_line_n" to "Ligne %d",

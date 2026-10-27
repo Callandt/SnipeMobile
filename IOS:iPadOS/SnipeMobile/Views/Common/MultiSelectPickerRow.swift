@@ -14,28 +14,34 @@ private struct MultiSelectSheetContent<Value: Hashable>: View {
     }
 
     var body: some View {
-        List {
-            ForEach(Array(filteredItems.enumerated()), id: \.offset) { _, item in
-                Button {
-                    if selection.contains(item.value) {
-                        selection.remove(item.value)
-                    } else {
-                        selection.insert(item.value)
-                    }
-                } label: {
-                    HStack {
-                        Text(item.label)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if selection.contains(item.value) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Color.accentColor)
+        VStack(spacing: 0) {
+            PickerSearchField(text: $searchText)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
+
+            if filteredItems.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(Array(filteredItems.enumerated()), id: \.offset) { _, item in
+                        PickerOptionRow(label: item.label, isSelected: selection.contains(item.value)) {
+                            if selection.contains(item.value) {
+                                selection.remove(item.value)
+                            } else {
+                                selection.insert(item.value)
+                            }
                         }
                     }
                 }
+                .listStyle(.plain)
+                .scrollDismissesKeyboard(.interactively)
             }
         }
-        .searchable(text: $searchText, prompt: Text(L10n.string("search")))
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -49,36 +55,48 @@ struct MultiSelectPickerRow<Value: Hashable>: View {
     private var summary: String {
         let selectedLabels = items
             .filter { selection.contains($0.value) }
-            .map { $0.label }
+            .map(\.label)
         if selectedLabels.isEmpty { return L10n.string("none") }
         return selectedLabels.joined(separator: ", ")
+    }
+
+    private var selectionIsEmpty: Bool {
+        items.allSatisfy { !selection.contains($0.value) }
     }
 
     var body: some View {
         Button {
             showSheet = true
         } label: {
-            HStack {
+            HStack(alignment: .center, spacing: 12) {
                 Text(title)
-                Spacer()
+                    .foregroundStyle(.primary)
+                    .layoutPriority(1)
                 Text(summary)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .foregroundStyle(selectionIsEmpty ? .secondary : .primary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(summary)
         .sheet(isPresented: $showSheet) {
             NavigationStack {
                 MultiSelectSheetContent(title: title, items: items, selection: $selection)
-                    .navigationTitle(title)
-                    .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button(L10n.string("done")) { showSheet = false }
                         }
                     }
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 }

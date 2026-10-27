@@ -85,7 +85,9 @@ fun AccessoryDetailScreen(
     val users by viewModel.users.collectAsState()
     val assets by viewModel.assets.collectAsState()
     val locations by viewModel.locations.collectAsState()
-    val accessory = accessories.firstOrNull { it.id == accessoryId }
+    var retainedAccessory by remember { mutableStateOf<Accessory?>(null) }
+    val listedAccessory = accessories.firstOrNull { it.id == accessoryId }
+    val accessory = listedAccessory ?: retainedAccessory
     val scope = rememberCoroutineScope()
 
     var checkedOutRows by remember { mutableStateOf<List<AccessoryCheckedOutRow>>(emptyList()) }
@@ -101,7 +103,7 @@ fun AccessoryDetailScreen(
         scope.launch {
             loadingCheckedOut = true
             checkedOutRows = viewModel.apiClient.fetchAccessoryCheckedOutList(accessoryId)
-            viewModel.apiClient.fetchAccessoryDetails(accessoryId)
+            viewModel.apiClient.fetchAccessoryDetails(accessoryId)?.let { retainedAccessory = it }
             loadingCheckedOut = false
         }
     }
@@ -110,9 +112,13 @@ fun AccessoryDetailScreen(
         reloadCheckedOut()
     }
 
+    LaunchedEffect(listedAccessory) {
+        if (listedAccessory != null) retainedAccessory = listedAccessory
+    }
+
     val displayedRows = checkedOutRows.filter { it.assignedTo?.id != null }
     val isDeployed = accessory?.statusLabel?.statusMeta?.equals("deployed", ignoreCase = true) == true
-    val canCheckout = accessory?.remaining?.let { it > 0 } ?: true
+    val canCheckout = accessory?.archived != true && (accessory?.remaining?.let { it > 0 } ?: true)
     val checkinRow = displayedRows.firstOrNull { it.availableActions?.checkin == true }
 
     Scaffold(
@@ -306,6 +312,8 @@ private fun AccessoryDetailContent(
             DetailRow(L10n.string("asset_tag"), accessory.decodedAssetTag)
             accessory.modelNumber?.takeIf { it.isNotBlank() }?.let { DetailRow(L10n.string("model_number"), it) }
             accessory.statusLabel?.statusMeta?.takeIf { it.isNotBlank() }?.let { DetailRow(L10n.string("status"), it) }
+            DetailRow(L10n.string("mgmt_requestable"), if (accessory.requestable) L10n.string("yes") else L10n.string("no"))
+            DetailRow(L10n.string("status_archived"), if (accessory.archived) L10n.string("yes") else L10n.string("no"))
             DetailRow(L10n.string("location"), accessory.decodedLocationName)
             DetailRow(L10n.string("category"), accessory.decodedCategoryName)
             DetailRow(L10n.string("company"), accessory.company?.name)

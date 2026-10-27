@@ -143,6 +143,7 @@ internal object L10n_nl {
         "cancel" to "Annuleren",
         "cannot_archive" to "Niet archiveren",
         "cannot_archive_msg" to "Deze asset is nog toegewezen aan een gebruiker of locatie. Check het eerst in voordat je op 'gearchiveerd' zet.",
+        "accessory_archive_blocked" to "Check alle uitgeleende exemplaren eerst in voordat je dit accessoire archiveert.",
         "card_layout_add_field" to "Veld toevoegen",
         "card_layout_detail_slot" to "Onder de titel",
         "card_layout_line_n" to "Regel %d",

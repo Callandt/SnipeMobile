@@ -143,6 +143,7 @@ internal object L10n_ru {
         "cancel" to "Отмена",
         "cannot_archive" to "Нельзя архивировать",
         "cannot_archive_msg" to "Этот актив всё ещё назначен пользователю или местоположению. Верните актив перед статусом «в архиве».",
+        "accessory_archive_blocked" to "Верните все выданные единицы, прежде чем архивировать эту принадлежность.",
         "card_layout_add_field" to "Добавить поле",
         "card_layout_detail_slot" to "Под заголовком",
         "card_layout_line_n" to "Строка %d",

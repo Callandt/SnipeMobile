@@ -96,21 +96,23 @@ struct BulkMaintenanceFormSheet: View {
                             .foregroundStyle(.secondary)
                     } else if usesTypeIds {
                         if typeIdPickerReady {
-                            Picker(L10n.string("maintenance_type"), selection: $selectedTypeId) {
-                                ForEach(apiClient.maintenanceTypes) { type in
-                                    Text(type.decodedName).tag(type.id)
-                                }
-                            }
+                            AdaptivePickerRow(
+                                title: L10n.string("maintenance_type"),
+                                items: apiClient.maintenanceTypes.map { (value: $0.id, label: $0.decodedName) },
+                                selection: $selectedTypeId,
+                                emptyOption: nil
+                            )
                         } else {
                             Text(L10n.string("loading"))
                                 .foregroundStyle(.secondary)
                         }
                     } else if !legacyTypeOptions.isEmpty {
-                        Picker(L10n.string("maintenance_type"), selection: $selectedType) {
-                            ForEach(legacyTypeOptions, id: \.self) { type in
-                                Text(type).tag(type)
-                            }
-                        }
+                        AdaptivePickerRow(
+                            title: L10n.string("maintenance_type"),
+                            items: legacyTypeOptions.map { (value: $0, label: $0) },
+                            selection: $selectedType,
+                            emptyOption: nil
+                        )
                     }
                 }
                 Section(header: Text(L10n.string("responsible_party"))) {
@@ -138,12 +140,12 @@ struct BulkMaintenanceFormSheet: View {
                             .keyboardType(.decimalPad)
                     }
                     if !apiClient.suppliers.isEmpty {
-                        Picker(L10n.string("supplier_optional"), selection: $selectedSupplierId) {
-                            Text(L10n.string("none")).tag(0)
-                            ForEach(apiClient.suppliers, id: \.id) { supplier in
-                                Text(HTMLDecoder.decode(supplier.name)).tag(supplier.id)
-                            }
-                        }
+                        AdaptivePickerRow(
+                            title: L10n.string("supplier_optional"),
+                            items: apiClient.suppliers.map { (value: $0.id, label: HTMLDecoder.decode($0.name)) },
+                            selection: $selectedSupplierId,
+                            emptyOption: (0, L10n.string("none"))
+                        )
                     }
                 }
                 Section {

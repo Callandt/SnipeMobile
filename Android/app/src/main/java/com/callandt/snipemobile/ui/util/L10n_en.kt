@@ -143,6 +143,7 @@ internal object L10n_en {
         "cancel" to "Cancel",
         "cannot_archive" to "Cannot archive",
         "cannot_archive_msg" to "This asset is still assigned to a user or location. Please check in the asset before setting it to 'archived'.",
+        "accessory_archive_blocked" to "Check in every checked-out unit before archiving this accessory.",
         "card_layout_add_field" to "Add field",
         "card_layout_detail_slot" to "Under the title",
         "card_layout_line_n" to "Line %d",

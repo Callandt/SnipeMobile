@@ -3,8 +3,12 @@ package com.callandt.snipemobile.ui.asset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,16 +30,26 @@ import com.callandt.snipemobile.data.api.UploadFile
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.CreatableSearchablePickerField
 import com.callandt.snipemobile.ui.components.PickerItem
+import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.components.readOnlyOutlinedTextFieldColors
 import com.callandt.snipemobile.ui.management.ManagementEntity
 import com.callandt.snipemobile.ui.scanner.QrScannerMode
 import com.callandt.snipemobile.ui.scanner.QrScannerScreen
 import com.callandt.snipemobile.ui.util.L10n
+import com.callandt.snipemobile.ui.util.locationPickerSearchText
+import com.callandt.snipemobile.ui.util.userPickerSearchText
+import com.callandt.snipemobile.ui.util.usersForNamePicker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.URI
 import java.util.Date
 
+private enum class AddAssetCheckoutTarget {
+    User,
+    Location,
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddAssetSheet(
     viewModel: AppViewModel,
@@ -49,9 +63,10 @@ fun AddAssetSheet(
     val locations by viewModel.locations.collectAsState()
     val companies by viewModel.companies.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
+    val users by viewModel.users.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
     val autoFillAssetTag by viewModel.autoFillAssetTag.collectAsState()
     val enableDellQrScan by viewModel.enableDellQrScan.collectAsState()
-    val lastApiMessage by viewModel.lastApiMessage.collectAsState()
     val scope = rememberCoroutineScope()
 
     var name by remember { mutableStateOf("") }
@@ -70,6 +85,11 @@ fun AddAssetSheet(
     var selectedSupplierId by remember { mutableIntStateOf(0) }
     var isSaving by remember { mutableStateOf(false) }
     var isFetchingDell by remember { mutableStateOf(false) }
+    var checkOutAfterCreate by remember { mutableStateOf(false) }
+    var checkoutTarget by remember { mutableStateOf(AddAssetCheckoutTarget.User) }
+    var selectedCheckoutUserId by remember { mutableIntStateOf(0) }
+    var selectedCheckoutLocationId by remember { mutableIntStateOf(0) }
+    var persistedAssetId by remember { mutableStateOf<Int?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showingDellScanner by remember { mutableStateOf(false) }
     var pendingImage by remember { mutableStateOf<PendingAssetImage?>(null) }
@@ -83,14 +103,7 @@ fun AddAssetSheet(
         assetTag.trim()
     }
 
-    val selectedModelRequiresSerial = remember(models, selectedModelId) {
-        models.firstOrNull { it.id == selectedModelId }?.requiresSerial == true
-    }
-
-    val canSave = displayTag.isNotEmpty() &&
-        selectedModelId > 0 &&
-        selectedStatusId > 0 &&
-        (!selectedModelRequiresSerial || serial.trim().isNotEmpty())
+    val pickerUsers = remember(users, currentUser) { usersForNamePicker(users, currentUser) }
 
     suspend fun applyDellTechDirect(serviceTag: String) {
         val clientId = viewModel.dellTechDirectClientId().trim()
@@ -133,6 +146,12 @@ fun AddAssetSheet(
         if (companies.isEmpty()) viewModel.apiClient.fetchCompanies()
         if (suppliers.isEmpty()) viewModel.apiClient.fetchSuppliers()
         if (viewModel.apiClient.fieldsets.value == null) viewModel.apiClient.fetchFieldsets()
+    }
+
+    LaunchedEffect(checkOutAfterCreate) {
+        if (checkOutAfterCreate && viewModel.users.value.isEmpty()) {
+            viewModel.apiClient.fetchUsers()
+        }
     }
 
     LaunchedEffect(prefilledDellUrl) {
@@ -181,6 +200,32 @@ fun AddAssetSheet(
     }
 
     AssetFullScreenSheet(onDismiss = { if (!isSaving) onDismiss() }) {
+        // Derive inside the hosted content. The phone overlay re-invokes this lambda
+        // when MutableState changes; Booleans computed outside would stay stale
+        // (Status updates, checkout toggle would not).
+        val selectedModelRequiresSerial =
+            models.firstOrNull { it.id == selectedModelId }?.requiresSerial == true
+        val selectedStatusIsDeployable = statusLabels
+            .firstOrNull { it.id == selectedStatusId }
+            ?.let(::isDeployableStatus) == true
+        val checkoutSelectionIsValid = when (checkoutTarget) {
+            AddAssetCheckoutTarget.User -> selectedCheckoutUserId > 0
+            AddAssetCheckoutTarget.Location -> selectedCheckoutLocationId > 0
+        }
+        val canSave = displayTag.isNotEmpty() &&
+            selectedModelId > 0 &&
+            selectedStatusId > 0 &&
+            (!selectedModelRequiresSerial || serial.trim().isNotEmpty()) &&
+            (!checkOutAfterCreate || !selectedStatusIsDeployable || checkoutSelectionIsValid)
+
+        LaunchedEffect(selectedStatusIsDeployable) {
+            if (!selectedStatusIsDeployable) {
+                checkOutAfterCreate = false
+                selectedCheckoutUserId = 0
+                selectedCheckoutLocationId = 0
+            }
+        }
+
         AssetFormSheetScaffold(
             title = L10n.string("new_asset"),
             saveLabel = L10n.string("create"),
@@ -189,44 +234,104 @@ fun AddAssetSheet(
             onDismiss = { if (!isSaving) onDismiss() },
             onSave = {
                 isSaving = true
+                val checkoutEnabled = checkOutAfterCreate && selectedStatusIsDeployable
+                val target = checkoutTarget
+                val checkoutUserId = selectedCheckoutUserId
+                val checkoutLocationId = selectedCheckoutLocationId
+                val assetName = name.trim()
+                val checkoutNote = notes.trim()
+                val tagSent = displayTag
+                val existingId = persistedAssetId
                 scope.launch {
-                    val body = mutableMapOf<String, Any?>(
-                        "name" to name.trim(),
-                        "asset_tag" to displayTag,
-                        "model_id" to selectedModelId,
-                        "status_id" to selectedStatusId,
-                    )
-                    serial.trim().takeIf { it.isNotEmpty() }?.let { body["serial"] = it }
-                    notes.trim().takeIf { it.isNotEmpty() }?.let { body["notes"] = it }
-                    orderNumber.trim().takeIf { it.isNotEmpty() }?.let { body["order_number"] = it }
-                    normalizeDecimalForApi(purchaseCost)?.let { body["purchase_cost"] = it }
-                    if (hasPurchaseDate) {
-                        parseApiDate(purchaseDateText)?.let { body["purchase_date"] = formatApiDate(it) }
-                    }
-                    warrantyMonths.filter { it.isDigit() }.takeIf { it.isNotEmpty() }?.let {
-                        body["warranty_months"] = it
-                    }
-                    if (selectedLocationId > 0) body["location_id"] = selectedLocationId
-                    if (selectedCompanyId > 0) body["company_id"] = selectedCompanyId
-                    if (selectedSupplierId > 0) body["supplier_id"] = selectedSupplierId
-                    customFieldValues.forEach { (key, rawValue) ->
-                        val trimmed = rawValue.trim()
-                        if (trimmed.isNotEmpty()) {
-                            val apiKey = resolveCustomFieldApiKey(key, null, displayedFieldDefs)
-                            body[apiKey] = trimmed
+                    val createResult = if (existingId == null) {
+                        val body = mutableMapOf<String, Any?>(
+                            "name" to assetName,
+                            "asset_tag" to tagSent,
+                            "model_id" to selectedModelId,
+                            "status_id" to selectedStatusId,
+                        )
+                        serial.trim().takeIf { it.isNotEmpty() }?.let { body["serial"] = it }
+                        checkoutNote.takeIf { it.isNotEmpty() }?.let { body["notes"] = it }
+                        orderNumber.trim().takeIf { it.isNotEmpty() }?.let { body["order_number"] = it }
+                        normalizeDecimalForApi(purchaseCost)?.let { body["purchase_cost"] = it }
+                        if (hasPurchaseDate) {
+                            parseApiDate(purchaseDateText)?.let { body["purchase_date"] = formatApiDate(it) }
                         }
+                        warrantyMonths.filter { it.isDigit() }.takeIf { it.isNotEmpty() }?.let {
+                            body["warranty_months"] = it
+                        }
+                        if (selectedLocationId > 0) body["location_id"] = selectedLocationId
+                        if (selectedCompanyId > 0) body["company_id"] = selectedCompanyId
+                        if (selectedSupplierId > 0) body["supplier_id"] = selectedSupplierId
+                        customFieldValues.forEach { (key, rawValue) ->
+                            val trimmed = rawValue.trim()
+                            if (trimmed.isNotEmpty()) {
+                                val apiKey = resolveCustomFieldApiKey(key, null, displayedFieldDefs)
+                                body[apiKey] = trimmed
+                            }
+                        }
+                        val imageUpload = pendingImage?.let { UploadFile("asset.jpg", it.mimeType, it.bytes) }
+                        viewModel.apiClient.createAsset(body, imageUpload)
+                    } else {
+                        null
                     }
 
-                    val imageUpload = pendingImage?.let { UploadFile("asset.jpg", it.mimeType, it.bytes) }
-                    val result = viewModel.apiClient.createAsset(body, imageUpload)
-                    isSaving = false
-                    if (result.success) {
-                        viewModel.syncInBackground()
-                        onCreated(result.id)
-                        onDismiss()
-                    } else {
-                        errorMessage = result.message ?: lastApiMessage ?: L10n.string("create_failed")
+                    if (createResult != null && !createResult.success) {
+                        isSaving = false
+                        errorMessage = createResult.message
+                            ?: viewModel.lastApiMessage.value
+                            ?: L10n.string("create_failed")
+                        return@launch
                     }
+
+                    val assetId = existingId
+                        ?: createResult?.id
+                        ?: viewModel.assets.value.firstOrNull {
+                            it.decodedAssetTag.equals(tagSent, ignoreCase = true)
+                        }?.id
+                    if (assetId != null) persistedAssetId = assetId
+
+                    if (checkoutEnabled) {
+                        val checkoutBody = mutableMapOf<String, Any?>(
+                            "name" to assetName,
+                            "note" to checkoutNote,
+                        )
+                        val checkoutOk = when (target) {
+                            AddAssetCheckoutTarget.User -> {
+                                if (assetId != null && checkoutUserId > 0) {
+                                    checkoutBody["assigned_user"] = checkoutUserId
+                                    checkoutBody["checkout_to_type"] = "user"
+                                    viewModel.apiClient.checkoutAssetCustom(assetId, checkoutBody)
+                                } else {
+                                    false
+                                }
+                            }
+                            AddAssetCheckoutTarget.Location -> {
+                                if (assetId != null && checkoutLocationId > 0) {
+                                    checkoutBody["assigned_location"] = checkoutLocationId
+                                    checkoutBody["checkout_to_type"] = "location"
+                                    viewModel.apiClient.checkoutAssetCustom(assetId, checkoutBody)
+                                } else {
+                                    false
+                                }
+                            }
+                        }
+                        if (!checkoutOk) {
+                            isSaving = false
+                            errorMessage = if (assetId == null) {
+                                L10n.string("checkout_failed")
+                            } else {
+                                viewModel.lastApiMessage.value ?: L10n.string("checkout_failed")
+                            }
+                            return@launch
+                        }
+                    } else {
+                        viewModel.syncInBackground()
+                    }
+
+                    isSaving = false
+                    onCreated(assetId)
+                    onDismiss()
                 }
             },
         ) {
@@ -302,6 +407,62 @@ fun AddAssetSheet(
                 onClear = { selectedStatusId = 0 },
                 onSelected = { selectedStatusId = it.id },
             )
+            if (selectedStatusIsDeployable) {
+                FormSectionTitle(L10n.string("check_out"))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(L10n.string("check_out"), modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = checkOutAfterCreate,
+                        onCheckedChange = { checkOutAfterCreate = it },
+                    )
+                }
+                if (checkOutAfterCreate) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = checkoutTarget == AddAssetCheckoutTarget.User,
+                            onClick = { checkoutTarget = AddAssetCheckoutTarget.User },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        ) {
+                            Text(L10n.string("user"))
+                        }
+                        SegmentedButton(
+                            selected = checkoutTarget == AddAssetCheckoutTarget.Location,
+                            onClick = { checkoutTarget = AddAssetCheckoutTarget.Location },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        ) {
+                            Text(L10n.string("location"))
+                        }
+                    }
+                    when (checkoutTarget) {
+                        AddAssetCheckoutTarget.User -> SearchablePickerField(
+                            label = L10n.string("select_user_short"),
+                            items = pickerUsers.map {
+                                PickerItem(
+                                    it.id,
+                                    it.decodedName,
+                                    it.decodedEmail,
+                                    searchText = userPickerSearchText(it),
+                                )
+                            },
+                            selectedId = selectedCheckoutUserId.takeIf { it > 0 },
+                            placeholder = L10n.string("select_user"),
+                            onSelected = { selectedCheckoutUserId = it.id },
+                        )
+                        AddAssetCheckoutTarget.Location -> SearchablePickerField(
+                            label = L10n.string("select_location_short"),
+                            items = locations.map {
+                                PickerItem(it.id, it.decodedName, searchText = locationPickerSearchText(it))
+                            },
+                            selectedId = selectedCheckoutLocationId.takeIf { it > 0 },
+                            placeholder = L10n.string("choose_location"),
+                            onSelected = { selectedCheckoutLocationId = it.id },
+                        )
+                    }
+                }
+            }
             CreatableSearchablePickerField(
                 label = L10n.string("default_location"),
                 items = locations.map { PickerItem(it.id, it.decodedName) },

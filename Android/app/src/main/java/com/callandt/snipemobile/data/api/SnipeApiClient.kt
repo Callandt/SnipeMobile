@@ -1834,10 +1834,18 @@ class SnipeApiClient(
     suspend fun updateAccessory(accessoryId: Int, body: Map<String, Any?>): Boolean =
         patchEntity("$baseUrl/api/v1/accessories/$accessoryId", body) {
             val notes = body["notes"] as? String
+            val requestable = body["requestable"] as? Boolean
+            val archived = body["archived"] as? Boolean
             withContext(Dispatchers.Main) {
                 val current = _accessories.value.firstOrNull { it.id == accessoryId }
-                if (current != null && notes != null) {
-                    replaceCachedItem(current.copy(notes = notes.takeIf { it.isNotBlank() }))
+                if (current != null) {
+                    replaceCachedItem(
+                        current.copy(
+                            notes = if (notes != null) notes.takeIf { it.isNotBlank() } else current.notes,
+                            requestable = requestable ?: current.requestable,
+                            archived = archived ?: current.archived,
+                        ),
+                    )
                 }
             }
             refreshAccessoryInCache(accessoryId)
@@ -2839,8 +2847,13 @@ class SnipeApiClient(
 
     private fun replaceCachedItem(item: Accessory) {
         val list = _accessories.value.toMutableList()
-        val idx = list.indexOfFirst { it.id == item.id }
-        if (idx >= 0) list[idx] = item else list.add(0, item)
+        // Default accessories index excludes archived rows (same as Snipe-IT).
+        if (item.archived) {
+            list.removeAll { it.id == item.id }
+        } else {
+            val idx = list.indexOfFirst { it.id == item.id }
+            if (idx >= 0) list[idx] = item else list.add(0, item)
+        }
         _accessories.value = list
         scheduleCacheSave()
     }

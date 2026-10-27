@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Laptop
@@ -22,15 +21,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,9 +44,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.CardLayoutPreviewCard
+import com.callandt.snipemobile.ui.components.OptionPickerDialog
+import com.callandt.snipemobile.ui.components.OptionPickerEntry
 import com.callandt.snipemobile.ui.components.SettingsGroupedCard
 import com.callandt.snipemobile.ui.components.SettingsRow
 import com.callandt.snipemobile.ui.components.SettingsSectionHeader
+import com.callandt.snipemobile.ui.components.StringPickerField
 import com.callandt.snipemobile.ui.components.cardFieldIcon
 import com.callandt.snipemobile.ui.util.CardIcons
 import com.callandt.snipemobile.ui.util.CardKind
@@ -382,27 +380,27 @@ private fun AddFieldRow(
     fields: List<String>,
     onSelect: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxWidth()) {
-        TextButton(onClick = { expanded = true }) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Text(L10n.string("card_layout_add_field"))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            fields.forEach { fieldId ->
-                DropdownMenuItem(
-                    text = { Text(L10n.string(CardKindSpec.labelKey(fieldId))) },
-                    onClick = {
-                        expanded = false
-                        onSelect(fieldId)
-                    },
-                )
-            }
-        }
+    var showDialog by remember { mutableStateOf(false) }
+    TextButton(onClick = { showDialog = true }) {
+        Icon(Icons.Default.Add, contentDescription = null)
+        Text(L10n.string("card_layout_add_field"))
+    }
+    if (showDialog) {
+        OptionPickerDialog(
+            title = L10n.string("card_layout_add_field"),
+            options = fields.map {
+                OptionPickerEntry(value = it, label = L10n.string(CardKindSpec.labelKey(it)))
+            },
+            selectedValue = null,
+            onSelected = {
+                showDialog = false
+                onSelect(it.value)
+            },
+            onDismiss = { showDialog = false },
+        )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CardFieldDropdown(
     selectedId: String,
@@ -410,50 +408,23 @@ private fun CardFieldDropdown(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val label = if (selectedId.isEmpty()) {
-        L10n.string("card_layout_subtitle_none")
-    } else {
-        L10n.string(CardKindSpec.labelKey(selectedId))
-    }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
+    StringPickerField(
+        label = L10n.string("select"),
+        options = fields.map { fieldId ->
+            val text = if (fieldId.isEmpty()) {
+                L10n.string("card_layout_subtitle_none")
+            } else {
+                L10n.string(CardKindSpec.labelKey(fieldId))
+            }
+            fieldId to text
+        },
+        selectedValue = selectedId,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        OutlinedTextField(
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth(),
-            readOnly = true,
-            value = label,
-            onValueChange = {},
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            fields.forEach { fieldId ->
-                val text = if (fieldId.isEmpty()) {
-                    L10n.string("card_layout_subtitle_none")
-                } else {
-                    L10n.string(CardKindSpec.labelKey(fieldId))
-                }
-                DropdownMenuItem(
-                    text = { Text(text) },
-                    onClick = {
-                        expanded = false
-                        onSelect(fieldId)
-                    },
-                    trailingIcon = if (fieldId == selectedId) {
-                        { Icon(Icons.Default.Check, contentDescription = null) }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
-    }
+        showLabel = false,
+        onSelected = onSelect,
+    )
 }
 
 private fun cardKindIcon(kind: CardKind): ImageVector = when (kind) {

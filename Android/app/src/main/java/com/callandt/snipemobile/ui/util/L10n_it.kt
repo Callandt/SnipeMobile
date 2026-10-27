@@ -143,6 +143,7 @@ internal object L10n_it {
         "cancel" to "Annulla",
         "cannot_archive" to "Impossibile archiviare",
         "cannot_archive_msg" to "Questo asset è ancora assegnato a un utente o a una sede. Esegui il check-in prima di impostarlo come «archiviato».",
+        "accessory_archive_blocked" to "Esegui il check-in di tutte le unità ancora in prestito prima di archiviare questo accessorio.",
         "card_layout_add_field" to "Aggiungi campo",
         "card_layout_detail_slot" to "Sotto il titolo",
         "card_layout_line_n" to "Riga %d",

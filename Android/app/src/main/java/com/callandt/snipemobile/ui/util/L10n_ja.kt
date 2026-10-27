@@ -143,6 +143,7 @@ internal object L10n_ja {
         "cancel" to "キャンセル",
         "cannot_archive" to "アーカイブできません",
         "cannot_archive_msg" to "この資産はまだユーザーまたはロケーションに割り当てられています。アーカイブにする前にチェックインしてください。",
+        "accessory_archive_blocked" to "このアクセサリをアーカイブする前に、貸し出し中のすべてをチェックインしてください。",
         "card_layout_add_field" to "項目を追加",
         "card_layout_detail_slot" to "タイトルの下",
         "card_layout_line_n" to "行 %d",

@@ -298,11 +298,12 @@ struct AssetEditSheet: View {
                     return IdNamePair(id: model.id, name: HTMLDecoder.decode(model.name))
                 })).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 if !modelPairs.isEmpty {
-                    Picker("Model", selection: $selectedModelId) {
-                        ForEach(modelPairs) { pair in
-                            Text(pair.name).tag(pair.id)
-                        }
-                    }
+                    AdaptivePickerRow(
+                        title: "Model",
+                        items: modelPairs.map { (value: $0.id, label: $0.name) },
+                        selection: $selectedModelId,
+                        emptyOption: nil
+                    )
                     .disabled(true)
                     .opacity(0.6)
                 }

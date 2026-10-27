@@ -143,6 +143,7 @@ internal object L10n_pt {
         "cancel" to "Cancelar",
         "cannot_archive" to "Não é possível arquivar",
         "cannot_archive_msg" to "Este ativo ainda está atribuído a um usuário ou local. Faça o check-in antes de definir como 'arquivado'.",
+        "accessory_archive_blocked" to "Faça o check-in de todas as unidades emprestadas antes de arquivar este acessório.",
         "card_layout_add_field" to "Adicionar campo",
         "card_layout_detail_slot" to "Abaixo do título",
         "card_layout_line_n" to "Linha %d",

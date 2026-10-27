@@ -50,8 +50,6 @@ import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -93,6 +91,8 @@ import com.callandt.snipemobile.data.api.SnipeITOAuthService
 import com.callandt.snipemobile.debug.AppLog
 import com.callandt.snipemobile.debug.DebugLogStore
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.OptionPickerDialog
+import com.callandt.snipemobile.ui.components.OptionPickerEntry
 import com.callandt.snipemobile.ui.components.SettingsGroupedCard
 import com.callandt.snipemobile.ui.onboarding.SnipeITOAuthWebSheet
 import com.callandt.snipemobile.ui.components.SettingsRow
@@ -621,49 +621,32 @@ private fun SettingsAppearancePickerRow(
     selectedTheme: String,
     onSelect: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val options = listOf("system", "light", "dark")
-    val label = when (selectedTheme) {
-        "light" -> L10n.string("light")
-        "dark" -> L10n.string("dark")
-        else -> L10n.string("system")
-    }
-    Box {
-        SettingsRow(
-            icon = Icons.Default.Brush,
-            iconColor = Color(0xFFAF52DE),
+    var showDialog by remember { mutableStateOf(false) }
+    val options = listOf(
+        "system" to L10n.string("system"),
+        "light" to L10n.string("light"),
+        "dark" to L10n.string("dark"),
+    )
+    val label = options.firstOrNull { it.first == selectedTheme }?.second ?: L10n.string("system")
+    SettingsRow(
+        icon = Icons.Default.Brush,
+        iconColor = Color(0xFFAF52DE),
+        title = L10n.string("appearance"),
+        value = label,
+        showChevron = true,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        OptionPickerDialog(
             title = L10n.string("appearance"),
-            value = label,
-            showChevron = false,
-            onClick = { expanded = true },
+            options = options.map { OptionPickerEntry(value = it.first, label = it.second) },
+            selectedValue = selectedTheme,
+            onSelected = {
+                onSelect(it.value)
+                showDialog = false
+            },
+            onDismiss = { showDialog = false },
         )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            options.forEach { theme ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            when (theme) {
-                                "light" -> L10n.string("light")
-                                "dark" -> L10n.string("dark")
-                                else -> L10n.string("system")
-                            },
-                        )
-                    },
-                    onClick = {
-                        onSelect(theme)
-                        expanded = false
-                    },
-                    trailingIcon = if (theme == selectedTheme) {
-                        { Icon(Icons.Default.Check, contentDescription = null) }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
     }
 }
 
@@ -672,38 +655,31 @@ private fun SettingsLanguagePickerRow(
     selectedCode: String,
     onSelect: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var showDialog by remember { mutableStateOf(false) }
     val options = listOf(L10n.SYSTEM_LANGUAGE) + L10n.languagePickerCodes
     val effectiveSelected =
         if (selectedCode == L10n.deviceLanguageCode) L10n.SYSTEM_LANGUAGE else selectedCode
-    Box {
-        SettingsRow(
-            icon = Icons.Default.Language,
-            iconColor = Color(0xFF007AFF),
+    SettingsRow(
+        icon = Icons.Default.Language,
+        iconColor = Color(0xFF007AFF),
+        title = L10n.string("app_language"),
+        value = L10n.languageDisplayName(effectiveSelected),
+        showChevron = true,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        OptionPickerDialog(
             title = L10n.string("app_language"),
-            value = L10n.languageDisplayName(effectiveSelected),
-            showChevron = false,
-            onClick = { expanded = true },
+            options = options.map {
+                OptionPickerEntry(value = it, label = L10n.languageDisplayName(it))
+            },
+            selectedValue = effectiveSelected,
+            onSelected = {
+                onSelect(it.value)
+                showDialog = false
+            },
+            onDismiss = { showDialog = false },
         )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            options.forEach { code ->
-                DropdownMenuItem(
-                    text = { Text(L10n.languageDisplayName(code)) },
-                    onClick = {
-                        onSelect(code)
-                        expanded = false
-                    },
-                    trailingIcon = if (code == effectiveSelected) {
-                        { Icon(Icons.Default.Check, contentDescription = null) }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
     }
 }
 

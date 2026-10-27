@@ -143,6 +143,7 @@ internal object L10n_de {
         "cancel" to "Abbrechen",
         "cannot_archive" to "Archivieren nicht möglich",
         "cannot_archive_msg" to "Dieses Asset ist noch einem Benutzer oder Standort zugewiesen. Bitte checken Sie es ein, bevor Sie den Status auf „archiviert“ setzen.",
+        "accessory_archive_blocked" to "Checken Sie alle ausgegebenen Einheiten ein, bevor Sie dieses Zubehör archivieren.",
         "card_layout_add_field" to "Feld hinzufügen",
         "card_layout_detail_slot" to "Unter dem Titel",
         "card_layout_line_n" to "Zeile %d",

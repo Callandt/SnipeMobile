@@ -18,6 +18,8 @@ struct AddAccessorySheet: View {
     @State private var selectedManufacturerId: Int?
     @State private var selectedSupplierId: Int?
     @State private var notes = ""
+    @State private var requestable = false
+    @State private var archived = false
     @State private var isSaving = false
     @State private var resultMessage = ""
     @State private var showResult = false
@@ -32,6 +34,7 @@ struct AddAccessorySheet: View {
                 generalSection
                 purchaseSection
                 notesSection
+                optionsSection
             }
             .navigationTitle(L10n.string("new_accessory"))
             .toolbar { toolbarContent }
@@ -168,6 +171,25 @@ struct AddAccessorySheet: View {
         }
     }
 
+    private var optionsSection: some View {
+        Section {
+            Toggle(L10n.string("mgmt_requestable"), isOn: Binding(
+                get: { requestable },
+                set: { value in
+                    requestable = value
+                    if value { archived = false }
+                }
+            ))
+            Toggle(L10n.string("status_archived"), isOn: Binding(
+                get: { archived },
+                set: { value in
+                    archived = value
+                    if value { requestable = false }
+                }
+            ))
+        }
+    }
+
     private func parsedQuantity() -> Int {
         max(1, Int(quantityText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1)
     }
@@ -205,7 +227,9 @@ struct AddAccessorySheet: View {
                 customFields: nil,
                 notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? nil
-                    : notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : notes.trimmingCharacters(in: .whitespacesAndNewlines),
+                requestable: requestable,
+                archived: archived
             )
             await MainActor.run {
                 isSaving = false

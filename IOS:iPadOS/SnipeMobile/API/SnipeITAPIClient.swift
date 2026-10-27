@@ -676,6 +676,11 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func applyUpdatedAccessory(_ accessory: Accessory) {
+        // Default accessories index excludes archived rows (same as Snipe-IT).
+        if accessory.archived {
+            accessories.removeAll { $0.id == accessory.id }
+            return
+        }
         if let idx = accessories.firstIndex(where: { $0.id == accessory.id }) {
             accessories[idx] = accessory
         } else {
@@ -3724,7 +3729,9 @@ class SnipeITAPIClient: ObservableObject {
         manufacturerId: Int?,
         supplierId: Int?,
         customFields: [String: String]?,
-        notes: String? = nil
+        notes: String? = nil,
+        requestable: Bool = false,
+        archived: Bool = false
     ) async -> (success: Bool, id: Int?) {
         guard let url = URL(string: "\(baseURL)/api/v1/accessories") else { return (false, nil) }
         var request = URLRequest(url: url)
@@ -3764,6 +3771,8 @@ class SnipeITAPIClient: ObservableObject {
         if let v = notes, !v.isEmpty {
             body["notes"] = v
         }
+        body["requestable"] = requestable
+        body["archived"] = archived
         if let cf = customFields, !cf.isEmpty {
             body["custom_fields"] = cf
         }
@@ -3806,7 +3815,9 @@ class SnipeITAPIClient: ObservableObject {
         locationId: Int?,
         manufacturerId: Int?,
         supplierId: Int?,
-        notes: String? = nil
+        notes: String? = nil,
+        requestable: Bool = false,
+        archived: Bool = false
     ) async -> Bool {
         guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)") else { return false }
         var request = URLRequest(url: url)
@@ -3849,6 +3860,8 @@ class SnipeITAPIClient: ObservableObject {
             body["supplier_id"] = v
         }
         body["notes"] = notes ?? ""
+        body["requestable"] = requestable
+        body["archived"] = archived
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
             let (data, response) = try await urlSession.data(for: request)

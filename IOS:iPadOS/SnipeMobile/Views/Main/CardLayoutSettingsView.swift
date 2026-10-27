@@ -90,25 +90,20 @@ struct CardLayoutKindEditor: View {
             }
 
             Section {
-                Picker(L10n.string("card_layout_title_slot"), selection: titleBinding) {
-                    ForEach(spec.fields, id: \.self) { fieldID in
-                        Text(L10n.string(CardKindSpec.labelKey(for: fieldID))).tag(fieldID)
-                    }
-                }
+                fieldPicker(
+                    title: L10n.string("card_layout_title_slot"),
+                    selection: titleBinding
+                )
             } header: {
                 Text(L10n.string("card_layout_title_slot"))
             }
 
             Section {
                 ForEach(Array((layout.details ?? []).enumerated()), id: \.element) { index, fieldID in
-                    Picker(
-                        L10n.string(CardKindSpec.labelKey(for: fieldID)),
+                    fieldPicker(
+                        title: L10n.string("card_layout_detail_slot"),
                         selection: detailBinding(at: index, current: fieldID)
-                    ) {
-                        ForEach(spec.fields, id: \.self) { option in
-                            Text(L10n.string(CardKindSpec.labelKey(for: option))).tag(option)
-                        }
-                    }
+                    )
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
                             rememberRemoved(fieldID, asMeta: false)
@@ -120,15 +115,9 @@ struct CardLayoutKindEditor: View {
                 }
                 if (layout.details ?? []).count < CardKindSpec.maxDetailLines,
                    !layout.unusedFields(in: spec).isEmpty {
-                    Menu {
-                        ForEach(layout.unusedFields(in: spec), id: \.self) { fieldID in
-                            Button(L10n.string(CardKindSpec.labelKey(for: fieldID))) {
-                                forgetRemoved(fieldID)
-                                save(layout.appendingDetail(fieldID))
-                            }
-                        }
-                    } label: {
-                        Label(L10n.string("card_layout_add_field"), systemImage: "plus")
+                    AddCardFieldButton(fields: layout.unusedFields(in: spec)) { fieldID in
+                        forgetRemoved(fieldID)
+                        save(layout.appendingDetail(fieldID))
                     }
                 }
             } header: {
@@ -140,14 +129,10 @@ struct CardLayoutKindEditor: View {
             Section {
                 ForEach(Array((layout.meta ?? []).enumerated()), id: \.element) { index, fieldID in
                     HStack(spacing: 10) {
-                        Picker(
-                            L10n.string(CardKindSpec.labelKey(for: fieldID)),
+                        fieldPicker(
+                            title: L10n.string("card_layout_meta_slot"),
                             selection: metaBinding(at: index, current: fieldID)
-                        ) {
-                            ForEach(spec.fields, id: \.self) { option in
-                                Text(L10n.string(CardKindSpec.labelKey(for: option))).tag(option)
-                            }
-                        }
+                        )
                         .layoutPriority(1)
                         metaIconPicker(for: fieldID)
                     }
@@ -161,15 +146,9 @@ struct CardLayoutKindEditor: View {
                     }
                 }
                 if !layout.unusedFields(in: spec).isEmpty {
-                    Menu {
-                        ForEach(layout.unusedFields(in: spec), id: \.self) { fieldID in
-                            Button(L10n.string(CardKindSpec.labelKey(for: fieldID))) {
-                                forgetRemoved(fieldID)
-                                save(layout.appendingMeta(fieldID))
-                            }
-                        }
-                    } label: {
-                        Label(L10n.string("card_layout_add_field"), systemImage: "plus")
+                    AddCardFieldButton(fields: layout.unusedFields(in: spec)) { fieldID in
+                        forgetRemoved(fieldID)
+                        save(layout.appendingMeta(fieldID))
                     }
                 }
             } header: {
@@ -188,6 +167,16 @@ struct CardLayoutKindEditor: View {
         }
         .navigationTitle(L10n.string(kind.titleKey))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func fieldPicker(title: String, selection: Binding<String>) -> some View {
+        AdaptivePickerRow(
+            title: title,
+            items: spec.fields.map { (value: $0, label: L10n.string(CardKindSpec.labelKey(for: $0))) },
+            selection: selection,
+            emptyOption: nil,
+            valueOnly: true
+        )
     }
 
     private func metaIconPicker(for fieldID: String) -> some View {
@@ -294,6 +283,39 @@ struct CardLayoutKindEditor: View {
         CloudSettingsStore.shared.setCardLayoutsJSON(cardLayoutsJSON)
         if kind == .asset {
             preferAssetNameInLists = next.layout(for: .asset).title == CardFieldID.name
+        }
+    }
+}
+
+private struct AddCardFieldButton: View {
+    let fields: [String]
+    let onSelect: (String) -> Void
+
+    @State private var showSheet = false
+    @State private var selection = ""
+
+    var body: some View {
+        Button {
+            selection = ""
+            showSheet = true
+        } label: {
+            Label(L10n.string("card_layout_add_field"), systemImage: "plus")
+        }
+        .sheet(isPresented: $showSheet) {
+            OptionPickerSheet(
+                title: L10n.string("card_layout_add_field"),
+                items: fields.map { (value: $0, label: L10n.string(CardKindSpec.labelKey(for: $0))) },
+                selection: Binding(
+                    get: { selection },
+                    set: { newValue in
+                        selection = newValue
+                        if !newValue.isEmpty {
+                            onSelect(newValue)
+                        }
+                    }
+                ),
+                emptyOption: nil
+            )
         }
     }
 }

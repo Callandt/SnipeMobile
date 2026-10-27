@@ -143,6 +143,7 @@ internal object L10n_zh {
         "cancel" to "取消",
         "cannot_archive" to "无法归档",
         "cannot_archive_msg" to "此资产仍分配给用户或位置。请先签入资产，再将其设为“已归档”。",
+        "accessory_archive_blocked" to "归档此配件前，请先签入所有已借出的数量。",
         "card_layout_add_field" to "添加字段",
         "card_layout_detail_slot" to "标题下方",
         "card_layout_line_n" to "第 %d 行",

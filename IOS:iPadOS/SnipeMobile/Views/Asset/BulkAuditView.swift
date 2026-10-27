@@ -51,12 +51,15 @@ struct BulkAuditView: View {
 
                 Section(header: Text(L10n.string("bulk_audit_options"))) {
                     if !apiClient.locations.isEmpty {
-                        Picker(L10n.string("location_optional"), selection: $selectedLocationId) {
-                            Text(L10n.string("none")).tag(0)
-                            ForEach(apiClient.locations, id: \.id) { location in
-                                Text(location.decodedName).tag(location.id)
-                            }
+                        let sortedLocations = apiClient.locations.sorted {
+                            $0.decodedName.localizedCaseInsensitiveCompare($1.decodedName) == .orderedAscending
                         }
+                        AdaptivePickerRow(
+                            title: L10n.string("location_optional"),
+                            items: sortedLocations.map { (value: $0.id, label: $0.decodedName) },
+                            selection: $selectedLocationId,
+                            emptyOption: (0, L10n.string("none"))
+                        )
                         if selectedLocationId != 0 {
                             Toggle(L10n.string("bulk_audit_update_location"), isOn: $updateLocation)
                         }

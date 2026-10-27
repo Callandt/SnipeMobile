@@ -886,6 +886,8 @@ struct Accessory: Identifiable, Codable, Hashable {
     let modelNumber: String?
     let image: String?
     let notes: String?
+    let requestable: Bool
+    let archived: Bool
     let createdAt: DateInfo?
     let updatedAt: DateInfo?
 
@@ -919,6 +921,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         modelNumber: String? = nil,
         image: String? = nil,
         notes: String? = nil,
+        requestable: Bool = false,
+        archived: Bool = false,
         createdAt: DateInfo? = nil,
         updatedAt: DateInfo? = nil
     ) {
@@ -942,6 +946,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         self.modelNumber = modelNumber
         self.image = image
         self.notes = notes
+        self.requestable = requestable
+        self.archived = archived
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.decodedName = HTMLDecoder.decode(name)
@@ -973,6 +979,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         case modelNumber = "model_number"
         case image
         case notes
+        case requestable
+        case archived
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -999,6 +1007,8 @@ struct Accessory: Identifiable, Codable, Hashable {
         lhs.checkoutsCount == rhs.checkoutsCount &&
         lhs.image == rhs.image &&
         lhs.notes == rhs.notes &&
+        lhs.requestable == rhs.requestable &&
+        lhs.archived == rhs.archived &&
         lhs.createdAt?.datetime == rhs.createdAt?.datetime &&
         lhs.updatedAt?.datetime == rhs.updatedAt?.datetime
     }
@@ -1031,6 +1041,8 @@ extension Accessory {
         let modelNumber = try? container.decodeIfPresent(String.self, forKey: .modelNumber)
         let image = try? container.decodeIfPresent(String.self, forKey: .image)
         let notes = try? container.decodeIfPresent(String.self, forKey: .notes)
+        let requestable = Self.decodeFlexibleBool(container, key: .requestable, default: false)
+        let archived = Self.decodeFlexibleBool(container, key: .archived, default: false)
         let createdAt = try? container.decodeIfPresent(DateInfo.self, forKey: .createdAt)
         let updatedAt = try? container.decodeIfPresent(DateInfo.self, forKey: .updatedAt)
 
@@ -1055,9 +1067,54 @@ extension Accessory {
             modelNumber: modelNumber,
             image: image,
             notes: notes,
+            requestable: requestable,
+            archived: archived,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(statusLabel, forKey: .statusLabel)
+        try container.encodeIfPresent(assignedTo, forKey: .assignedTo)
+        try container.encodeIfPresent(location, forKey: .location)
+        try container.encodeIfPresent(manufacturer, forKey: .manufacturer)
+        try container.encodeIfPresent(category, forKey: .category)
+        try container.encodeIfPresent(company, forKey: .company)
+        try container.encodeIfPresent(supplier, forKey: .supplier)
+        try container.encodeIfPresent(qty, forKey: .qty)
+        try container.encodeIfPresent(minAmt, forKey: .minAmt)
+        try container.encodeIfPresent(remaining, forKey: .remaining)
+        try container.encodeIfPresent(checkoutsCount, forKey: .checkoutsCount)
+        try container.encodeIfPresent(orderNumber, forKey: .orderNumber)
+        try container.encodeIfPresent(purchaseCost, forKey: .purchaseCost)
+        try container.encodeIfPresent(purchaseDate, forKey: .purchaseDate)
+        try container.encodeIfPresent(modelNumber, forKey: .modelNumber)
+        try container.encodeIfPresent(image, forKey: .image)
+        try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encode(requestable, forKey: .requestable)
+        try container.encode(archived, forKey: .archived)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+    }
+
+    /// Flexible bool (missing, 0/1, true/false). Missing means false.
+    private static func decodeFlexibleBool(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys,
+        default defaultValue: Bool
+    ) -> Bool {
+        if let value = try? container.decodeIfPresent(Bool.self, forKey: key) { return value }
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) { return value == 1 }
+        if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+            let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if lowered == "1" || lowered == "true" { return true }
+            if lowered == "0" || lowered == "false" { return false }
+        }
+        return defaultValue
     }
 
     private static func decodeOptionalInt(

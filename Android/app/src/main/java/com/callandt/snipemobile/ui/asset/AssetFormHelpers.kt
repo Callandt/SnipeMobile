@@ -40,6 +40,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -51,9 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -145,11 +144,27 @@ internal fun FormDateField(
 internal fun statusDisplayName(label: StatusLabel): String =
     AssetStatusFilterSupport.displayName(label)
 
+/**
+ * Checkout is only offered for deployable statuses (Ready to Deploy).
+ * Archived / pending / undeployable stay hidden — same idea as iOS.
+ */
 internal fun isDeployableStatus(label: StatusLabel): Boolean {
-    val type = label.type?.trim()?.lowercase().orEmpty()
-    if (type.isNotEmpty()) return type == "deployable"
+    val type = label.resolvedType
+    when (type) {
+        "deployable" -> return true
+        "pending", "undeployable", "archived" -> return false
+    }
     val meta = label.statusMeta?.trim()?.lowercase().orEmpty()
-    return meta == "deployable" || meta == "ready_to_deploy" || meta.isEmpty()
+    when (meta) {
+        "deployable", "ready_to_deploy" -> return true
+        "pending", "undeployable", "archived", "deployed" -> return false
+    }
+    val name = label.decodedName.lowercase()
+    if (name.contains("ready to deploy") || name.contains("klaar voor")) return true
+    if (name.contains("archiv") || name.contains("pending") || name.contains("undeploy")) {
+        return false
+    }
+    return false
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -204,7 +219,7 @@ internal fun AssetFormSheetScaffold(
 
 class SheetLayer(
     val id: Any,
-    val content: @Composable () -> Unit,
+    val contentState: androidx.compose.runtime.MutableState<@Composable () -> Unit>,
 )
 
 // Covers the tab bar. Title stays under the status bar.
@@ -215,8 +230,13 @@ class MainSheetOverlay {
     val layers: List<SheetLayer> get() = entries
 
     fun upsert(id: Any, content: @Composable () -> Unit) {
-        if (entries.none { it.id == id }) {
-            entries.add(SheetLayer(id, content))
+        val index = entries.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            // Update in place so the host recomposes with the latest form state
+            // (status → checkout toggle, etc.) without remounting the sheet.
+            entries[index].contentState.value = content
+        } else {
+            entries.add(SheetLayer(id, mutableStateOf(content)))
         }
     }
 
@@ -237,6 +257,7 @@ fun MainSheetOverlayHost(content: @Composable () -> Unit) {
             overlay.layers.forEach { layer ->
                 key(layer.id) {
                     val scrimClicks = remember { MutableInteractionSource() }
+                    val sheetContent by layer.contentState
                     Box(Modifier.fillMaxSize()) {
                         Box(
                             Modifier
@@ -249,7 +270,7 @@ fun MainSheetOverlayHost(content: @Composable () -> Unit) {
                                 ),
                         )
                         Box(Modifier.fillMaxSize().statusBarsPadding()) {
-                            layer.content()
+                            sheetContent()
                         }
                     }
                 }
@@ -265,25 +286,28 @@ internal fun AssetFullScreenSheet(
 ) {
     val overlay = LocalMainSheetOverlay.current
     val isTablet = WindowAdaptive.isTabletLayout()
+
+    // Phone: host in the activity tree so status/nav insets and adjustResize
+    // recover after the IME closes. Popup + LocalWindowInfo.containerSize can
+    // stay shrunk (title under status bar, tab bar peeking through).
     if (overlay != null && !isTablet) {
         val id = remember { Any() }
-        val latestContent = rememberUpdatedState(content)
-        val latestDismiss = rememberUpdatedState(onDismiss)
-        BackHandler { latestDismiss.value() }
+        val latestDismiss by rememberUpdatedState(onDismiss)
+        BackHandler { latestDismiss() }
+        SideEffect {
+            // Upsert every frame so form state (checkout toggle, etc.) reaches the host.
+            overlay.upsert(id, content)
+        }
         DisposableEffect(overlay, id) {
-            overlay.upsert(id) { latestContent.value() }
             onDispose { overlay.remove(id) }
         }
         return
     }
 
-    val density = LocalDensity.current
-    val windowSize = LocalWindowInfo.current.containerSize
-    val metrics = LocalContext.current.resources.displayMetrics
-    val widthPx = windowSize.width.takeIf { it > 0 } ?: metrics.widthPixels
-    val heightPx = windowSize.height.takeIf { it > 0 } ?: metrics.heightPixels
-    val widthDp = with(density) { widthPx.toDp() }
-    val heightDp = with(density) { heightPx.toDp() }
+    // Tablet / fallback: Popup sized to screen config (not IME-shrunk container).
+    val configuration = LocalConfiguration.current
+    val widthDp = configuration.screenWidthDp.dp
+    val heightDp = configuration.screenHeightDp.dp
     val windowAnchor = remember {
         object : PopupPositionProvider {
             override fun calculatePosition(
@@ -295,7 +319,6 @@ internal fun AssetFullScreenSheet(
         }
     }
 
-    // Dialog goes blank after a few NavHost backs.
     Popup(
         popupPositionProvider = windowAnchor,
         onDismissRequest = onDismiss,

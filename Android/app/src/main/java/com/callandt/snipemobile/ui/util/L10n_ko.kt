@@ -143,6 +143,7 @@ internal object L10n_ko {
         "cancel" to "취소",
         "cannot_archive" to "보관할 수 없음",
         "cannot_archive_msg" to "이 자산은 여전히 사용자 또는 위치에 할당되어 있습니다. '보관됨'으로 설정하기 전에 자산을 체크인하세요.",
+        "accessory_archive_blocked" to "이 액세서리를 보관하기 전에 체크아웃된 수량을 모두 체크인하세요.",
         "card_layout_add_field" to "항목 추가",
         "card_layout_detail_slot" to "제목 아래",
         "card_layout_line_n" to "%d번째 줄",

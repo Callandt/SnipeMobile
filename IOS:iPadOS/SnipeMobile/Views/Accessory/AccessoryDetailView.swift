@@ -22,11 +22,13 @@ struct AccessoryDetailView: View {
     @State private var isDeleting = false
     @State private var showDeleteError = false
     @State private var deleteErrorMessage = ""
+    /// Last fetched copy. Stays visible after the default list drops an archived accessory.
+    @State private var retainedAccessory: Accessory?
     @Environment(\.dismiss) private var dismiss
 
     /// From apiClient or passed in.
     private var currentAccessory: Accessory {
-        apiClient.accessories.first { $0.id == accessory.id } ?? accessory
+        apiClient.accessories.first { $0.id == accessory.id } ?? retainedAccessory ?? accessory
     }
 
     private var resolvedImageURL: URL? {
@@ -46,6 +48,7 @@ struct AccessoryDetailView: View {
 
     /// No stock. Checkout disabled.
     private var canCheckout: Bool {
+        if currentAccessory.archived { return false }
         guard let remaining = currentAccessory.remaining else { return true }
         return remaining > 0
     }
@@ -246,7 +249,12 @@ struct AccessoryDetailView: View {
         .onChange(of: accessory.id) { reloadCheckedOut(clearImageWhenAbsent: true) }
         .sheet(isPresented: $showEditSheet) {
             AccessoryEditSheet(apiClient: apiClient, accessory: currentAccessory, isPresented: $showEditSheet, onSuccess: {
-                Task { await apiClient.refreshAccessoryInCache(accessoryId: accessory.id) }
+                Task {
+                    if let updated = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id) {
+                        retainedAccessory = updated
+                        apiClient.applyUpdatedAccessory(updated)
+                    }
+                }
             })
         }
         .sheet(isPresented: $showCheckoutSheet) {
@@ -354,6 +362,9 @@ struct AccessoryDetailView: View {
         if !currentAccessory.decodedAssignedToName.isEmpty {
             rows.append(AnyView(detailRow(label: L10n.string("assigned_to"), value: currentAccessory.decodedAssignedToName)))
         }
+        let yesNo: (Bool) -> String = { $0 ? L10n.string("yes") : L10n.string("no") }
+        rows.append(AnyView(detailRow(label: L10n.string("mgmt_requestable"), value: yesNo(currentAccessory.requestable))))
+        rows.append(AnyView(detailRow(label: L10n.string("status_archived"), value: yesNo(currentAccessory.archived))))
         return rows
     }
 
@@ -389,6 +400,7 @@ struct AccessoryDetailView: View {
             }
             checkedOutRows = await apiClient.fetchAccessoryCheckedOutList(accessoryId: accessory.id)
             if let fullAccessory = await apiClient.fetchAccessoryDetails(accessoryId: accessory.id) {
+                retainedAccessory = fullAccessory
                 apiClient.applyUpdatedAccessory(fullAccessory)
                 if let image = fullAccessory.image,
                    !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

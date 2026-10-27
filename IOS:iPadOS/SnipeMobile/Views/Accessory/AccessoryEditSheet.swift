@@ -20,6 +20,8 @@ struct AccessoryEditSheet: View {
     @State private var selectedManufacturerId: Int?
     @State private var selectedSupplierId: Int?
     @State private var notes: String = ""
+    @State private var requestable: Bool = false
+    @State private var archived: Bool = false
     @State private var isSaving: Bool = false
     @State private var showResult: Bool = false
     @State private var resultMessage: String = ""
@@ -30,6 +32,7 @@ struct AccessoryEditSheet: View {
                 generalSection
                 purchaseSection
                 notesSection
+                optionsSection
             }
             .listStyle(.insetGrouped)
             .navigationTitle("")
@@ -60,6 +63,8 @@ struct AccessoryEditSheet: View {
                 orderNumber = HTMLDecoder.decode(accessory.orderNumber ?? "")
                 purchaseCost = accessory.purchaseCost ?? ""
                 notes = accessory.decodedNotes
+                requestable = accessory.requestable
+                archived = accessory.archived
                 if let d = DateInfo.parseAPIDate(accessory.purchaseDate) {
                     purchaseDate = d
                     hasPurchaseDate = true
@@ -191,10 +196,39 @@ struct AccessoryEditSheet: View {
         }
     }
 
+    private var hasOpenCheckouts: Bool {
+        (accessory.checkoutsCount ?? 0) > 0
+    }
+
     private var notesSection: some View {
         Section(header: Text(L10n.string("notes"))) {
             TextField(L10n.string("notes"), text: $notes, axis: .vertical)
                 .lineLimit(3...6)
+        }
+    }
+
+    private var optionsSection: some View {
+        Section {
+            Toggle(L10n.string("mgmt_requestable"), isOn: Binding(
+                get: { requestable },
+                set: { value in
+                    requestable = value
+                    if value { archived = false }
+                }
+            ))
+            Toggle(L10n.string("status_archived"), isOn: Binding(
+                get: { archived },
+                set: { value in
+                    guard !value || !hasOpenCheckouts else { return }
+                    archived = value
+                    if value { requestable = false }
+                }
+            ))
+            .disabled(hasOpenCheckouts && !archived)
+        } footer: {
+            if hasOpenCheckouts {
+                Text(L10n.string("accessory_archive_blocked"))
+            }
         }
     }
 
@@ -233,7 +267,9 @@ struct AccessoryEditSheet: View {
                 locationId: selectedLocationId,
                 manufacturerId: selectedManufacturerId,
                 supplierId: selectedSupplierId,
-                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
+                requestable: requestable,
+                archived: archived
             )
             await MainActor.run {
                 isSaving = false

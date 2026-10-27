@@ -39,3 +39,7 @@
 -keep class androidx.glance.** { *; }
 -keep class * extends androidx.glance.appwidget.GlanceAppWidget { *; }
 -keep class * extends androidx.glance.appwidget.GlanceAppWidgetReceiver { *; }
+
+# Startup builds WorkDatabase via Room. R8 dropped its constructor.
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep class androidx.work.** { *; }

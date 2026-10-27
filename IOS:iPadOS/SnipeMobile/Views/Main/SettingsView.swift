@@ -219,27 +219,27 @@ struct SettingsView: View {
 
     private var generalSection: some View {
         Section {
-            Picker(selection: $appTheme) {
-                Text(L10n.string("system")).tag("system")
-                Text(L10n.string("light")).tag("light")
-                Text(L10n.string("dark")).tag("dark")
-            } label: {
-                HStack(spacing: 12) {
-                    SettingsIcon(symbol: "paintbrush.fill", color: .purple)
-                    Text(L10n.string("appearance"))
-                }
-            }
-            Picker(selection: languageSelection) {
-                Text(L10n.languageDisplayName(code: "system")).tag("system")
-                ForEach(L10n.languagePickerCodes, id: \.self) { code in
-                    Text(L10n.languageDisplayName(code: code)).tag(code)
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    SettingsIcon(symbol: "globe", color: .blue)
-                    Text(L10n.string("app_language"))
-                }
-            }
+            AdaptivePickerRow(
+                title: L10n.string("appearance"),
+                items: [
+                    (value: "system", label: L10n.string("system")),
+                    (value: "light", label: L10n.string("light")),
+                    (value: "dark", label: L10n.string("dark"))
+                ],
+                selection: $appTheme,
+                emptyOption: nil,
+                leadingSymbol: "paintbrush.fill",
+                leadingTint: .purple
+            )
+            AdaptivePickerRow(
+                title: L10n.string("app_language"),
+                items: [(value: "system", label: L10n.languageDisplayName(code: "system"))]
+                    + L10n.languagePickerCodes.map { (value: $0, label: L10n.languageDisplayName(code: $0)) },
+                selection: languageSelection,
+                emptyOption: nil,
+                leadingSymbol: "globe",
+                leadingTint: .blue
+            )
             SettingsToggleRow(
                 icon: "photo.on.rectangle",
                 iconColor: .teal,
