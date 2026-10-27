@@ -144,10 +144,7 @@ internal fun FormDateField(
 internal fun statusDisplayName(label: StatusLabel): String =
     AssetStatusFilterSupport.displayName(label)
 
-/**
- * Checkout is only offered for deployable statuses (Ready to Deploy).
- * Archived / pending / undeployable stay hidden — same idea as iOS.
- */
+/** Ready to Deploy / deployable only — matches iOS. */
 internal fun isDeployableStatus(label: StatusLabel): Boolean {
     val type = label.resolvedType
     when (type) {
@@ -232,8 +229,7 @@ class MainSheetOverlay {
     fun upsert(id: Any, content: @Composable () -> Unit) {
         val index = entries.indexOfFirst { it.id == id }
         if (index >= 0) {
-            // Update in place so the host recomposes with the latest form state
-            // (status → checkout toggle, etc.) without remounting the sheet.
+            // Replace content without remounting the sheet.
             entries[index].contentState.value = content
         } else {
             entries.add(SheetLayer(id, mutableStateOf(content)))
@@ -287,15 +283,13 @@ internal fun AssetFullScreenSheet(
     val overlay = LocalMainSheetOverlay.current
     val isTablet = WindowAdaptive.isTabletLayout()
 
-    // Phone: host in the activity tree so status/nav insets and adjustResize
-    // recover after the IME closes. Popup + LocalWindowInfo.containerSize can
-    // stay shrunk (title under status bar, tab bar peeking through).
+    // Phone: activity overlay so IME/insets recover (Popup can stay shrunk).
     if (overlay != null && !isTablet) {
         val id = remember { Any() }
         val latestDismiss by rememberUpdatedState(onDismiss)
         BackHandler { latestDismiss() }
         SideEffect {
-            // Upsert every frame so form state (checkout toggle, etc.) reaches the host.
+            // Push latest form content into the host each frame.
             overlay.upsert(id, content)
         }
         DisposableEffect(overlay, id) {
@@ -304,7 +298,7 @@ internal fun AssetFullScreenSheet(
         return
     }
 
-    // Tablet / fallback: Popup sized to screen config (not IME-shrunk container).
+    // Tablet / fallback: full-screen Popup from configuration size.
     val configuration = LocalConfiguration.current
     val widthDp = configuration.screenWidthDp.dp
     val heightDp = configuration.screenHeightDp.dp

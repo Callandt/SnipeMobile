@@ -200,9 +200,7 @@ fun AddAssetSheet(
     }
 
     AssetFullScreenSheet(onDismiss = { if (!isSaving) onDismiss() }) {
-        // Derive inside the hosted content. The phone overlay re-invokes this lambda
-        // when MutableState changes; Booleans computed outside would stay stale
-        // (Status updates, checkout toggle would not).
+        // Keep derived flags here — outside the overlay lambda they go stale.
         val selectedModelRequiresSerial =
             models.firstOrNull { it.id == selectedModelId }?.requiresSerial == true
         val selectedStatusIsDeployable = statusLabels
