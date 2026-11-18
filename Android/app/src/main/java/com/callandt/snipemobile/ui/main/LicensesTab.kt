@@ -33,7 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.License
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ErrorSnackbar
@@ -139,8 +142,15 @@ fun LicensesTab(
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = sidebarToggle,
                 actions = {
-                    IconButton(onClick = { if (listReady) showAddLicense = true }) {
-                        Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
+                    val canCreate = rememberCanPerform(
+                        viewModel.apiClient,
+                        SnipeListModule.Licenses,
+                        SnipeActionKind.Create,
+                    )
+                    if (canCreate) {
+                        IconButton(onClick = { if (listReady) showAddLicense = true }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add_license"))
+                        }
                     }
                     if (!isTablet) {
                         IconButton(onClick = onOpenScanner) {

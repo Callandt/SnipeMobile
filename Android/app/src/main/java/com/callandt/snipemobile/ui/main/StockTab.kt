@@ -34,9 +34,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.Component
 import com.callandt.snipemobile.data.model.Consumable
+import com.callandt.snipemobile.data.api.SnipeActionKind
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.component.AddComponentSheet
 import com.callandt.snipemobile.ui.components.ComponentCard
 import com.callandt.snipemobile.ui.components.ConsumableCard
@@ -89,6 +92,7 @@ fun StockTab(
     val locations by viewModel.locations.collectAsState()
     val showConsumables by viewModel.showConsumablesTab.collectAsState()
     val showComponents by viewModel.showComponentsTab.collectAsState()
+    val denied by viewModel.deniedListModules.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
@@ -112,10 +116,10 @@ fun StockTab(
     }
 
     val tabs = buildList {
-        if (showConsumables) add(StockSubtab.Consumables)
-        if (showComponents) add(StockSubtab.Components)
+        if (showConsumables && SnipeListModule.Consumables !in denied) add(StockSubtab.Consumables)
+        if (showComponents && SnipeListModule.Components !in denied) add(StockSubtab.Components)
     }
-    val currentSubtab = tabs.getOrElse(subtab) { StockSubtab.Consumables }
+    val currentSubtab = if (tabs.isEmpty()) StockSubtab.Consumables else tabs[subtab.coerceIn(tabs.indices)]
     val showConsumablesList = currentSubtab == StockSubtab.Consumables
 
     val categoryTitle = L10n.string("category")
@@ -189,11 +193,24 @@ fun StockTab(
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = sidebarToggle,
                 actions = {
-                    IconButton(onClick = {
-                        if (!listReady) return@IconButton
-                        if (showConsumablesList) showAddConsumable = true else showAddComponent = true
-                    }) {
-                        Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                    val canCreateConsumable = rememberCanPerform(
+                        viewModel.apiClient,
+                        SnipeListModule.Consumables,
+                        SnipeActionKind.Create,
+                    )
+                    val canCreateComponent = rememberCanPerform(
+                        viewModel.apiClient,
+                        SnipeListModule.Components,
+                        SnipeActionKind.Create,
+                    )
+                    val canAdd = if (showConsumablesList) canCreateConsumable else canCreateComponent
+                    if (canAdd) {
+                        IconButton(onClick = {
+                            if (!listReady) return@IconButton
+                            if (showConsumablesList) showAddConsumable = true else showAddComponent = true
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                        }
                     }
                     if (!isTablet) {
                         IconButton(onClick = onOpenScanner) {

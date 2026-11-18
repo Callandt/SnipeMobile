@@ -174,6 +174,7 @@ struct AccessoryDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack(spacing: 12) {
+                if apiClient.canPerform(.accessories, .update) {
                 Button(action: { showEditSheet = true }) {
                     Label(L10n.string("edit"), systemImage: "pencil")
                         .font(.headline)
@@ -182,6 +183,7 @@ struct AccessoryDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
+                }
                 if currentAccessory.statusLabel?.statusMeta?.lowercased() == "deployed" {
                     Button(action: {
                         let active = checkedOutRows.filter { $0.availableActions?.checkin == true }
@@ -196,7 +198,8 @@ struct AccessoryDetailView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
                     .controlSize(.large)
-                } else {
+                    .disabled(!apiClient.canPerform(.accessories, .checkin))
+                } else if apiClient.canPerform(.accessories, .checkout) {
                     Button(action: { showCheckoutSheet = true }) {
                         Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
                             .font(.headline)
@@ -218,6 +221,7 @@ struct AccessoryDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
+                    if apiClient.canPerform(.accessories, .delete) {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
@@ -226,6 +230,7 @@ struct AccessoryDetailView: View {
                     }
                     .disabled(isDeleting || isCheckingIn)
                     .accessibilityLabel(L10n.string("delete"))
+                    }
                     if let url = URL(string: "\(apiClient.baseURL)/accessories/\(currentAccessory.id)") {
                         Link(destination: url) {
                             Image(systemName: "safari")

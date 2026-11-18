@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.Consumable
 import com.callandt.snipemobile.data.model.ConsumableUserRow
 import com.callandt.snipemobile.ui.AppViewModel
@@ -47,6 +49,7 @@ import com.callandt.snipemobile.ui.components.DetailPageTitle
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemCard
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
 import com.callandt.snipemobile.ui.components.ItemHistoryTab
 import com.callandt.snipemobile.ui.consumable.ConsumableCheckoutSheet
@@ -96,7 +99,10 @@ fun ConsumableDetailScreen(
         reloadCheckedOut()
     }
 
-    val canCheckout = consumable?.remaining?.let { it > 0 } ?: true
+    val hasStock = consumable?.remaining?.let { it > 0 } ?: true
+    val canEdit = rememberCanPerform(viewModel.apiClient, SnipeListModule.Consumables, SnipeActionKind.Update)
+    val canDelete = rememberCanPerform(viewModel.apiClient, SnipeListModule.Consumables, SnipeActionKind.Delete)
+    val canCheckout = rememberCanPerform(viewModel.apiClient, SnipeListModule.Consumables, SnipeActionKind.Checkout)
 
     Scaffold(
         topBar = {
@@ -111,7 +117,11 @@ fun ConsumableDetailScreen(
                     DetailEntityToolbarActions(
                         baseUrl = viewModel.apiClient.baseUrl,
                         webPath = "consumables/$consumableId",
-                        onDeleteClick = { deleteState.requestDelete() },
+                        onDeleteClick = if (canDelete) {
+                            { deleteState.requestDelete() }
+                        } else {
+                            null
+                        },
                         deleteEnabled = !deleteState.isDeleting,
                     )
                 },
@@ -119,12 +129,13 @@ fun ConsumableDetailScreen(
         },
         bottomBar = {
             if (consumable != null) {
-                DetailBottomBar(
-                    actions = listOf(
-                        DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true },
-                        DetailBarAction(L10n.string("check_out"), SnipeAccent, enabled = canCheckout) { showCheckout = true },
-                    ),
-                )
+                val actions = buildList {
+                    if (canEdit) add(DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true })
+                    if (canCheckout) {
+                        add(DetailBarAction(L10n.string("check_out"), SnipeAccent, enabled = hasStock) { showCheckout = true })
+                    }
+                }
+                if (actions.isNotEmpty()) DetailBottomBar(actions = actions)
             }
         },
     ) { padding ->

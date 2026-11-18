@@ -161,6 +161,7 @@ struct ConsumableDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack(spacing: 12) {
+                if apiClient.canPerform(.consumables, .update) {
                 Button(action: { showEditSheet = true }) {
                     Label(L10n.string("edit"), systemImage: "pencil")
                         .font(.headline)
@@ -169,6 +170,8 @@ struct ConsumableDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
+                }
+                if apiClient.canPerform(.consumables, .checkout) {
                 Button(action: { showCheckoutSheet = true }) {
                     Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
                         .font(.headline)
@@ -178,6 +181,7 @@ struct ConsumableDetailView: View {
                 .tint(.accentColor)
                 .controlSize(.large)
                 .disabled(!canCheckout)
+                }
             }
             .detailBottomActionBar()
         }
@@ -189,6 +193,7 @@ struct ConsumableDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
+                    if apiClient.canPerform(.consumables, .delete) {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
@@ -197,6 +202,7 @@ struct ConsumableDetailView: View {
                     }
                     .disabled(isDeleting)
                     .accessibilityLabel(L10n.string("delete"))
+                    }
                     if let url = URL(string: "\(apiClient.baseURL)/consumables/\(currentConsumable.id)") {
                         Link(destination: url) {
                             Image(systemName: "safari")

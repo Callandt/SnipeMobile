@@ -9,6 +9,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import android.util.Base64
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -47,13 +48,15 @@ object DellTechDirectClient {
 
     /** OAuth2 token for TechDirect. */
     suspend fun testConnection(clientId: String, clientSecret: String): String? =
-        runCatching {
-            fetchToken(clientId.trim(), clientSecret)
-            null
-        }.exceptionOrNull()?.let { error ->
-            when (error) {
-                is DellTechDirectException -> error.message
-                else -> error.message ?: error.toString()
+        withContext(Dispatchers.IO) {
+            runCatching {
+                fetchToken(clientId.trim(), clientSecret)
+                null
+            }.exceptionOrNull()?.let { error ->
+                when (error) {
+                    is DellTechDirectException -> error.message
+                    else -> error.message ?: error.toString()
+                }
             }
         }
 
@@ -63,7 +66,7 @@ object DellTechDirectClient {
         clientSecret: String,
     ): DellWarrantyInfo = withContext(Dispatchers.IO) {
         val id = clientId.trim()
-        val secret = clientSecret
+        val secret = clientSecret.trim()
         if (id.isEmpty() || secret.isEmpty()) {
             throw DellTechDirectException.MissingCredentials()
         }
@@ -92,15 +95,33 @@ object DellTechDirectClient {
     }
 
     private fun fetchToken(clientId: String, clientSecret: String): String {
-        val form = FormBody.Builder()
-            .add("client_id", clientId)
-            .add("client_secret", clientSecret)
-            .add("grant_type", "client_credentials")
-            .build()
-        val request = Request.Builder()
+        val id = clientId.trim()
+        val secret = clientSecret.trim()
+        // Current TechDirect keys authenticate with HTTP Basic. Older keys still
+        // expect the id and secret in the form body.
+        val basic = runCatching { requestToken(id, secret, basicAuth = true) }
+        basic.getOrNull()?.let { return it }
+        return runCatching { requestToken(id, secret, basicAuth = false) }
+            .getOrElse { formError ->
+                throw formError as? DellTechDirectException
+                    ?: basic.exceptionOrNull()
+                    ?: formError
+            }
+    }
+
+    private fun requestToken(clientId: String, clientSecret: String, basicAuth: Boolean): String {
+        val form = FormBody.Builder().add("grant_type", "client_credentials")
+        val builder = Request.Builder()
             .url(TOKEN_URL)
-            .post(form)
-            .build()
+            .header("Accept", "application/json")
+        if (basicAuth) {
+            val raw = "$clientId:$clientSecret".toByteArray(Charsets.UTF_8)
+            val encoded = Base64.encodeToString(raw, Base64.NO_WRAP)
+            builder.header("Authorization", "Basic $encoded")
+        } else {
+            form.add("client_id", clientId).add("client_secret", clientSecret)
+        }
+        val request = builder.post(form.build()).build()
 
         http.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()

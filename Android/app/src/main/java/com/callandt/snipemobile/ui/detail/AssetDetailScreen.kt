@@ -53,6 +53,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.data.model.AssetAssignedComponent
@@ -77,6 +79,7 @@ import com.callandt.snipemobile.ui.components.ItemHistoryTab
 import com.callandt.snipemobile.ui.components.LicenseCard
 import com.callandt.snipemobile.ui.components.LocationCard
 import com.callandt.snipemobile.ui.components.MaintenanceCard
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.SearchablePickerField
 import com.callandt.snipemobile.ui.components.TappableDetailImage
 import com.callandt.snipemobile.ui.components.UserCard
@@ -127,6 +130,37 @@ fun AssetDetailScreen(
     val showMaintenancePref by viewModel.showMaintenanceSubtab.collectAsState()
     val returnToAssetsAfterCheckInOut by viewModel.returnToAssetsAfterCheckInOut.collectAsState()
     val asset = assets.firstOrNull { it.id == assetId }
+    val canEditAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Update,
+        asset?.availableActions?.update,
+    )
+    val canDeleteAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Delete,
+        asset?.availableActions?.delete,
+    )
+    val canCheckOutAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Checkout,
+        asset?.availableActions?.checkout,
+    )
+    val canCheckInAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Checkin,
+        asset?.availableActions?.checkin,
+    )
+    val canAuditAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Audit,
+        asset?.availableActions?.audit,
+    )
+    val canMaintainAsset = canEditAsset || canAuditAsset
     val scope = rememberCoroutineScope()
 
     var tabIndex by remember { mutableIntStateOf(0) }
@@ -215,7 +249,7 @@ fun AssetDetailScreen(
                     }
                 },
                 actions = {
-                    if (!isReadOnly && currentTab == AssetDetailTab.Maintenance) {
+                    if (!isReadOnly && canMaintainAsset && currentTab == AssetDetailTab.Maintenance) {
                         IconButton(onClick = { showAddMaintenance = true }) {
                             Icon(
                                 imageVector = Icons.Default.Add,
@@ -243,7 +277,11 @@ fun AssetDetailScreen(
                         DetailEntityToolbarActions(
                             baseUrl = viewModel.apiClient.baseUrl,
                             webPath = "hardware/$assetId",
-                            onDeleteClick = { deleteState.requestDelete() },
+                            onDeleteClick = if (canDeleteAsset) {
+                                { deleteState.requestDelete() }
+                            } else {
+                                null
+                            },
                             deleteEnabled = !deleteState.isDeleting,
                         )
                     }
@@ -254,6 +292,9 @@ fun AssetDetailScreen(
             if (!isReadOnly && asset != null) {
                 AssetDetailBottomBar(
                     asset = asset,
+                    canEdit = canEditAsset,
+                    canCheckout = canCheckOutAsset,
+                    canCheckin = canCheckInAsset,
                     onEdit = { showEdit = true },
                     onCheckout = { showCheckout = true },
                     onCheckin = { showCheckin = true },
@@ -794,13 +835,16 @@ private fun AssetMaintenanceTab(
 @Composable
 private fun AssetDetailBottomBar(
     asset: Asset,
+    canEdit: Boolean,
+    canCheckout: Boolean,
+    canCheckin: Boolean,
     onEdit: () -> Unit,
     onCheckout: () -> Unit,
     onCheckin: () -> Unit,
 ) {
-    // available_actions.checkin is a permission, not "this asset is out".
-    val showCheckin = isAssetDeployed(asset)
-    val showCheckout = canAssetCheckOut(asset)
+    val showCheckin = canCheckin && isAssetDeployed(asset)
+    val showCheckout = canCheckout && assetReadyForCheckout(asset)
+    if (!canEdit && !showCheckin && !showCheckout) return
 
     Column(
         modifier = Modifier
@@ -815,12 +859,14 @@ private fun AssetDetailBottomBar(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            DetailActionButton(
-                label = L10n.string("edit"),
-                color = SnipeOrange,
-                modifier = Modifier.weight(1f),
-                onClick = onEdit,
-            )
+            if (canEdit) {
+                DetailActionButton(
+                    label = L10n.string("edit"),
+                    color = SnipeOrange,
+                    modifier = Modifier.weight(1f),
+                    onClick = onEdit,
+                )
+            }
             if (showCheckin) {
                 DetailActionButton(
                     label = L10n.string("check_in"),
@@ -864,10 +910,9 @@ private fun isAssetDeployed(asset: Asset): Boolean {
     return asset.assignedTo != null && !asset.userCanCheckout
 }
 
-private fun canAssetCheckOut(asset: Asset): Boolean {
+private fun assetReadyForCheckout(asset: Asset): Boolean {
     if (isAssetDeployed(asset)) return false
     if (asset.userCanCheckout) return true
-    if (asset.availableActions?.checkout == true) return true
     val meta = asset.statusLabel.statusMeta?.trim()?.lowercase().orEmpty()
     return meta == "deployable" || meta == "ready_to_deploy" || asset.statusLabel.isDeployableType
 }

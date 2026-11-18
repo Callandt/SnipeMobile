@@ -552,21 +552,30 @@ struct MainSplitView: View {
     @AppStorage("directorySelectedSubmodule") private var directorySelectedRaw: String = DirectorySubmodule.users.rawValue
 
     private var orderedVisibleSections: [MainTab] {
-        TabOrderStore.defaultOrder.filter { tab in
+        let tabs = TabOrderStore.defaultOrder.filter { tab in
             switch tab {
-            case .hardware, .directory: return true
-            case .accessories: return showAccessoriesTab
-            case .licenses: return showLicensesTab
-            case .stock: return showConsumablesSub || showComponentsSub
+            case .hardware:
+                return !apiClient.deniedListModules.contains(.hardware)
+            case .accessories:
+                return showAccessoriesTab && !apiClient.deniedListModules.contains(.accessories)
+            case .licenses:
+                return showLicensesTab && !apiClient.deniedListModules.contains(.licenses)
+            case .stock:
+                return !enabledStockSubmodules.isEmpty
+            case .directory:
+                return !enabledDirectorySubmodules.isEmpty
             }
         }
+        return tabs.isEmpty ? [.hardware] : tabs
     }
 
     private var enabledStockSubmodules: [StockSubmodule] {
         StockSubmodule.allCases.filter {
             switch $0 {
-            case .consumables: return showConsumablesSub
-            case .components: return showComponentsSub
+            case .consumables:
+                return showConsumablesSub && !apiClient.deniedListModules.contains(.consumables)
+            case .components:
+                return showComponentsSub && !apiClient.deniedListModules.contains(.components)
             }
         }
     }
@@ -576,10 +585,19 @@ struct MainSplitView: View {
         return enabledStockSubmodules.contains(stored) ? stored : (enabledStockSubmodules.first ?? .consumables)
     }
 
-    private var enabledDirectorySubmodules: [DirectorySubmodule] { DirectorySubmodule.allCases }
+    private var enabledDirectorySubmodules: [DirectorySubmodule] {
+        DirectorySubmodule.allCases.filter { submodule in
+            switch submodule {
+            case .users: return !apiClient.deniedListModules.contains(.users)
+            case .locations: return !apiClient.deniedListModules.contains(.locations)
+            }
+        }
+    }
 
     private var directorySelectedSubmodule: DirectorySubmodule {
-        DirectorySubmodule(rawValue: directorySelectedRaw) ?? .users
+        let stored = DirectorySubmodule(rawValue: directorySelectedRaw) ?? .users
+        if enabledDirectorySubmodules.contains(stored) { return stored }
+        return enabledDirectorySubmodules.first ?? .users
     }
 
     private func sectionTitle(_ section: MainTab) -> String {
@@ -899,6 +917,11 @@ struct MainSplitView: View {
                 .background(Color(.systemBackground).ignoresSafeArea())
         }
         .navigationSplitViewStyle(.balanced)
+        .onChange(of: apiClient.deniedListModules) { _, _ in
+            if !orderedVisibleSections.contains(selectedSection) {
+                selectedSection = orderedVisibleSections.first ?? .hardware
+            }
+        }
         .alert(
             L10n.string("refresh_failed_title"),
             isPresented: Binding(
@@ -1325,15 +1348,17 @@ struct MainSplitView: View {
                             EmptyView()
                         } else if showMaintenance || enableAuditSubtab {
                             Menu {
+                                if apiClient.canPerform(.hardware, .create) {
                                 Button(action: { showAddAsset = true }) {
                                     Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
                                 }
-                                if showMaintenance {
+                                }
+                                if showMaintenance && (apiClient.canPerform(.hardware, .update) || apiClient.canPerform(.hardware, .audit)) {
                                     Button(action: { showAddMaintenance = true }) {
                                         Label(L10n.string("add_maintenance"), systemImage: "wrench.and.screwdriver")
                                     }
                                 }
-                                if enableAuditSubtab {
+                                if enableAuditSubtab && apiClient.canPerform(.hardware, .audit) {
                                     Button(action: { showBulkAudit = true }) {
                                         Label(L10n.string("add_audit"), systemImage: "checklist")
                                     }
@@ -1347,8 +1372,10 @@ struct MainSplitView: View {
                             .accessibilityLabel(L10n.string("add"))
                         } else {
                             Menu {
+                                if apiClient.canPerform(.hardware, .create) {
                                 Button(action: { showAddAsset = true }) {
                                     Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
+                                }
                                 }
                                 Button(action: { showBulkLabels = true }) {
                                     Label(L10n.string("generate_labels"), systemImage: "tag")
@@ -1360,7 +1387,7 @@ struct MainSplitView: View {
                         }
                     }
                 }
-                if selectedSection == .accessories {
+                if selectedSection == .accessories, apiClient.canPerform(.accessories, .create) {
                     ToolbarItem(placement: .primaryAction) {
                         Button(action: { showAddAccessory = true }) {
                             Image(systemName: "plus.circle")
@@ -1368,7 +1395,7 @@ struct MainSplitView: View {
                         .accessibilityLabel(L10n.string("add_accessory"))
                     }
                 }
-                if selectedSection == .licenses {
+                if selectedSection == .licenses, apiClient.canPerform(.licenses, .create) {
                     ToolbarItem(placement: .primaryAction) {
                         Button(action: { showAddLicense = true }) {
                             Image(systemName: "plus.circle")
@@ -1376,7 +1403,9 @@ struct MainSplitView: View {
                         .accessibilityLabel(L10n.string("add_license"))
                     }
                 }
-                if selectedSection == .stock {
+                if selectedSection == .stock,
+                   (stockSelectedSubmodule == .consumables && apiClient.canPerform(.consumables, .create))
+                    || (stockSelectedSubmodule == .components && apiClient.canPerform(.components, .create)) {
                     ToolbarItem(placement: .primaryAction) {
                         Button(action: {
                             if stockSelectedSubmodule == .consumables {

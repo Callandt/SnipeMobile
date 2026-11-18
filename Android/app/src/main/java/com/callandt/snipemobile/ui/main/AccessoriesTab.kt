@@ -33,7 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Accessory
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.accessory.AddAccessorySheet
 import com.callandt.snipemobile.ui.components.AccessoryCard
 import com.callandt.snipemobile.ui.components.EmptyState
@@ -135,8 +138,15 @@ fun AccessoriesTab(
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = sidebarToggle,
                 actions = {
-                    IconButton(onClick = { if (listReady) showAddAccessory = true }) {
-                        Icon(Icons.Default.Add, contentDescription = L10n.string("add_accessory"))
+                    val canCreate = rememberCanPerform(
+                        viewModel.apiClient,
+                        SnipeListModule.Accessories,
+                        SnipeActionKind.Create,
+                    )
+                    if (canCreate) {
+                        IconButton(onClick = { if (listReady) showAddAccessory = true }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add_accessory"))
+                        }
                     }
                     if (!isTablet) {
                         IconButton(onClick = onOpenScanner) {

@@ -5,6 +5,7 @@ extension SnipeITAPIClient {
     // MARK: - Deletes
 
     func deleteAsset(assetId: Int) async -> Bool {
+        if rejectIfForbidden(.hardware, .delete) { return false }
         let asset: Asset?
         if let cached = assets.first(where: { $0.id == assetId }) {
             asset = cached
@@ -52,6 +53,7 @@ extension SnipeITAPIClient {
     }
 
     func deleteAccessory(accessoryId: Int) async -> Bool {
+        if rejectIfForbidden(.accessories, .delete) { return false }
         let rows = await fetchAccessoryCheckedOutList(accessoryId: accessoryId)
         for row in rows {
             guard let checkedoutId = row.id else { continue }
@@ -75,6 +77,7 @@ extension SnipeITAPIClient {
 
     // Must check in all qty first or the API rejects the delete.
     func deleteComponent(componentId: Int) async -> Bool {
+        if rejectIfForbidden(.components, .delete) { return false }
         for _ in 0..<5 {
             let rows = await fetchComponentAssetsList(componentId: componentId)
             if rows.isEmpty { break }
@@ -118,6 +121,7 @@ extension SnipeITAPIClient {
 
     // No check-in API for consumables.
     func deleteConsumable(consumableId: Int) async -> Bool {
+        if rejectIfForbidden(.consumables, .delete) { return false }
         let ok = await performDelete(
             path: "/api/v1/consumables/\(consumableId)",
             successMessage: L10n.string("delete_success"),
@@ -130,6 +134,7 @@ extension SnipeITAPIClient {
     }
 
     func deleteLicense(licenseId: Int) async -> Bool {
+        if rejectIfForbidden(.licenses, .delete) { return false }
         let seats = await fetchLicenseSeats(licenseId: licenseId)
         for seat in seats where seat.assignedUser != nil || seat.assignedAsset != nil {
             if let error = await checkinLicenseSeat(licenseId: licenseId, seatId: seat.id) {
@@ -151,6 +156,7 @@ extension SnipeITAPIClient {
 
     // Also blocked by self-delete / managed users & locations.
     func deleteUser(userId: Int) async -> Bool {
+        if rejectIfForbidden(.users, .delete) { return false }
         if let me = currentUser ?? defaultCheckoutUser, me.id == userId {
             lastApiMessage = L10n.string("delete_user_cannot_delete_yourself")
             return false
@@ -208,6 +214,7 @@ extension SnipeITAPIClient {
 
     // Check-ins only cover assigned items; home location / users / children still block delete.
     func deleteLocation(locationId: Int) async -> Bool {
+        if rejectIfForbidden(.locations, .delete) { return false }
         let locationAssets = await fetchLocationAssets(locationId: locationId)
         for asset in locationAssets {
             if !(await prepareAssetRelationsForDelete(assetId: asset.id)) {

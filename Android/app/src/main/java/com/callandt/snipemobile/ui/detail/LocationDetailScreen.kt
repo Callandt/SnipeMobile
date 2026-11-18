@@ -40,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.data.model.Asset
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.Location
 import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.ui.AppViewModel
@@ -48,6 +50,7 @@ import com.callandt.snipemobile.ui.components.AssetCard
 import com.callandt.snipemobile.ui.components.DetailBarAction
 import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EmptyState
@@ -88,6 +91,8 @@ fun LocationDetailScreen(
     var hasLoadedAssigned by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
     val deleteState = rememberEntityDeleteState()
+    val canEditLocation = rememberCanPerform(viewModel.apiClient, SnipeListModule.Locations, SnipeActionKind.Update)
+    val canDeleteLocation = rememberCanPerform(viewModel.apiClient, SnipeListModule.Locations, SnipeActionKind.Delete)
 
     val usersAtLocation = remember(users, locationId) {
         users.filter { it.location?.id == locationId }
@@ -168,14 +173,18 @@ fun LocationDetailScreen(
                     DetailEntityToolbarActions(
                         baseUrl = viewModel.apiClient.baseUrl,
                         webPath = "locations/$locationId",
-                        onDeleteClick = { deleteState.requestDelete() },
+                        onDeleteClick = if (canDeleteLocation) {
+                            { deleteState.requestDelete() }
+                        } else {
+                            null
+                        },
                         deleteEnabled = !deleteState.isDeleting,
                     )
                 },
             )
         },
         bottomBar = {
-            if (location != null) {
+            if (location != null && canEditLocation) {
                 DetailBottomBar(
                     actions = listOf(
                         DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true },

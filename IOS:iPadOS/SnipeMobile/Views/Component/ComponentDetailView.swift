@@ -165,6 +165,7 @@ struct ComponentDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack(spacing: 12) {
+                if apiClient.canPerform(.components, .update) {
                 Button(action: { showEditSheet = true }) {
                     Label(L10n.string("edit"), systemImage: "pencil")
                         .font(.headline)
@@ -173,6 +174,8 @@ struct ComponentDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
+                }
+                if apiClient.canPerform(.components, .checkout) {
                 Button(action: { showCheckoutSheet = true }) {
                     Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
                         .font(.headline)
@@ -182,6 +185,7 @@ struct ComponentDetailView: View {
                 .tint(.accentColor)
                 .controlSize(.large)
                 .disabled(!canCheckout)
+                }
             }
             .detailBottomActionBar()
         }
@@ -193,6 +197,7 @@ struct ComponentDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
+                    if apiClient.canPerform(.components, .delete) {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
@@ -201,6 +206,7 @@ struct ComponentDetailView: View {
                     }
                     .disabled(isDeleting || isCheckingIn)
                     .accessibilityLabel(L10n.string("delete"))
+                    }
                     if let url = URL(string: "\(apiClient.baseURL)/components/\(currentComponent.id)") {
                         Link(destination: url) {
                             Image(systemName: "safari")

@@ -202,6 +202,7 @@ struct LocationDetailView: View {
         .detailNavigationTitle(currentLocation.decodedName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if apiClient.canPerform(.locations, .update) {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showEditSheet = true } label: {
                     Image(systemName: "pencil")
@@ -209,6 +210,8 @@ struct LocationDetailView: View {
                 .disabled(isDeleting)
                 .accessibilityLabel(L10n.string("edit"))
             }
+            }
+            if apiClient.canPerform(.locations, .delete) {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(role: .destructive) {
                     showDeleteConfirm = true
@@ -218,6 +221,7 @@ struct LocationDetailView: View {
                 }
                 .disabled(isDeleting)
                 .accessibilityLabel(L10n.string("delete"))
+            }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let url = URL(string: "\(apiClient.baseURL)/locations/\(location.id)") {

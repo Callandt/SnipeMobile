@@ -40,6 +40,8 @@ import com.callandt.snipemobile.data.model.Accessory
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.data.model.Consumable
 import com.callandt.snipemobile.data.model.License
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.User
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.AccessoryCard
@@ -48,6 +50,7 @@ import com.callandt.snipemobile.ui.components.ConsumableCard
 import com.callandt.snipemobile.ui.components.DetailBarAction
 import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
 import com.callandt.snipemobile.ui.components.DetailPageTitle
@@ -102,6 +105,8 @@ fun UserDetailScreen(
     var loadingAssigned by remember { mutableStateOf(!isReadOnly) }
     var showEdit by remember { mutableStateOf(false) }
     val deleteState = rememberEntityDeleteState()
+    val canEditUser = rememberCanPerform(viewModel.apiClient, SnipeListModule.Users, SnipeActionKind.Update)
+    val canDeleteUser = rememberCanPerform(viewModel.apiClient, SnipeListModule.Users, SnipeActionKind.Delete)
     var tabIndex by remember { mutableIntStateOf(0) }
 
     fun reloadAssigned() {
@@ -186,7 +191,11 @@ fun UserDetailScreen(
                         DetailEntityToolbarActions(
                             baseUrl = viewModel.apiClient.baseUrl,
                             webPath = "users/$userId",
-                            onDeleteClick = { deleteState.requestDelete() },
+                            onDeleteClick = if (canDeleteUser) {
+                                { deleteState.requestDelete() }
+                            } else {
+                                null
+                            },
                             deleteEnabled = !deleteState.isDeleting,
                         )
                     }
@@ -194,7 +203,7 @@ fun UserDetailScreen(
             )
         },
         bottomBar = {
-            if (!isReadOnly && displayUser != null) {
+            if (!isReadOnly && displayUser != null && canEditUser) {
                 DetailBottomBar(
                     actions = listOf(
                         DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true },

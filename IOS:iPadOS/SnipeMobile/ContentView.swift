@@ -204,13 +204,18 @@ struct ContentView: View {
     @State private var widgetNavigationResolved = false
 
     private var orderedVisibleTabs: [MainTab] {
-        TabOrderStore.defaultOrder.filter(isTabVisible)
+        let tabs = TabOrderStore.defaultOrder.filter(isTabVisible)
+        return tabs.isEmpty ? [.hardware] : tabs
     }
 
     private var enabledStockSubmodules: [StockSubmodule] {
         var subs: [StockSubmodule] = []
-        if showConsumablesSub { subs.append(.consumables) }
-        if showComponentsSub { subs.append(.components) }
+        if showConsumablesSub && !apiClient.deniedListModules.contains(.consumables) {
+            subs.append(.consumables)
+        }
+        if showComponentsSub && !apiClient.deniedListModules.contains(.components) {
+            subs.append(.components)
+        }
         return subs
     }
 
@@ -249,6 +254,7 @@ struct ContentView: View {
         .onChange(of: showLicensesTab) { _, _ in resetSelectedTabIfHidden() }
         .onChange(of: showConsumablesSub) { _, _ in resetSelectedTabIfHidden() }
         .onChange(of: showComponentsSub) { _, _ in resetSelectedTabIfHidden() }
+        .onChange(of: apiClient.deniedListModules) { _, _ in resetSelectedTabIfHidden() }
         .onChange(of: selectedTab) { _, newTab in
             // Reset search
             searchText = ""
@@ -474,19 +480,24 @@ struct ContentView: View {
     }
 
     private func isTabVisible(_ tab: MainTab) -> Bool {
+        let denied = apiClient.deniedListModules
         switch tab {
-        case .hardware, .directory:
-            return true
-        case .accessories: return showAccessoriesTab
-        case .licenses: return showLicensesTab
+        case .hardware:
+            return !denied.contains(.hardware)
+        case .accessories:
+            return showAccessoriesTab && !denied.contains(.accessories)
+        case .licenses:
+            return showLicensesTab && !denied.contains(.licenses)
         case .stock:
-            return showConsumablesSub || showComponentsSub
+            return !enabledStockSubmodules.isEmpty
+        case .directory:
+            return !denied.contains(.users) || !denied.contains(.locations)
         }
     }
 
     private func resetSelectedTabIfHidden() {
-        if !isTabVisible(selectedTab) {
-            selectedTab = .hardware
+        if !orderedVisibleTabs.contains(selectedTab) {
+            selectedTab = orderedVisibleTabs[0]
         }
     }
 
@@ -1285,19 +1296,21 @@ struct HardwareTab: View {
                     EmptyView()
                 } else if showMaintenance || enableAuditSubtab {
                     Menu {
+                        if apiClient.canPerform(.hardware, .create) {
                         Button {
                             showingAddAsset = true
                         } label: {
                             Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
                         }
-                        if showMaintenance {
+                        }
+                        if showMaintenance && (apiClient.canPerform(.hardware, .update) || apiClient.canPerform(.hardware, .audit)) {
                             Button {
                                 showingAddMaintenance = true
                             } label: {
                                 Label(L10n.string("add_maintenance"), systemImage: "wrench.and.screwdriver")
                             }
                         }
-                        if enableAuditSubtab {
+                        if enableAuditSubtab && apiClient.canPerform(.hardware, .audit) {
                             Button {
                                 showingBulkAudit = true
                             } label: {
@@ -1315,10 +1328,12 @@ struct HardwareTab: View {
                     .accessibilityLabel(L10n.string("add"))
                 } else {
                     Menu {
+                        if apiClient.canPerform(.hardware, .create) {
                         Button {
                             showingAddAsset = true
                         } label: {
                             Label(L10n.string("add_asset"), systemImage: "laptopcomputer")
+                        }
                         }
                         Button {
                             showingBulkLabels = true
@@ -1873,11 +1888,13 @@ struct AccessoriesTab: View {
             .onChange(of: apiClient.accessories) { _, _ in tryPushPendingQRLink() }
             .navigationTitle(L10n.string("tab_accessories"))
             .toolbar {
+                if apiClient.canPerform(.accessories, .create) {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { showingAddAccessory = true } label: {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(L10n.string("add_accessory"))
+                }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showingScanner = true } label: {
@@ -1948,11 +1965,13 @@ struct LicensesTab: View {
             .onChange(of: apiClient.licenses) { _, _ in tryPushPendingQRLink() }
             .navigationTitle(L10n.string("tab_licenses"))
             .toolbar {
+                if apiClient.canPerform(.licenses, .create) {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { showingAddLicense = true } label: {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(L10n.string("add_license"))
+                }
                 }
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
             }
@@ -2215,8 +2234,10 @@ struct StockTab: View {
 
     private func isEnabled(_ s: StockSubmodule) -> Bool {
         switch s {
-        case .consumables: return showConsumablesSub
-        case .components: return showComponentsSub
+        case .consumables:
+            return showConsumablesSub && !apiClient.deniedListModules.contains(.consumables)
+        case .components:
+            return showComponentsSub && !apiClient.deniedListModules.contains(.components)
         }
     }
 
@@ -2273,6 +2294,8 @@ struct StockTab: View {
                         )
                     }
                 }
+                if (selectedSubmodule == .consumables && apiClient.canPerform(.consumables, .create))
+                    || (selectedSubmodule == .components && apiClient.canPerform(.components, .create)) {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         if selectedSubmodule == .consumables {
@@ -2284,6 +2307,7 @@ struct StockTab: View {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(addLabel)
+                }
                 }
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
             }
@@ -2971,10 +2995,19 @@ struct DirectoryTab: View {
     @State private var showingAddUser = false
     @State private var showingAddLocation = false
 
-    private var enabledSubmodules: [DirectorySubmodule] { DirectorySubmodule.allCases }
+    private var enabledSubmodules: [DirectorySubmodule] {
+        DirectorySubmodule.allCases.filter { submodule in
+            switch submodule {
+            case .users: return !apiClient.deniedListModules.contains(.users)
+            case .locations: return !apiClient.deniedListModules.contains(.locations)
+            }
+        }
+    }
 
     private var selectedSubmodule: DirectorySubmodule {
-        DirectorySubmodule(rawValue: selectedSubmoduleRaw) ?? .users
+        let stored = DirectorySubmodule(rawValue: selectedSubmoduleRaw) ?? .users
+        if enabledSubmodules.contains(stored) { return stored }
+        return enabledSubmodules.first ?? .users
     }
 
     private var addLabel: String {
@@ -3024,6 +3057,8 @@ struct DirectoryTab: View {
                         )
                     }
                 }
+                if (selectedSubmodule == .users && apiClient.canPerform(.users, .create))
+                    || (selectedSubmodule == .locations && apiClient.canPerform(.locations, .create)) {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         switch selectedSubmodule {
@@ -3034,6 +3069,7 @@ struct DirectoryTab: View {
                         Image(systemName: "plus.circle")
                     }
                     .accessibilityLabel(addLabel)
+                }
                 }
                 commonModuleToolbar(showingSettings: $showingSettings, showingScanner: $showingScanner)
             }

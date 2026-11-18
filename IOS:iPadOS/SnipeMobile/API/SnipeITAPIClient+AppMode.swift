@@ -73,6 +73,7 @@ extension SnipeITAPIClient {
 
         await MainActor.run {
             self.currentUser = user
+            self.applyAccountPermissions(from: meProbe.data)
         }
         progress.connection = .success
         await publish()

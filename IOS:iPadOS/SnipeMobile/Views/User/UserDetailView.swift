@@ -213,7 +213,7 @@ struct UserDetailView: View {
         )
         .navigationBarTitleDisplayMode(isReadOnly ? .large : .inline)
         .toolbar {
-            if !isReadOnly {
+            if !isReadOnly && apiClient.canPerform(.users, .update) {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showEditSheet = true } label: {
                         Image(systemName: "pencil")
@@ -221,6 +221,8 @@ struct UserDetailView: View {
                     .disabled(isDeleting)
                     .accessibilityLabel(L10n.string("edit"))
                 }
+            }
+            if !isReadOnly && apiClient.canPerform(.users, .delete) {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(role: .destructive) {
                         showDeleteConfirm = true

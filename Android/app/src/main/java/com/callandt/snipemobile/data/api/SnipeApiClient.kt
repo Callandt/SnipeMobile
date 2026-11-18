@@ -62,6 +62,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -121,6 +122,137 @@ data class AuthorizedProbeResult(
     val data: String,
     val ok: Boolean,
 )
+
+/** Top-level list shown as a tab or submodule. A 403 on that exact path means no view permission. */
+enum class SnipeListModule {
+    Hardware,
+    Accessories,
+    Licenses,
+    Consumables,
+    Components,
+    Users,
+    Locations;
+
+    companion object {
+        fun fromListPath(path: String): SnipeListModule? = when (path) {
+            "/api/v1/hardware" -> Hardware
+            "/api/v1/accessories" -> Accessories
+            "/api/v1/licenses" -> Licenses
+            "/api/v1/consumables" -> Consumables
+            "/api/v1/components" -> Components
+            "/api/v1/users" -> Users
+            "/api/v1/locations" -> Locations
+            else -> null
+        }
+    }
+
+    val viewPermission: String
+        get() = when (this) {
+            Hardware -> "assets.view"
+            Accessories -> "accessories.view"
+            Licenses -> "licenses.view"
+            Consumables -> "consumables.view"
+            Components -> "components.view"
+            Users -> "users.view"
+            Locations -> "locations.view"
+        }
+
+    fun permission(kind: SnipeActionKind): String {
+        val prefix = when (this) {
+            Hardware -> "assets"
+            Accessories -> "accessories"
+            Licenses -> "licenses"
+            Consumables -> "consumables"
+            Components -> "components"
+            Users -> "users"
+            Locations -> "locations"
+        }
+        val suffix = when (kind) {
+            SnipeActionKind.Create -> "create"
+            SnipeActionKind.Update -> "edit"
+            SnipeActionKind.Delete -> "delete"
+            SnipeActionKind.Checkout -> "checkout"
+            SnipeActionKind.Checkin -> "checkin"
+            SnipeActionKind.Audit -> "audit"
+        }
+        return "$prefix.$suffix"
+    }
+}
+
+enum class SnipeActionKind { Create, Update, Delete, Checkout, Checkin, Audit }
+
+/** Resolved from list `available_actions`. Group rights show up here. */
+data class SnipeModuleActionRights(
+    val create: Boolean = false,
+    val update: Boolean = false,
+    val delete: Boolean = false,
+    val checkout: Boolean = false,
+    val checkin: Boolean = false,
+    val audit: Boolean = false,
+    val known: Boolean = false,
+) {
+    fun allows(kind: SnipeActionKind): Boolean = when (kind) {
+        SnipeActionKind.Create -> create
+        SnipeActionKind.Update -> update
+        SnipeActionKind.Delete -> delete
+        SnipeActionKind.Checkout -> checkout
+        SnipeActionKind.Checkin -> checkin
+        SnipeActionKind.Audit -> audit
+    }
+}
+
+/** Explicit grants and denies from `/users/me`. `0` means inherit. */
+data class SnipeAccountPermissions(
+    val grants: Set<String> = emptySet(),
+    val denies: Set<String> = emptySet(),
+    val loaded: Boolean = false,
+) {
+    val hasFullAdminRights: Boolean
+        get() = "superuser" in grants || "admin" in grants
+
+    fun grants(key: String): Boolean = key in grants
+    fun denies(key: String): Boolean = key in denies
+
+    fun allowsAction(
+        rights: Map<SnipeListModule, SnipeModuleActionRights>,
+        module: SnipeListModule,
+        kind: SnipeActionKind,
+        serverAllows: Boolean? = null,
+    ): Boolean {
+        val key = module.permission(kind)
+        if (denies(key)) return false
+        if (hasFullAdminRights || grants(key)) return true
+        if (serverAllows != null) return serverAllows
+        return rights[module]?.allows(kind) == true
+    }
+
+    companion object {
+        fun parse(body: String): SnipeAccountPermissions {
+            val json = runCatching { SnipeJson.parseToJsonElement(body) as? JsonObject }.getOrNull()
+                ?: return SnipeAccountPermissions(loaded = true)
+            val root = json["payload"] as? JsonObject ?: json
+            val permissions = root["permissions"] as? JsonObject
+                ?: return SnipeAccountPermissions(loaded = true)
+            val grants = mutableSetOf<String>()
+            val denies = mutableSetOf<String>()
+            permissions.forEach { (key, value) ->
+                when (permissionValue(value)) {
+                    1 -> grants += key
+                    -1 -> denies += key
+                }
+            }
+            return SnipeAccountPermissions(grants, denies, loaded = true)
+        }
+
+        private fun permissionValue(value: JsonElement): Int {
+            val primitive = value as? JsonPrimitive ?: return 0
+            primitive.intOrNull?.let { return it }
+            primitive.booleanOrNull?.let { return if (it) 1 else 0 }
+            primitive.contentOrNull?.toIntOrNull()?.let { return it }
+            return 0
+        }
+    }
+}
 
 class SnipeApiClient(
     context: Context,
@@ -224,6 +356,16 @@ class SnipeApiClient(
     private val _pendingUnauthorizedSessionWipe = MutableStateFlow(false)
     val pendingUnauthorizedSessionWipe: StateFlow<Boolean> = _pendingUnauthorizedSessionWipe.asStateFlow()
 
+    private val _deniedListModules = MutableStateFlow<Set<SnipeListModule>>(emptySet())
+    val deniedListModules: StateFlow<Set<SnipeListModule>> = _deniedListModules.asStateFlow()
+
+    private val _accountPermissions = MutableStateFlow(SnipeAccountPermissions())
+    val accountPermissions: StateFlow<SnipeAccountPermissions> = _accountPermissions.asStateFlow()
+
+    private val _moduleActionRights = MutableStateFlow<Map<SnipeListModule, SnipeModuleActionRights>>(emptyMap())
+    val moduleActionRights: StateFlow<Map<SnipeListModule, SnipeModuleActionRights>> =
+        _moduleActionRights.asStateFlow()
+
     /** Keep the first refresh error of a sync. */
     private fun reportRefreshError(message: String) {
         if (_refreshErrorMessage.value == null) {
@@ -239,9 +381,127 @@ class SnipeApiClient(
         _pendingUnauthorizedSessionWipe.value = false
     }
 
+    /** 401, or 403 when the token itself is rejected (`/users/me`). A 403 on a module list does not wipe. */
     private fun isUnauthorizedStatus(code: Int): Boolean = code == 401 || code == 403
 
-    /** 401/403 → wipe dialog (when configured). */
+    /** 403 on a module list: drop cached rows and hide that tab. */
+    private suspend fun noteListForbidden(path: String) {
+        val module = SnipeListModule.fromListPath(path) ?: return
+        withContext(Dispatchers.Main) {
+            if (module !in _deniedListModules.value) {
+                _deniedListModules.value = _deniedListModules.value + module
+            }
+            val cleared = when (module) {
+                SnipeListModule.Hardware -> _assets.value.isNotEmpty().also { if (it) _assets.value = emptyList() }
+                SnipeListModule.Accessories -> _accessories.value.isNotEmpty().also { if (it) _accessories.value = emptyList() }
+                SnipeListModule.Licenses -> _licenses.value.isNotEmpty().also { if (it) _licenses.value = emptyList() }
+                SnipeListModule.Consumables -> _consumables.value.isNotEmpty().also { if (it) _consumables.value = emptyList() }
+                SnipeListModule.Components -> _components.value.isNotEmpty().also { if (it) _components.value = emptyList() }
+                SnipeListModule.Users -> _users.value.isNotEmpty().also { if (it) _users.value = emptyList() }
+                SnipeListModule.Locations -> _locations.value.isNotEmpty().also { if (it) _locations.value = emptyList() }
+            }
+            if (cleared) scheduleCacheSave()
+        }
+    }
+
+    private suspend fun noteListAccessible(path: String) {
+        val module = SnipeListModule.fromListPath(path) ?: return
+        if (_accountPermissions.value.denies(module.viewPermission)) return
+        if (module !in _deniedListModules.value) return
+        withContext(Dispatchers.Main) {
+            _deniedListModules.value = _deniedListModules.value - module
+        }
+    }
+
+    private suspend fun applyAccountPermissions(body: String) {
+        val parsed = SnipeAccountPermissions.parse(body)
+        withContext(Dispatchers.Main) {
+            _accountPermissions.value = parsed
+        }
+        applyExplicitViewDenies()
+    }
+
+    private suspend fun applyExplicitViewDenies() {
+        val permissions = _accountPermissions.value
+        for (module in SnipeListModule.entries) {
+            if (!permissions.denies(module.viewPermission)) continue
+            noteListForbidden("/api/v1/" + when (module) {
+                SnipeListModule.Hardware -> "hardware"
+                SnipeListModule.Accessories -> "accessories"
+                SnipeListModule.Licenses -> "licenses"
+                SnipeListModule.Consumables -> "consumables"
+                SnipeListModule.Components -> "components"
+                SnipeListModule.Users -> "users"
+                SnipeListModule.Locations -> "locations"
+            })
+        }
+    }
+
+    private fun canFetchList(module: SnipeListModule): Boolean =
+        !_accountPermissions.value.denies(module.viewPermission)
+
+    /** Full admin, an explicit grant, a per-item flag, or the same flag sampled from a list. */
+    fun canPerform(
+        module: SnipeListModule,
+        kind: SnipeActionKind,
+        serverAllows: Boolean? = null,
+    ): Boolean {
+        return _accountPermissions.value.allowsAction(
+            _moduleActionRights.value,
+            module,
+            kind,
+            serverAllows,
+        )
+    }
+
+    /** Blocks the write and records why. Returns true when the caller must stop. */
+    private suspend fun rejectIfForbidden(
+        module: SnipeListModule,
+        kind: SnipeActionKind,
+        serverAllows: Boolean? = null,
+    ): Boolean {
+        if (canPerform(module, kind, serverAllows)) return false
+        withContext(Dispatchers.Main) {
+            _lastApiMessage.value = L10n.string("api_validate_unauthorized")
+        }
+        return true
+    }
+
+    private fun resetActionRights(module: SnipeListModule) {
+        _moduleActionRights.value = _moduleActionRights.value + (module to SnipeModuleActionRights())
+    }
+
+    private fun noteActionRights(path: String, pageJson: JsonObject?, reset: Boolean) {
+        val module = SnipeListModule.fromListPath(path) ?: return
+        if (reset) resetActionRights(module)
+        val rows = pageJson?.get("rows") as? JsonArray ?: return
+        var rights = _moduleActionRights.value[module] ?: SnipeModuleActionRights()
+        var saw = false
+        for (element in rows) {
+            val actions = (element as? JsonObject)?.get("available_actions") as? JsonObject ?: continue
+            saw = true
+            rights = rights.copy(
+                create = rights.create || actionFlag(actions["clone"]) || actionFlag(actions["create"]),
+                update = rights.update || actionFlag(actions["update"]),
+                delete = rights.delete || actionFlag(actions["delete"]),
+                checkout = rights.checkout || actionFlag(actions["checkout"]),
+                checkin = rights.checkin || actionFlag(actions["checkin"]),
+                audit = rights.audit || actionFlag(actions["audit"]),
+                known = true,
+            )
+        }
+        if (!saw) return
+        _moduleActionRights.value = _moduleActionRights.value + (module to rights)
+    }
+
+    private fun actionFlag(value: JsonElement?): Boolean {
+        val primitive = value as? JsonPrimitive ?: return false
+        primitive.intOrNull?.let { return it == 1 }
+        primitive.booleanOrNull?.let { return it }
+        return primitive.contentOrNull == "1" || primitive.contentOrNull.equals("true", ignoreCase = true)
+    }
+
+    /** 401/403 on `/users/me` → wipe dialog (when configured). */
     private fun reportUnauthorizedSession() {
         val onboarded = preferences.getHasCompletedOnboardingBlocking()
         if (!_isConfigured.value || !onboarded) {
@@ -366,6 +626,9 @@ class SnipeApiClient(
             _lastApiMessage.value = null
             _refreshErrorMessage.value = null
             _pendingUnauthorizedSessionWipe.value = false
+            _deniedListModules.value = emptySet()
+            _accountPermissions.value = SnipeAccountPermissions()
+            _moduleActionRights.value = emptyMap()
             if (resetConfigured) {
                 _isConfigured.value = false
             }
@@ -498,7 +761,8 @@ class SnipeApiClient(
             }
         }
         fetchCurrentUser()
-        fetchAssets()
+        applyExplicitViewDenies()
+        if (canFetchList(SnipeListModule.Hardware)) fetchAssets()
         // Stop after auth/connectivity failure.
         if (_refreshErrorMessage.value != null || _pendingUnauthorizedSessionWipe.value) {
             withContext(Dispatchers.Main) {
@@ -507,7 +771,7 @@ class SnipeApiClient(
             }
             return
         }
-        fetchUsers()
+        if (canFetchList(SnipeListModule.Users)) fetchUsers()
         if (_refreshErrorMessage.value != null || _pendingUnauthorizedSessionWipe.value) {
             withContext(Dispatchers.Main) {
                 _isLoading.value = false
@@ -515,11 +779,11 @@ class SnipeApiClient(
             }
             return
         }
-        fetchAccessories()
-        fetchLicenses()
-        fetchConsumables()
-        fetchComponents()
-        fetchLocations()
+        if (canFetchList(SnipeListModule.Accessories)) fetchAccessories()
+        if (canFetchList(SnipeListModule.Licenses)) fetchLicenses()
+        if (canFetchList(SnipeListModule.Consumables)) fetchConsumables()
+        if (canFetchList(SnipeListModule.Components)) fetchComponents()
+        if (canFetchList(SnipeListModule.Locations)) fetchLocations()
         fetchAllMaintenances()
         withContext(Dispatchers.Main) {
             _isLoading.value = false
@@ -604,6 +868,7 @@ class SnipeApiClient(
         }
 
         withContext(Dispatchers.Main) { _currentUser.value = user }
+        applyAccountPermissions(meProbe.data)
         progress = progress.copy(connection = AppModeCheckProgress.StepState.Success)
         publish()
 
@@ -808,6 +1073,7 @@ class SnipeApiClient(
                 withContext(Dispatchers.Main) {
                     _currentUser.value = user
                 }
+                applyAccountPermissions(response.body)
             } ?: run {
                 if (reportErrors) {
                     reportRefreshError(L10n.string("api_validate_connect_failed"))
@@ -2736,6 +3002,7 @@ class SnipeApiClient(
     suspend fun uploadAssetFiles(assetId: Int, files: List<UploadFile>, notes: String? = null): Boolean {
         if (files.isEmpty()) return true
         if (baseUrl.isEmpty() || apiToken.isEmpty()) return false
+        if (rejectIfForbidden(SnipeListModule.Hardware, SnipeActionKind.Update)) return false
         return withContext(Dispatchers.IO) {
             runCatching {
                 val multipartBuilder = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -3003,6 +3270,13 @@ class SnipeApiClient(
                 continue
             }
             if (response.code !in 200..299) {
+                // Missing view permission. Keep the session and skip this list.
+                if (response.code == 403) {
+                    if (!isCancelled()) {
+                        noteListForbidden(path)
+                    }
+                    return null
+                }
                 if (reportConnectionError) {
                     withContext(Dispatchers.Main) {
                         reportHttpRefreshFailure(response.code)
@@ -3011,6 +3285,7 @@ class SnipeApiClient(
                 return null
             }
             val pageJson = parseJsonObject(response.body)
+            noteActionRights(path, pageJson, reset = offset == 0)
             val rowsElement = pageJson?.get("rows")
             val rows = if (rowsElement is JsonArray) {
                 rowsElement.mapNotNull { element ->
@@ -3029,6 +3304,9 @@ class SnipeApiClient(
             if (rows.isEmpty()) break
             offset += API_PAGE_SIZE
             delay(PAGE_DELAY_MS)
+        }
+        if (!isCancelled()) {
+            noteListAccessible(path)
         }
         return collected
     }
@@ -3056,11 +3334,13 @@ class SnipeApiClient(
         return executeJsonRequest("POST", url, body + ("_method" to "PUT"))
     }
 
-    private suspend fun executeDelete(url: String): HttpResult =
-        withContext(Dispatchers.IO) {
+    private suspend fun executeDelete(url: String): HttpResult {
+        if (blockedWrite(url, "DELETE")) return forbiddenWriteResult()
+        return withContext(Dispatchers.IO) {
             val request = authorizedRequest(url).delete().build()
             client.newCall(request).executeSafely()
         }
+    }
 
     private suspend fun executeDeleteWithFallback(url: String): HttpResult {
         var response = executeDelete(url)
@@ -3075,12 +3355,73 @@ class SnipeApiClient(
         return response
     }
 
-    private suspend fun executeJsonRequest(method: String, url: String, body: Map<String, Any?>): HttpResult =
-        withContext(Dispatchers.IO) {
+    private suspend fun executeJsonRequest(method: String, url: String, body: Map<String, Any?>): HttpResult {
+        if (blockedWrite(url, method)) return forbiddenWriteResult()
+        return withContext(Dispatchers.IO) {
             val jsonBody = mapToJson(body).toString().toRequestBody(jsonMediaType)
             val request = authorizedRequest(url).method(method, jsonBody).build()
             client.newCall(request).executeSafely()
         }
+    }
+
+    /** Stops inventory writes the signed-in account is not allowed to make. */
+    private suspend fun blockedWrite(url: String, method: String): Boolean {
+        val path = url.substringAfter("/api/v1/", "").substringBefore('?').trim('/')
+        if (path.isEmpty()) return false
+        val module = when {
+            path.startsWith("hardware") -> SnipeListModule.Hardware
+            path.startsWith("accessories") -> SnipeListModule.Accessories
+            path.startsWith("licenses") -> SnipeListModule.Licenses
+            path.startsWith("consumables") -> SnipeListModule.Consumables
+            path.startsWith("components") -> SnipeListModule.Components
+            path.startsWith("users") -> SnipeListModule.Users
+            path.startsWith("locations") -> SnipeListModule.Locations
+            path.startsWith("maintenances") -> SnipeListModule.Hardware
+            else -> return false
+        }
+        if (path.contains("/seats")) {
+            if (
+                canPerform(module, SnipeActionKind.Checkout) ||
+                canPerform(module, SnipeActionKind.Checkin) ||
+                canPerform(module, SnipeActionKind.Update)
+            ) {
+                return false
+            }
+            withContext(Dispatchers.Main) {
+                _lastApiMessage.value = L10n.string("api_validate_unauthorized")
+            }
+            return true
+        }
+        if (path.startsWith("maintenances")) {
+            if (method == "DELETE") return rejectIfForbidden(module, SnipeActionKind.Delete)
+            if (canPerform(module, SnipeActionKind.Audit) || canPerform(module, SnipeActionKind.Update)) {
+                return false
+            }
+            withContext(Dispatchers.Main) {
+                _lastApiMessage.value = L10n.string("api_validate_unauthorized")
+            }
+            return true
+        }
+        val kind = when {
+            path.contains("/checkout") -> SnipeActionKind.Checkout
+            path.contains("/checkin") -> SnipeActionKind.Checkin
+            path.contains("/audit") -> SnipeActionKind.Audit
+            method == "DELETE" -> SnipeActionKind.Delete
+            method == "PATCH" || method == "PUT" -> SnipeActionKind.Update
+            else -> {
+                val last = path.substringAfterLast('/')
+                if (last.all { it.isDigit() }) SnipeActionKind.Update else SnipeActionKind.Create
+            }
+        }
+        return rejectIfForbidden(module, kind)
+    }
+
+    private suspend fun forbiddenWriteResult(): HttpResult {
+        withContext(Dispatchers.Main) {
+            _lastApiMessage.value = L10n.string("api_validate_unauthorized")
+        }
+        return HttpResult(code = 403, body = "", json = null)
+    }
 
     // Socket errors become a result. Cancel still throws.
     private suspend fun Call.executeSafely(): HttpResult {
@@ -3111,7 +3452,14 @@ class SnipeApiClient(
         method: String,
         body: Map<String, Any?>,
         image: UploadFile?,
-    ): HttpResult = withContext(Dispatchers.IO) {
+    ): HttpResult {
+        val kind = when {
+            url.contains("/audit") -> SnipeActionKind.Audit
+            method == "POST" -> SnipeActionKind.Create
+            else -> SnipeActionKind.Update
+        }
+        if (rejectIfForbidden(SnipeListModule.Hardware, kind)) return forbiddenWriteResult()
+        return withContext(Dispatchers.IO) {
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
         var httpMethod = method
         if (method == "PUT" || method == "PATCH") {
@@ -3132,6 +3480,7 @@ class SnipeApiClient(
         }
         val request = authorizedRequest(url).method(httpMethod, builder.build()).build()
         client.newCall(request).executeSafely()
+        }
     }
 
     private suspend fun putLicenseSeatUpdate(

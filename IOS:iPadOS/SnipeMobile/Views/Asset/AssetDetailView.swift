@@ -102,22 +102,22 @@ struct AssetDetailView: View {
         return meta.isEmpty ? nil : L10n.statusLabel(meta)
     }
 
-    /// Check Out only when deployable.
+    private var canEditAsset: Bool {
+        apiClient.canPerform(.hardware, .update, serverAllows: currentAsset.availableActions?.update)
+    }
+
+    private var canDeleteAsset: Bool {
+        apiClient.canPerform(.hardware, .delete, serverAllows: currentAsset.availableActions?.delete)
+    }
+
+    private var canCheckIn: Bool {
+        isDeployed && apiClient.canPerform(.hardware, .checkin, serverAllows: currentAsset.availableActions?.checkin)
+    }
+
+    /// Check Out only when this account may check the asset out.
     private var canCheckOut: Bool {
         guard !isDeployed else { return false }
-        if currentAsset.userCanCheckout { return true }
-        if currentAsset.availableActions?.checkout == true { return true }
-
-        if let label = apiClient.statusLabels.first(where: { $0.id == currentAsset.statusLabel.id }) {
-            return label.isDeployableType
-        }
-
-        if currentAsset.statusLabel.isDeployableType {
-            return true
-        }
-
-        let meta = currentAsset.statusLabel.statusMeta?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-        return meta == "deployable" || meta == "ready_to_deploy"
+        return apiClient.canPerform(.hardware, .checkout, serverAllows: currentAsset.availableActions?.checkout)
     }
 
     private var resolvedImageURL: URL? {
@@ -300,18 +300,20 @@ struct AssetDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !isReadOnly {
+            if !isReadOnly && (canEditAsset || canCheckIn || canCheckOut) {
                 HStack(spacing: 12) {
-                    Button(action: prepareAndShowEditSheet) {
-                        Label(L10n.string("edit"), systemImage: "pencil")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
+                    if canEditAsset {
+                        Button(action: prepareAndShowEditSheet) {
+                            Label(L10n.string("edit"), systemImage: "pencil")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                    if isDeployed {
+                    if canCheckIn {
                         Button(action: { showCheckinSheet = true }) {
                             Label(L10n.string("check_in"), systemImage: "arrow.down.to.line")
                                 .font(.headline)
@@ -352,7 +354,7 @@ struct AssetDetailView: View {
                         .disabled(isGeneratingLabel || isDeleting)
                         .accessibilityLabel(L10n.string("print_label"))
                     }
-                    if !isReadOnly {
+                    if !isReadOnly && canDeleteAsset {
                         Button(role: .destructive) {
                             showDeleteConfirm = true
                         } label: {

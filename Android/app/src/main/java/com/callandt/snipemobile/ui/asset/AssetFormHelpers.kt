@@ -3,6 +3,7 @@ package com.callandt.snipemobile.ui.asset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
@@ -21,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -35,6 +38,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
@@ -177,37 +181,52 @@ internal fun AssetFormSheetScaffold(
     content: @Composable () -> Unit,
 ) {
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().imePadding(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text(title) },
-                windowInsets = WindowInsets(0, 0, 0, 0),
+                title = { Text(title, maxLines = 1) },
+                windowInsets = TopAppBarDefaults.windowInsets,
                 navigationIcon = {
                     IconButton(onClick = onDismiss, enabled = !isSaving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = L10n.string("cancel"))
                     }
                 },
-                actions = {
-                    if (isSaving) {
-                        CircularProgressIndicator(modifier = Modifier.padding(end = 16.dp))
-                    } else {
-                        TextButton(onClick = onSave, enabled = canSave) {
+            )
+        },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Button(
+                        onClick = onSave,
+                        enabled = canSave && !isSaving,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
                             Text(saveLabel)
                         }
                     }
-                },
-            )
+                }
+            }
         },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imePadding()
-                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             content()
         }
@@ -219,7 +238,7 @@ class SheetLayer(
     val contentState: androidx.compose.runtime.MutableState<@Composable () -> Unit>,
 )
 
-// Covers the tab bar. Title stays under the status bar.
+// Covers the tab bar. The confirm action sits in the bottom bar, clear of the status bar.
 class MainSheetOverlay {
     private val entries = mutableStateListOf<SheetLayer>()
 

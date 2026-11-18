@@ -57,10 +57,13 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.AssetMaintenance
 import com.callandt.snipemobile.data.model.DateInfo
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.components.CardListIcon
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.MaintenanceLinkedAssetInfo
 import com.callandt.snipemobile.ui.components.TappableDetailImage
 import com.callandt.snipemobile.ui.components.copyDetailValue
@@ -79,6 +82,20 @@ fun MaintenanceDetailScreen(maintenanceId: Int, viewModel: AppViewModel, onBack:
     val items by viewModel.maintenances.collectAsState()
     val assets by viewModel.assets.collectAsState()
     val lastApiMessage by viewModel.lastApiMessage.collectAsState()
+    val canEditMaintenance = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Update,
+    ) || rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Audit,
+    )
+    val canDeleteMaintenance = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Delete,
+    )
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
 
@@ -151,10 +168,12 @@ fun MaintenanceDetailScreen(maintenanceId: Int, viewModel: AppViewModel, onBack:
                     }
                 },
                 actions = {
-                    if (record != null) {
+                    if (record != null && canEditMaintenance) {
                         IconButton(onClick = { showEdit = true }, enabled = !isBusy) {
                             Icon(Icons.Default.Edit, contentDescription = L10n.string("edit"))
                         }
+                    }
+                    if (record != null && canDeleteMaintenance) {
                         IconButton(onClick = { showDelete = true }, enabled = !isBusy) {
                             Icon(
                                 Icons.Default.Delete,
@@ -167,7 +186,7 @@ fun MaintenanceDetailScreen(maintenanceId: Int, viewModel: AppViewModel, onBack:
             )
         },
         bottomBar = {
-            if (record != null && !record.isCompleted) {
+            if (record != null && !record.isCompleted && canEditMaintenance) {
                 Surface(tonalElevation = 2.dp) {
                     Button(
                         onClick = {

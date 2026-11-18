@@ -103,14 +103,15 @@ fun TabletMainSplit(
     val showLicenses by viewModel.showLicensesTab.collectAsState()
     val showConsumables by viewModel.showConsumablesTab.collectAsState()
     val showComponents by viewModel.showComponentsTab.collectAsState()
+    val denied by viewModel.deniedListModules.collectAsState()
 
-    val visibleTabs = buildList {
-        add(MainTab.Hardware)
-        if (showAccessories) add(MainTab.Accessories)
-        if (showLicenses) add(MainTab.Licenses)
-        if (showConsumables || showComponents) add(MainTab.Stock)
-        add(MainTab.Directory)
-    }
+    val visibleTabs = visibleMainTabs(
+        showAccessories = showAccessories,
+        showLicenses = showLicenses,
+        showConsumables = showConsumables,
+        showComponents = showComponents,
+        denied = denied,
+    )
 
     LaunchedEffect(visibleTabs, selectedTab) {
         if (selectedTab !in visibleTabs) {

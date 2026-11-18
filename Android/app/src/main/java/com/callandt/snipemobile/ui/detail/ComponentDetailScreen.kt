@@ -33,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.Component
 import com.callandt.snipemobile.data.model.ComponentAssetRow
 import com.callandt.snipemobile.ui.AppViewModel
@@ -50,6 +52,7 @@ import com.callandt.snipemobile.ui.components.DetailPageTitle
 import com.callandt.snipemobile.ui.components.DetailSectionCard
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
 import com.callandt.snipemobile.ui.components.ItemCard
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.rememberEntityDeleteState
 import com.callandt.snipemobile.ui.components.ItemHistoryTab
 import com.callandt.snipemobile.ui.theme.SnipeAccent
@@ -100,7 +103,11 @@ fun ComponentDetailScreen(
         reloadCheckedOut()
     }
 
-    val canCheckout = component?.remaining?.let { it > 0 } ?: true
+    val hasStock = component?.remaining?.let { it > 0 } ?: true
+    val canEdit = rememberCanPerform(viewModel.apiClient, SnipeListModule.Components, SnipeActionKind.Update)
+    val canDelete = rememberCanPerform(viewModel.apiClient, SnipeListModule.Components, SnipeActionKind.Delete)
+    val canCheckout = rememberCanPerform(viewModel.apiClient, SnipeListModule.Components, SnipeActionKind.Checkout)
+    val canCheckin = rememberCanPerform(viewModel.apiClient, SnipeListModule.Components, SnipeActionKind.Checkin)
 
     Scaffold(
         topBar = {
@@ -115,7 +122,11 @@ fun ComponentDetailScreen(
                     DetailEntityToolbarActions(
                         baseUrl = viewModel.apiClient.baseUrl,
                         webPath = "components/$componentId",
-                        onDeleteClick = { deleteState.requestDelete() },
+                        onDeleteClick = if (canDelete) {
+                            { deleteState.requestDelete() }
+                        } else {
+                            null
+                        },
                         deleteEnabled = !deleteState.isDeleting && !isCheckingIn,
                     )
                 },
@@ -123,12 +134,13 @@ fun ComponentDetailScreen(
         },
         bottomBar = {
             if (component != null) {
-                DetailBottomBar(
-                    actions = listOf(
-                        DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true },
-                        DetailBarAction(L10n.string("check_out"), SnipeAccent, enabled = canCheckout) { showCheckout = true },
-                    ),
-                )
+                val actions = buildList {
+                    if (canEdit) add(DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true })
+                    if (canCheckout) {
+                        add(DetailBarAction(L10n.string("check_out"), SnipeAccent, enabled = hasStock) { showCheckout = true })
+                    }
+                }
+                if (actions.isNotEmpty()) DetailBottomBar(actions = actions)
             }
         },
     ) { padding ->
@@ -161,6 +173,7 @@ fun ComponentDetailScreen(
                         loadingCheckedOut = loadingCheckedOut,
                         onOpenAsset = onOpenAsset,
                         onCheckin = { checkinTarget = it },
+                        canCheckin = canCheckin,
                     )
                     ComponentDetailTab.History -> ItemHistoryTab(
                         itemType = "component",
@@ -263,6 +276,7 @@ private fun ComponentDetailContent(
     loadingCheckedOut: Boolean,
     onOpenAsset: ((Int) -> Unit)?,
     onCheckin: (ComponentAssetRow) -> Unit,
+    canCheckin: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -316,7 +330,7 @@ private fun ComponentDetailContent(
                         ?: HtmlDecoder.decode(row.assetName ?: "")
                     val tag = fullAsset?.decodedAssetTag ?: row.decodedAssetTag
                     val qty = row.assignedQty
-                    val canCheckin = row.assignedPivotId != null
+                    val rowCanCheckin = canCheckin && row.assignedPivotId != null
                     val onOpen = row.assetId?.let { assetId ->
                         onOpenAsset?.let { callback -> { callback(assetId) } }
                     }
@@ -325,14 +339,14 @@ private fun ComponentDetailContent(
                             AssetCard(
                                 asset = fullAsset,
                                 onClick = { onOpen?.invoke() },
-                                onLongClick = { onCheckin(row) }.takeIf { canCheckin },
+                                onLongClick = { onCheckin(row) }.takeIf { rowCanCheckin },
                             )
                         } else {
                             AssetCheckedOutBanner(
                                 assigneeName = title.ifEmpty { tag }.ifEmpty { L10n.string("asset") },
                                 icon = Icons.Default.Laptop,
                                 onClick = onOpen,
-                                onLongClick = { onCheckin(row) }.takeIf { canCheckin },
+                                onLongClick = { onCheckin(row) }.takeIf { rowCanCheckin },
                             )
                         }
                         if (tag.isNotEmpty() && fullAsset == null) {

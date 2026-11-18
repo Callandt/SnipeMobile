@@ -5,6 +5,132 @@ import SwiftUI
 private func print(_ items: Any..., separator: String = " ", terminator: String = "\n") {}
 #endif
 
+/// Top-level list shown as a tab or submodule.
+/// A 403 on that exact path means the account lacks view permission.
+enum SnipeListModule: String, Hashable, CaseIterable {
+    case hardware
+    case accessories
+    case licenses
+    case consumables
+    case components
+    case users
+    case locations
+
+    static func fromListPath(_ path: String) -> SnipeListModule? {
+        switch path {
+        case "/api/v1/hardware": return .hardware
+        case "/api/v1/accessories": return .accessories
+        case "/api/v1/licenses": return .licenses
+        case "/api/v1/consumables": return .consumables
+        case "/api/v1/components": return .components
+        case "/api/v1/users": return .users
+        case "/api/v1/locations": return .locations
+        default: return nil
+        }
+    }
+
+    var viewPermission: String {
+        switch self {
+        case .hardware: return "assets.view"
+        case .accessories: return "accessories.view"
+        case .licenses: return "licenses.view"
+        case .consumables: return "consumables.view"
+        case .components: return "components.view"
+        case .users: return "users.view"
+        case .locations: return "locations.view"
+        }
+    }
+
+    func permission(for kind: SnipeActionKind) -> String {
+        let prefix: String
+        switch self {
+        case .hardware: prefix = "assets"
+        case .accessories: prefix = "accessories"
+        case .licenses: prefix = "licenses"
+        case .consumables: prefix = "consumables"
+        case .components: prefix = "components"
+        case .users: prefix = "users"
+        case .locations: prefix = "locations"
+        }
+        let suffix: String
+        switch kind {
+        case .create: suffix = "create"
+        case .update: suffix = "edit"
+        case .delete: suffix = "delete"
+        case .checkout: suffix = "checkout"
+        case .checkin: suffix = "checkin"
+        case .audit: suffix = "audit"
+        }
+        return "\(prefix).\(suffix)"
+    }
+}
+
+enum SnipeActionKind {
+    case create, update, delete, checkout, checkin, audit
+}
+
+/// Resolved from list `available_actions`. Group rights show up here; the user JSON often only says "inherit".
+struct SnipeModuleActionRights: Equatable {
+    var create = false
+    var update = false
+    var delete = false
+    var checkout = false
+    var checkin = false
+    var audit = false
+    var known = false
+
+    func allows(_ kind: SnipeActionKind) -> Bool {
+        switch kind {
+        case .create: return create
+        case .update: return update
+        case .delete: return delete
+        case .checkout: return checkout
+        case .checkin: return checkin
+        case .audit: return audit
+        }
+    }
+}
+
+/// Explicit grants and denies from `/users/me`. `0` means inherit and is left undecided.
+struct SnipeAccountPermissions: Equatable {
+    var grants: Set<String> = []
+    var denies: Set<String> = []
+    var loaded = false
+
+    var hasFullAdminRights: Bool {
+        grants.contains("superuser") || grants.contains("admin")
+    }
+
+    func grants(_ key: String) -> Bool { grants.contains(key) }
+    func denies(_ key: String) -> Bool { denies.contains(key) }
+
+    static func parse(from data: Data) -> SnipeAccountPermissions {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return SnipeAccountPermissions(loaded: true)
+        }
+        let root = (json["payload"] as? [String: Any]) ?? json
+        guard let permissions = root["permissions"] as? [String: Any] else {
+            return SnipeAccountPermissions(loaded: true)
+        }
+        var parsed = SnipeAccountPermissions(loaded: true)
+        for (key, value) in permissions {
+            switch Self.permissionValue(value) {
+            case 1: parsed.grants.insert(key)
+            case -1: parsed.denies.insert(key)
+            default: break
+            }
+        }
+        return parsed
+    }
+
+    private static func permissionValue(_ value: Any) -> Int {
+        if let number = value as? NSNumber { return number.intValue }
+        if let string = value as? String, let number = Int(string) { return number }
+        if let bool = value as? Bool { return bool ? 1 : 0 }
+        return 0
+    }
+}
+
 @MainActor
 class SnipeITAPIClient: ObservableObject {
     @Published var assets: [Asset] = [] { didSet { scheduleCacheSave() } }
@@ -41,8 +167,14 @@ class SnipeITAPIClient: ObservableObject {
     @Published var hasCompletedInitialLoad: Bool = false
     // Transient notice for a failed refresh (maintenance / unreachable). Cached data stays.
     @Published var refreshErrorMessage: String?
-    /// Set after 401/403 while configured (wipe alert → onboarding).
+    /// Set after a revoked token (401, or 401/403 on `/users/me`) while configured.
     @Published var pendingUnauthorizedSessionWipe: Bool = false
+    /// Module lists that returned 403. Those tabs stay hidden; the session stays.
+    @Published private(set) var deniedListModules: Set<SnipeListModule> = []
+    /// Explicit grants and denies from `/users/me`. Admin and superuser unlock every action.
+    @Published private(set) var accountPermissions = SnipeAccountPermissions()
+    /// Class-level actions seen on list rows (`available_actions`), including rights inherited from groups.
+    @Published private(set) var moduleActionRights: [SnipeListModule: SnipeModuleActionRights] = [:]
     @Published var statusLabels: [StatusLabel] = [] { didSet { scheduleCacheSave() } }
 
     /// Asset ids to re-fetch by id after bulk list sync (avoids stale status/assignment).
@@ -228,6 +360,14 @@ class SnipeITAPIClient: ObservableObject {
                     let preview = String(data: data.prefix(300), encoding: .utf8) ?? "<non-UTF8>"
                     print("[SnipeMobile] paginated GET \(path) status=\(http.statusCode) body=\(preview)")
                     #endif
+                    // Missing view permission. Keep the session and skip this list.
+                    if http.statusCode == 403 {
+                        AppLog.network("GET \(path) HTTP 403")
+                        if !isCancelled() && !Task.isCancelled {
+                            self.noteListForbidden(path)
+                        }
+                        return nil
+                    }
                     if reportConnectionError {
                         AppLog.network("GET \(path) HTTP \(http.statusCode)")
                         self.reportHTTPRefreshFailure(statusCode: http.statusCode)
@@ -236,6 +376,7 @@ class SnipeITAPIClient: ObservableObject {
                 }
             }
 
+            noteActionRights(path: path, data: data, reset: offset == 0)
             let page = try JSONDecoder().decode(PagedRows<T>.self, from: data)
             let rows = page.rows ?? []
             collected.append(contentsOf: rows)
@@ -250,6 +391,9 @@ class SnipeITAPIClient: ObservableObject {
             try? await Task.sleep(nanoseconds: Self.pageDelayNanos)
         }
 
+        if !isCancelled() && !Task.isCancelled {
+            noteListAccessible(path)
+        }
         return collected
     }
 
@@ -368,8 +512,123 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
+    /// 401, or 403 when the token itself is rejected (`/users/me`).
+    /// A 403 from a module list is handled in `fetchAllPaginated` and does not wipe the session.
     static func isUnauthorizedStatus(_ statusCode: Int) -> Bool {
         statusCode == 401 || statusCode == 403
+    }
+
+    /// 403 on a module list: drop cached rows and hide that tab.
+    private func noteListForbidden(_ path: String) {
+        guard let module = SnipeListModule.fromListPath(path) else { return }
+        if !deniedListModules.contains(module) {
+            deniedListModules = deniedListModules.union([module])
+        }
+        clearCachedList(module)
+    }
+
+    private func noteListAccessible(_ path: String) {
+        guard let module = SnipeListModule.fromListPath(path) else { return }
+        if accountPermissions.denies(module.viewPermission) { return }
+        guard deniedListModules.contains(module) else { return }
+        deniedListModules = deniedListModules.subtracting([module])
+    }
+
+    func applyAccountPermissions(from data: Data) {
+        accountPermissions = SnipeAccountPermissions.parse(from: data)
+        applyExplicitViewDenies()
+    }
+
+    /// Hide modules the account is explicitly forbidden to view, before the list request.
+    func applyExplicitViewDenies() {
+        for module in SnipeListModule.allCases {
+            guard accountPermissions.denies(module.viewPermission) else { continue }
+            if !deniedListModules.contains(module) {
+                deniedListModules = deniedListModules.union([module])
+            }
+            clearCachedList(module)
+        }
+    }
+
+    func canFetchList(_ module: SnipeListModule) -> Bool {
+        !accountPermissions.denies(module.viewPermission)
+    }
+
+    /// Full admin, an explicit grant, a per-item `available_actions` flag, or the same flag on a list row.
+    func canPerform(
+        _ module: SnipeListModule,
+        _ kind: SnipeActionKind,
+        serverAllows: Bool? = nil
+    ) -> Bool {
+        let key = module.permission(for: kind)
+        if accountPermissions.denies(key) { return false }
+        if accountPermissions.hasFullAdminRights || accountPermissions.grants(key) { return true }
+        if let serverAllows { return serverAllows }
+        return moduleActionRights[module]?.allows(kind) == true
+    }
+
+    /// Blocks the write and records why. Returns true when the caller must stop.
+    @discardableResult
+    func rejectIfForbidden(_ module: SnipeListModule, _ kind: SnipeActionKind, serverAllows: Bool? = nil) -> Bool {
+        if canPerform(module, kind, serverAllows: serverAllows) { return false }
+        lastApiMessage = L10n.string("api_validate_unauthorized")
+        return true
+    }
+
+    private func resetActionRights(for module: SnipeListModule) {
+        var next = moduleActionRights
+        next[module] = SnipeModuleActionRights()
+        moduleActionRights = next
+    }
+
+    private func noteActionRights(path: String, data: Data, reset: Bool) {
+        guard let module = SnipeListModule.fromListPath(path) else { return }
+        if reset { resetActionRights(for: module) }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rows = json["rows"] as? [[String: Any]] else { return }
+        var rights = moduleActionRights[module] ?? SnipeModuleActionRights()
+        var saw = false
+        for row in rows {
+            guard let actions = row["available_actions"] as? [String: Any] else { continue }
+            saw = true
+            rights.create = rights.create || Self.actionFlag(actions["clone"]) || Self.actionFlag(actions["create"])
+            rights.update = rights.update || Self.actionFlag(actions["update"])
+            rights.delete = rights.delete || Self.actionFlag(actions["delete"])
+            rights.checkout = rights.checkout || Self.actionFlag(actions["checkout"])
+            rights.checkin = rights.checkin || Self.actionFlag(actions["checkin"])
+            rights.audit = rights.audit || Self.actionFlag(actions["audit"])
+        }
+        guard saw else { return }
+        rights.known = true
+        var next = moduleActionRights
+        next[module] = rights
+        moduleActionRights = next
+    }
+
+    private static func actionFlag(_ value: Any?) -> Bool {
+        if let number = value as? NSNumber { return number.intValue == 1 || number.boolValue && number.intValue != -1 && number.intValue != 0 }
+        if let string = value as? String { return string == "1" || string.lowercased() == "true" }
+        if let bool = value as? Bool { return bool }
+        return false
+    }
+
+    private func clearCachedList(_ module: SnipeListModule) {
+        switch module {
+        case .hardware:
+            if !assets.isEmpty { assets = [] }
+        case .accessories:
+            if !accessories.isEmpty { accessories = [] }
+        case .licenses:
+            if !licenses.isEmpty { licenses = [] }
+        case .consumables:
+            if !consumables.isEmpty { consumables = [] }
+        case .components:
+            if !components.isEmpty { components = [] }
+        case .users:
+            if !users.isEmpty { users = [] }
+        case .locations:
+            if !locations.isEmpty { locations = [] }
+        }
     }
 
     /// Keep the first refresh error of a sync.
@@ -379,7 +638,7 @@ class SnipeITAPIClient: ObservableObject {
         }
     }
 
-    /// 401/403 → wipe alert (when configured).
+    /// Revoked token → wipe alert (when configured). List 403s do not call this.
     func reportUnauthorizedSession() {
         let onboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         guard isConfigured, onboarded else {
@@ -485,6 +744,9 @@ class SnipeITAPIClient: ObservableObject {
         lastApiMessage = nil
         refreshErrorMessage = nil
         pendingUnauthorizedSessionWipe = false
+        deniedListModules = []
+        accountPermissions = SnipeAccountPermissions()
+        moduleActionRights = [:]
 
         if resetAppMode {
             if fullWipe {
@@ -594,7 +856,10 @@ class SnipeITAPIClient: ObservableObject {
         }
 
         await fetchCurrentUser()
-        await fetchAssets()
+        applyExplicitViewDenies()
+        if canFetchList(.hardware) {
+            await fetchAssets()
+        }
         // Stop after auth/connectivity failure.
         if refreshErrorMessage != nil || pendingUnauthorizedSessionWipe {
             isLoading = false
@@ -602,7 +867,9 @@ class SnipeITAPIClient: ObservableObject {
             return
         }
 
-        await fetchUsers()
+        if canFetchList(.users) {
+            await fetchUsers()
+        }
         reconcileCurrentUserWithUsersList()
         if refreshErrorMessage != nil || pendingUnauthorizedSessionWipe {
             isLoading = false
@@ -610,11 +877,11 @@ class SnipeITAPIClient: ObservableObject {
             return
         }
 
-        await fetchAccessories()
-        await fetchLicenses()
-        await fetchConsumables()
-        await fetchComponents()
-        await fetchLocations()
+        if canFetchList(.accessories) { await fetchAccessories() }
+        if canFetchList(.licenses) { await fetchLicenses() }
+        if canFetchList(.consumables) { await fetchConsumables() }
+        if canFetchList(.components) { await fetchComponents() }
+        if canFetchList(.locations) { await fetchLocations() }
         _ = await fetchAllMaintenances()
 
         isLoading = false
@@ -659,10 +926,10 @@ class SnipeITAPIClient: ObservableObject {
             return
         }
         cacheSaveTask?.cancel()
-        await fetchAssets()
-        await fetchAccessories()
-        await fetchConsumables()
-        await fetchComponents()
+        if canFetchList(.hardware) { await fetchAssets() }
+        if canFetchList(.accessories) { await fetchAccessories() }
+        if canFetchList(.consumables) { await fetchConsumables() }
+        if canFetchList(.components) { await fetchComponents() }
         _ = await fetchAllMaintenances()
         await persistCacheNow()
     }
@@ -1043,6 +1310,7 @@ class SnipeITAPIClient: ObservableObject {
                 return
             }
             currentUser = user
+            applyAccountPermissions(from: data)
             reconcileCurrentUserWithUsersList()
         } catch {
             if Self.isCancellation(error) { return }
@@ -1319,6 +1587,7 @@ class SnipeITAPIClient: ObservableObject {
         supplierId: Int?,
         notes: String?
     ) async -> (success: Bool, id: Int?) {
+        if rejectIfForbidden(.consumables, .create) { return (false, nil) }
         guard let url = URL(string: "\(baseURL)/api/v1/consumables") else { return (false, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1391,6 +1660,7 @@ class SnipeITAPIClient: ObservableObject {
         supplierId: Int?,
         notes: String?
     ) async -> Bool {
+        if rejectIfForbidden(.consumables, .update) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/consumables/\(consumableId)") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
@@ -1451,6 +1721,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkoutConsumable(consumableId: Int, userId: Int, note: String?) async -> Bool {
+        if rejectIfForbidden(.consumables, .checkout) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/consumables/\(consumableId)/checkout") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1619,6 +1890,7 @@ class SnipeITAPIClient: ObservableObject {
         supplierId: Int?,
         notes: String?
     ) async -> (success: Bool, id: Int?) {
+        if rejectIfForbidden(.components, .create) { return (false, nil) }
         guard let url = URL(string: "\(baseURL)/api/v1/components") else { return (false, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1685,6 +1957,7 @@ class SnipeITAPIClient: ObservableObject {
         supplierId: Int?,
         notes: String?
     ) async -> Bool {
+        if rejectIfForbidden(.components, .update) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentId)") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
@@ -1738,6 +2011,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkoutComponent(componentId: Int, assetId: Int, quantity: Int, note: String?) async -> Bool {
+        if rejectIfForbidden(.components, .checkout) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentId)/checkout") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1772,6 +2046,7 @@ class SnipeITAPIClient: ObservableObject {
 
     // componentAssetId = assigned_pivot_id from /components/{id}/assets
     func checkinComponent(componentId: Int, componentAssetId: Int, quantity: Int) async -> String? {
+        if rejectIfForbidden(.components, .checkin) { return lastApiMessage }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/components/\(componentAssetId)/checkin") else {
             return "Invalid URL."
@@ -2319,6 +2594,7 @@ class SnipeITAPIClient: ObservableObject {
 
     /// Assigns a license seat to a user (`assigned_to`) or asset (`asset_id`).
     func checkoutLicenseSeat(licenseId: Int, seatId: Int, userId: Int?, assetId: Int?, note: String?) async -> String? {
+        if rejectIfForbidden(.licenses, .checkout) { return lastApiMessage }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
 
         if let userId {
@@ -2402,6 +2678,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func createLicense(body: [String: Any]) async -> (success: Bool, id: Int?, message: String?) {
+        if rejectIfForbidden(.licenses, .create) { return (false, nil, lastApiMessage) }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return (false, nil, "API not configured.") }
         guard let url = URL(string: "\(baseURL)/api/v1/licenses") else {
             return (false, nil, "Invalid URL.")
@@ -2435,6 +2712,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func updateLicense(licenseId: Int, body: [String: Any]) async -> String? {
+        if rejectIfForbidden(.licenses, .update) { return lastApiMessage }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)") else {
             return "Invalid URL."
@@ -2469,6 +2747,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func createUser(body: [String: Any]) async -> (success: Bool, id: Int?, message: String?) {
+        if rejectIfForbidden(.users, .create) { return (false, nil, lastApiMessage) }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return (false, nil, "API not configured.") }
         guard let url = URL(string: "\(baseURL)/api/v1/users") else {
             return (false, nil, "Invalid URL.")
@@ -2502,6 +2781,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func updateUser(userId: Int, body: [String: Any]) async -> String? {
+        if rejectIfForbidden(.users, .update) { return lastApiMessage }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/users/\(userId)") else {
             return "Invalid URL."
@@ -2536,6 +2816,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func createLocation(body: [String: Any]) async -> (success: Bool, id: Int?, message: String?) {
+        if rejectIfForbidden(.locations, .create) { return (false, nil, lastApiMessage) }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return (false, nil, "API not configured.") }
         guard let url = URL(string: "\(baseURL)/api/v1/locations") else {
             return (false, nil, "Invalid URL.")
@@ -2569,6 +2850,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func updateLocation(locationId: Int, body: [String: Any]) async -> String? {
+        if rejectIfForbidden(.locations, .update) { return lastApiMessage }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/locations/\(locationId)") else {
             return "Invalid URL."
@@ -2603,6 +2885,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkinLicenseSeat(licenseId: Int, seatId: Int) async -> String? {
+        if rejectIfForbidden(.licenses, .checkin) { return lastApiMessage }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return "API not configured." }
         guard let url = URL(string: "\(baseURL)/api/v1/licenses/\(licenseId)/seats/\(seatId)") else {
             return "Invalid URL."
@@ -3079,6 +3362,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkoutAsset(assetId: Int, userId: Int) async -> Bool {
+        if rejectIfForbidden(.hardware, .checkout) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkout") else { return false }
 
         var request = URLRequest(url: url)
@@ -3108,6 +3392,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkoutAssetCustom(assetId: Int, body: [String: Any]) async -> Bool {
+        if rejectIfForbidden(.hardware, .checkout) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkout") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -3455,6 +3740,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func createAsset(_ body: AssetCreateRequest, image: UIImage? = nil) async -> (success: Bool, assetId: Int?) {
+        if rejectIfForbidden(.hardware, .create) { return (false, nil) }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware") else { return (false, nil) }
         do {
             let encoded = try JSONEncoder().encode(body)
@@ -3733,6 +4019,7 @@ class SnipeITAPIClient: ObservableObject {
         requestable: Bool = false,
         archived: Bool = false
     ) async -> (success: Bool, id: Int?) {
+        if rejectIfForbidden(.accessories, .create) { return (false, nil) }
         guard let url = URL(string: "\(baseURL)/api/v1/accessories") else { return (false, nil) }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -3819,6 +4106,7 @@ class SnipeITAPIClient: ObservableObject {
         requestable: Bool = false,
         archived: Bool = false
     ) async -> Bool {
+        if rejectIfForbidden(.accessories, .update) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
@@ -3885,6 +4173,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func updateAsset(assetId: Int, update: AssetUpdateRequest, image: UIImage? = nil) async -> Bool {
+        if rejectIfForbidden(.hardware, .update) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
         do {
             let encodedBody = try JSONEncoder().encode(update)
@@ -4605,6 +4894,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkinAsset(assetId: Int) async -> Bool {
+        if rejectIfForbidden(.hardware, .checkin) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkin") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -4629,6 +4919,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkinAssetCustom(assetId: Int, body: [String: Any]) async -> Bool {
+        if rejectIfForbidden(.hardware, .checkin) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkin") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -4847,6 +5138,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func deleteAssetFile(assetId: Int, fileId: Int) async -> Bool {
+        if rejectIfForbidden(.hardware, .update) { return false }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/files/\(fileId)/delete") else {
             return false
@@ -4901,6 +5193,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkoutAccessoryCustom(accessoryId: Int, body: [String: Any]) async -> Bool {
+        if rejectIfForbidden(.accessories, .checkout) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(accessoryId)/checkout") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -4948,6 +5241,7 @@ class SnipeITAPIClient: ObservableObject {
 
     // Path id is the checkout pivot id, not the accessory id.
     func checkinAccessory(accessoryId: Int, checkedoutId: Int) async -> Bool {
+        if rejectIfForbidden(.accessories, .checkin) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/accessories/\(checkedoutId)/checkin") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -5273,6 +5567,10 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     private func createMaintenanceReturningId(_ body: MaintenanceCreateRequest, image: UIImage? = nil) async -> Int? {
+        if !canPerform(.hardware, .audit) && !canPerform(.hardware, .update) {
+            lastApiMessage = L10n.string("api_validate_unauthorized")
+            return nil
+        }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return nil }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances") else { return nil }
 
@@ -5410,6 +5708,10 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     private func updateMaintenanceFields(id: Int, update: MaintenanceUpdateRequest) async -> Bool {
+        if !canPerform(.hardware, .audit) && !canPerform(.hardware, .update) {
+            lastApiMessage = L10n.string("api_validate_unauthorized")
+            return false
+        }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)") else { return false }
 
@@ -5454,6 +5756,10 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func completeMaintenance(id: Int, note: String? = nil) async -> Bool {
+        if !canPerform(.hardware, .audit) && !canPerform(.hardware, .update) {
+            lastApiMessage = L10n.string("api_validate_unauthorized")
+            return false
+        }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)/complete") else { return false }
 
@@ -5490,6 +5796,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func deleteMaintenance(id: Int) async -> Bool {
+        if rejectIfForbidden(.hardware, .delete) { return false }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/maintenances/\(id)") else { return false }
 

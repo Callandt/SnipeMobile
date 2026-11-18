@@ -34,9 +34,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.Location
 import com.callandt.snipemobile.data.model.User
+import com.callandt.snipemobile.data.api.SnipeActionKind
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.CompactSubtabRow
 import com.callandt.snipemobile.ui.components.EmptyState
 import com.callandt.snipemobile.ui.components.EntityDeleteSupport
@@ -108,8 +111,12 @@ fun DirectoryTab(
     val (isUserRefreshing, onUserRefresh) = rememberUserPullRefreshing(isLoading) {
         viewModel.refresh()
     }
-    val tabs = listOf(DirectorySubtab.Users, DirectorySubtab.Locations)
-    val currentSubtab = tabs[subtab.coerceIn(tabs.indices)]
+    val denied by viewModel.deniedListModules.collectAsState()
+    val tabs = buildList {
+        if (SnipeListModule.Users !in denied) add(DirectorySubtab.Users)
+        if (SnipeListModule.Locations !in denied) add(DirectorySubtab.Locations)
+    }
+    val currentSubtab = if (tabs.isEmpty()) DirectorySubtab.Users else tabs[subtab.coerceIn(tabs.indices)]
 
     val companyTitle = L10n.string("company")
     val locationTitle = L10n.string("location")
@@ -154,11 +161,24 @@ fun DirectoryTab(
                 onSearchQueryChange = { searchQuery = it },
                 leadingActions = sidebarToggle,
                 actions = {
-                    IconButton(onClick = {
-                        if (!listReady) return@IconButton
-                        if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
-                    }) {
-                        Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                    val canCreateUser = rememberCanPerform(
+                        viewModel.apiClient,
+                        SnipeListModule.Users,
+                        SnipeActionKind.Create,
+                    )
+                    val canCreateLocation = rememberCanPerform(
+                        viewModel.apiClient,
+                        SnipeListModule.Locations,
+                        SnipeActionKind.Create,
+                    )
+                    val canAdd = if (currentSubtab == DirectorySubtab.Users) canCreateUser else canCreateLocation
+                    if (canAdd) {
+                        IconButton(onClick = {
+                            if (!listReady) return@IconButton
+                            if (currentSubtab == DirectorySubtab.Users) showAddUser = true else showAddLocation = true
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
+                        }
                     }
                     if (!isTablet) {
                         IconButton(onClick = onOpenScanner) {
@@ -178,16 +198,18 @@ fun DirectoryTab(
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                CompactSubtabRow(
-                    selectedIndex = subtab,
-                    titles = tabs.map { tab ->
-                        when (tab) {
-                            DirectorySubtab.Users -> L10n.string("tab_users")
-                            DirectorySubtab.Locations -> L10n.string("tab_locations")
-                        }
-                    },
-                    onSelect = { subtab = it },
-                )
+                if (tabs.size > 1) {
+                    CompactSubtabRow(
+                        selectedIndex = subtab.coerceIn(0, tabs.lastIndex),
+                        titles = tabs.map { tab ->
+                            when (tab) {
+                                DirectorySubtab.Users -> L10n.string("tab_users")
+                                DirectorySubtab.Locations -> L10n.string("tab_locations")
+                            }
+                        },
+                        onSelect = { subtab = it },
+                    )
+                }
                 if (currentSubtab == DirectorySubtab.Users) {
                     val sorted = users
                         .filter { userFilter.matches(it, userDimensions) }

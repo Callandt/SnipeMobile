@@ -42,6 +42,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.data.model.License
 import com.callandt.snipemobile.data.model.LicenseSeatRow
 import com.callandt.snipemobile.ui.AppViewModel
@@ -49,6 +51,7 @@ import com.callandt.snipemobile.ui.components.ItemHistoryTab
 import com.callandt.snipemobile.ui.components.DetailBarAction
 import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
 import com.callandt.snipemobile.ui.components.DetailPageTitle
@@ -115,7 +118,11 @@ fun LicenseDetailScreen(
     }
 
     val freeCount = license?.freeSeatsCount ?: license?.remaining ?: 0
-    val canCheckout = freeCount > 0
+    val hasFreeSeat = freeCount > 0
+    val canEdit = rememberCanPerform(viewModel.apiClient, SnipeListModule.Licenses, SnipeActionKind.Update)
+    val canDelete = rememberCanPerform(viewModel.apiClient, SnipeListModule.Licenses, SnipeActionKind.Delete)
+    val canCheckout = rememberCanPerform(viewModel.apiClient, SnipeListModule.Licenses, SnipeActionKind.Checkout)
+    val canCheckin = rememberCanPerform(viewModel.apiClient, SnipeListModule.Licenses, SnipeActionKind.Checkin)
 
     Scaffold(
         topBar = {
@@ -130,7 +137,11 @@ fun LicenseDetailScreen(
                     DetailEntityToolbarActions(
                         baseUrl = viewModel.apiClient.baseUrl,
                         webPath = "licenses/$licenseId",
-                        onDeleteClick = { deleteState.requestDelete() },
+                        onDeleteClick = if (canDelete) {
+                            { deleteState.requestDelete() }
+                        } else {
+                            null
+                        },
                         deleteEnabled = !deleteState.isDeleting && !isCheckingIn,
                     )
                 },
@@ -138,21 +149,21 @@ fun LicenseDetailScreen(
         },
         bottomBar = {
             if (license != null) {
-                DetailBottomBar(
-                    actions = listOf(
-                        DetailBarAction(
-                            label = L10n.string("edit"),
-                            color = SnipeOrange,
-                            onClick = { showEdit = true },
-                        ),
-                        DetailBarAction(
-                            label = L10n.string("check_out"),
-                            color = SnipeAccent,
-                            enabled = canCheckout,
-                            onClick = { showCheckout = true },
-                        ),
-                    ),
-                )
+                val actions = buildList {
+                    if (canEdit) {
+                        add(DetailBarAction(L10n.string("edit"), SnipeOrange) { showEdit = true })
+                    }
+                    if (canCheckout) {
+                        add(
+                            DetailBarAction(
+                                L10n.string("check_out"),
+                                SnipeAccent,
+                                enabled = hasFreeSeat,
+                            ) { showCheckout = true },
+                        )
+                    }
+                }
+                if (actions.isNotEmpty()) DetailBottomBar(actions = actions)
             }
         },
     ) { padding ->
@@ -187,6 +198,7 @@ fun LicenseDetailScreen(
                         showProductKey = showProductKey,
                         onToggleProductKey = { showProductKey = !showProductKey },
                         onCheckinSeat = { checkinTarget = it },
+                        canCheckin = canCheckin,
                         onOpenUser = onOpenUser,
                         onOpenAsset = onOpenAsset,
                     )
@@ -276,6 +288,7 @@ private fun LicenseDetailContent(
     showProductKey: Boolean,
     onToggleProductKey: () -> Unit,
     onCheckinSeat: (LicenseSeatRow) -> Unit,
+    canCheckin: Boolean,
     onOpenUser: ((Int) -> Unit)?,
     onOpenAsset: ((Int) -> Unit)?,
 ) {
@@ -374,6 +387,7 @@ private fun LicenseDetailContent(
                             assets = assets,
                             users = users,
                             onCheckin = { onCheckinSeat(seat) },
+                            canCheckinSeat = canCheckin,
                             onOpenUser = onOpenUser,
                             onOpenAsset = onOpenAsset,
                         )
@@ -423,11 +437,12 @@ private fun LicenseAssignedSeatCard(
     assets: List<com.callandt.snipemobile.data.model.Asset>,
     users: List<com.callandt.snipemobile.data.model.User>,
     onCheckin: () -> Unit,
+    canCheckinSeat: Boolean,
     onOpenUser: ((Int) -> Unit)?,
     onOpenAsset: ((Int) -> Unit)?,
 ) {
     val assignee = seat.resolvedAssignee(assets, users)
-    val canCheckin = seat.userCanCheckin != false
+    val canCheckin = canCheckinSeat && seat.userCanCheckin != false
     val onLongClick = onCheckin.takeIf { canCheckin }
 
     when {

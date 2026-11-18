@@ -16,11 +16,13 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.DellAddPrefill
 import com.callandt.snipemobile.ui.asset.LocalMainSheetOverlay
@@ -32,6 +34,26 @@ enum class MainTab(val labelKey: String, val icon: ImageVector) {
     Licenses("tab_licenses", Icons.Default.Description),
     Stock("tab_stock", Icons.Default.Inventory2),
     Directory("tab_directory", Icons.Default.People),
+}
+
+internal fun visibleMainTabs(
+    showAccessories: Boolean,
+    showLicenses: Boolean,
+    showConsumables: Boolean,
+    showComponents: Boolean,
+    denied: Set<SnipeListModule>,
+): List<MainTab> {
+    val tabs = buildList {
+        if (SnipeListModule.Hardware !in denied) add(MainTab.Hardware)
+        if (showAccessories && SnipeListModule.Accessories !in denied) add(MainTab.Accessories)
+        if (showLicenses && SnipeListModule.Licenses !in denied) add(MainTab.Licenses)
+        val stock = (showConsumables && SnipeListModule.Consumables !in denied) ||
+            (showComponents && SnipeListModule.Components !in denied)
+        if (stock) add(MainTab.Stock)
+        val directory = SnipeListModule.Users !in denied || SnipeListModule.Locations !in denied
+        if (directory) add(MainTab.Directory)
+    }
+    return tabs.ifEmpty { listOf(MainTab.Hardware) }
 }
 
 @Composable
@@ -56,13 +78,20 @@ fun MainScaffold(
     val showLicenses by viewModel.showLicensesTab.collectAsState()
     val showConsumables by viewModel.showConsumablesTab.collectAsState()
     val showComponents by viewModel.showComponentsTab.collectAsState()
+    val denied by viewModel.deniedListModules.collectAsState()
 
-    val visibleTabs = buildList {
-        add(MainTab.Hardware)
-        if (showAccessories) add(MainTab.Accessories)
-        if (showLicenses) add(MainTab.Licenses)
-        if (showConsumables || showComponents) add(MainTab.Stock)
-        add(MainTab.Directory)
+    val visibleTabs = visibleMainTabs(
+        showAccessories = showAccessories,
+        showLicenses = showLicenses,
+        showConsumables = showConsumables,
+        showComponents = showComponents,
+        denied = denied,
+    )
+
+    LaunchedEffect(visibleTabs, selectedTab) {
+        if (selectedTab !in visibleTabs) {
+            onTabSelected(visibleTabs.first())
+        }
     }
 
     val sheetCoversTabs = LocalMainSheetOverlay.current?.occupied == true

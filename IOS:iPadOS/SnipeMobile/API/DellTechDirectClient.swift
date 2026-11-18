@@ -25,13 +25,36 @@ final class DellTechDirectClient {
     private static let tokenURL = URL(string: "https://apigtwb2c.us.dell.com/auth/oauth/v2/token")!
     private static let entitlementsURLTemplate = "https://apigtwb2c.us.dell.com/PROD/sbil/eapi/v5/asset-entitlements?servicetags="
 
-    /// OAuth2 token. Client credentials.
+    /// OAuth2 token. Current TechDirect keys use HTTP Basic; older keys use the form body.
     private static func fetchToken(clientId: String, clientSecret: String) async throws -> String {
+        let id = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let token = try? await requestToken(clientId: id, clientSecret: secret, basicAuth: true) {
+            return token
+        }
+        return try await requestToken(clientId: id, clientSecret: secret, basicAuth: false)
+    }
+
+    private static func requestToken(
+        clientId: String,
+        clientSecret: String,
+        basicAuth: Bool
+    ) async throws -> String {
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        let body = "client_id=\(clientId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&client_secret=\(clientSecret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&grant_type=client_credentials"
-        request.httpBody = body.data(using: .utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if basicAuth {
+            let raw = "\(clientId):\(clientSecret)"
+            let encoded = Data(raw.utf8).base64EncodedString()
+            request.setValue("Basic \(encoded)", forHTTPHeaderField: "Authorization")
+            request.httpBody = "grant_type=client_credentials".data(using: .utf8)
+        } else {
+            let id = clientId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let secret = clientSecret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            request.httpBody = "client_id=\(id)&client_secret=\(secret)&grant_type=client_credentials"
+                .data(using: .utf8)
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
@@ -47,7 +70,9 @@ final class DellTechDirectClient {
 
     /// Warranty + ship for one service tag.
     static func fetchWarrantyInfo(serviceTag: String, clientId: String, clientSecret: String) async throws -> DellWarrantyInfo {
-        guard !clientId.isEmpty, !clientSecret.isEmpty else {
+        let id = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, !secret.isEmpty else {
             throw DellTechDirectError.missingCredentials
         }
         let tag = serviceTag.trimmingCharacters(in: .whitespaces)
@@ -55,7 +80,7 @@ final class DellTechDirectClient {
             throw DellTechDirectError.warrantyRequestFailed("Empty service tag")
         }
 
-        let token = try await fetchToken(clientId: clientId, clientSecret: clientSecret)
+        let token = try await fetchToken(clientId: id, clientSecret: secret)
         guard let url = URL(string: entitlementsURLTemplate + tag.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed)!) else {
             throw DellTechDirectError.warrantyRequestFailed("Invalid URL")
         }

@@ -77,6 +77,7 @@ struct LicenseDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack(spacing: 12) {
+                if apiClient.canPerform(.licenses, .update) {
                 Button(action: { showEditSheet = true }) {
                     Label(L10n.string("edit"), systemImage: "pencil")
                         .font(.headline)
@@ -85,6 +86,8 @@ struct LicenseDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
+                }
+                if apiClient.canPerform(.licenses, .checkout) {
                 Button(action: { showCheckoutSheet = true }) {
                     Label(L10n.string("check_out"), systemImage: "arrow.up.to.line")
                         .font(.headline)
@@ -94,6 +97,7 @@ struct LicenseDetailView: View {
                 .tint(.accentColor)
                 .controlSize(.large)
                 .disabled(!canCheckout)
+                }
             }
             .detailBottomActionBar()
         }
@@ -130,6 +134,7 @@ struct LicenseDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 12) {
+                    if apiClient.canPerform(.licenses, .delete) {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
@@ -138,6 +143,7 @@ struct LicenseDetailView: View {
                     }
                     .disabled(isDeleting || isCheckingIn)
                     .accessibilityLabel(L10n.string("delete"))
+                    }
                     if let url = URL(string: "\(apiClient.baseURL)/licenses/\(currentLicense.id)") {
                         Link(destination: url) {
                             Image(systemName: "safari")

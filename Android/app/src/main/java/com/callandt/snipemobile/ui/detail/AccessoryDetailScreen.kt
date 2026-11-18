@@ -40,6 +40,8 @@ import com.callandt.snipemobile.data.model.AccessoryCheckedOutRow
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.data.model.Location
 import com.callandt.snipemobile.data.model.User
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.ui.AppViewModel
 import com.callandt.snipemobile.ui.accessory.AccessoryCheckinConfirmDialog
 import com.callandt.snipemobile.ui.accessory.AccessoryCheckoutSheet
@@ -50,6 +52,7 @@ import com.callandt.snipemobile.ui.components.ItemHistoryTab
 import com.callandt.snipemobile.ui.components.DetailBarAction
 import com.callandt.snipemobile.ui.components.DetailBottomBar
 import com.callandt.snipemobile.ui.components.DetailEntityToolbarActions
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.components.DetailRow
 import com.callandt.snipemobile.ui.components.DetailCardListSection
 import com.callandt.snipemobile.ui.components.DetailPageTitle
@@ -118,7 +121,11 @@ fun AccessoryDetailScreen(
 
     val displayedRows = checkedOutRows.filter { it.assignedTo?.id != null }
     val isDeployed = accessory?.statusLabel?.statusMeta?.equals("deployed", ignoreCase = true) == true
-    val canCheckout = accessory?.archived != true && (accessory?.remaining?.let { it > 0 } ?: true)
+    val hasStock = accessory?.archived != true && (accessory?.remaining?.let { it > 0 } ?: true)
+    val canEdit = rememberCanPerform(viewModel.apiClient, SnipeListModule.Accessories, SnipeActionKind.Update)
+    val canDelete = rememberCanPerform(viewModel.apiClient, SnipeListModule.Accessories, SnipeActionKind.Delete)
+    val canCheckout = rememberCanPerform(viewModel.apiClient, SnipeListModule.Accessories, SnipeActionKind.Checkout)
+    val canCheckin = rememberCanPerform(viewModel.apiClient, SnipeListModule.Accessories, SnipeActionKind.Checkin)
     val checkinRow = displayedRows.firstOrNull { it.availableActions?.checkin == true }
 
     Scaffold(
@@ -134,7 +141,11 @@ fun AccessoryDetailScreen(
                     DetailEntityToolbarActions(
                         baseUrl = viewModel.apiClient.baseUrl,
                         webPath = "accessories/$accessoryId",
-                        onDeleteClick = { deleteState.requestDelete() },
+                        onDeleteClick = if (canDelete) {
+                            { deleteState.requestDelete() }
+                        } else {
+                            null
+                        },
                         deleteEnabled = !deleteState.isDeleting && !isCheckingIn,
                     )
                 },
@@ -143,14 +154,16 @@ fun AccessoryDetailScreen(
         bottomBar = {
             if (accessory != null) {
                 val actions = buildList {
-                    add(
-                        DetailBarAction(
-                            label = L10n.string("edit"),
-                            color = SnipeOrange,
-                            onClick = { showEdit = true },
-                        ),
-                    )
-                    if (isDeployed && checkinRow != null) {
+                    if (canEdit) {
+                        add(
+                            DetailBarAction(
+                                label = L10n.string("edit"),
+                                color = SnipeOrange,
+                                onClick = { showEdit = true },
+                            ),
+                        )
+                    }
+                    if (isDeployed && checkinRow != null && canCheckin) {
                         add(
                             DetailBarAction(
                                 label = L10n.string("check_in"),
@@ -158,18 +171,18 @@ fun AccessoryDetailScreen(
                                 onClick = { checkinTarget = checkinRow },
                             ),
                         )
-                    } else {
+                    } else if (canCheckout) {
                         add(
                             DetailBarAction(
                                 label = L10n.string("check_out"),
                                 color = SnipeAccent,
-                                enabled = canCheckout,
+                                enabled = hasStock,
                                 onClick = { showCheckout = true },
                             ),
                         )
                     }
                 }
-                DetailBottomBar(actions = actions)
+                if (actions.isNotEmpty()) DetailBottomBar(actions = actions)
             }
         },
     ) { padding ->
@@ -202,7 +215,8 @@ fun AccessoryDetailScreen(
                         users = users,
                         assets = assets,
                         locations = locations,
-                        onCheckinRow = { checkinTarget = it },
+                        onCheckinRow = { if (canCheckin) checkinTarget = it },
+                        canCheckin = canCheckin,
                         onOpenUser = onOpenUser,
                         onOpenLocation = onOpenLocation,
                         onOpenAsset = onOpenAsset,
@@ -291,6 +305,7 @@ private fun AccessoryDetailContent(
     assets: List<Asset>,
     locations: List<Location>,
     onCheckinRow: (AccessoryCheckedOutRow) -> Unit,
+    canCheckin: Boolean,
     onOpenUser: ((Int) -> Unit)?,
     onOpenLocation: ((Int) -> Unit)?,
     onOpenAsset: ((Int) -> Unit)?,
@@ -356,7 +371,9 @@ private fun AccessoryDetailContent(
                         users = users,
                         assets = assets,
                         locations = locations,
-                        onCheckin = { onCheckinRow(row) }.takeIf { row.availableActions?.checkin == true },
+                        onCheckin = { onCheckinRow(row) }.takeIf {
+                            canCheckin && row.availableActions?.checkin == true
+                        },
                         onOpenUser = onOpenUser,
                         onOpenLocation = onOpenLocation,
                         onOpenAsset = onOpenAsset,

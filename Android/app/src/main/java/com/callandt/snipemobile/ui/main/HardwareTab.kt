@@ -66,7 +66,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.callandt.snipemobile.data.model.Asset
 import com.callandt.snipemobile.data.model.AssetMaintenance
+import com.callandt.snipemobile.data.api.SnipeActionKind
+import com.callandt.snipemobile.data.api.SnipeListModule
 import com.callandt.snipemobile.ui.AppViewModel
+import com.callandt.snipemobile.ui.components.rememberCanPerform
 import com.callandt.snipemobile.ui.DellAddPrefill
 import com.callandt.snipemobile.ui.asset.AddAssetSheet
 import com.callandt.snipemobile.ui.asset.BulkAuditSheet
@@ -156,6 +159,22 @@ fun HardwareTab(
     val maintenances by viewModel.maintenances.collectAsState()
     val showAudit by viewModel.showAuditSubtab.collectAsState()
     val showMaintenance by viewModel.showMaintenanceSubtab.collectAsState()
+    val canCreateAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Create,
+    )
+    val canEditAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Update,
+    )
+    val canAuditAsset = rememberCanPerform(
+        viewModel.apiClient,
+        SnipeListModule.Hardware,
+        SnipeActionKind.Audit,
+    )
+    val canMaintain = canEditAsset || canAuditAsset
     val statusLabels by viewModel.statusLabels.collectAsState()
     val refreshError by viewModel.refreshErrorMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -334,15 +353,17 @@ fun HardwareTab(
                         Icon(Icons.Default.Add, contentDescription = L10n.string("add"))
                     }
                     DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text(L10n.string("add_asset")) },
-                            leadingIcon = { Icon(Icons.Default.Laptop, contentDescription = null) },
-                            onClick = {
-                                pendingHardwareSheet = PendingHardwareSheet.Asset
-                                showAddMenu = false
-                            },
-                        )
-                        if (showMaintenance) {
+                        if (canCreateAsset) {
+                            DropdownMenuItem(
+                                text = { Text(L10n.string("add_asset")) },
+                                leadingIcon = { Icon(Icons.Default.Laptop, contentDescription = null) },
+                                onClick = {
+                                    pendingHardwareSheet = PendingHardwareSheet.Asset
+                                    showAddMenu = false
+                                },
+                            )
+                        }
+                        if (showMaintenance && canMaintain) {
                             DropdownMenuItem(
                                 text = { Text(L10n.string("add_maintenance")) },
                                 leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) },
@@ -352,7 +373,7 @@ fun HardwareTab(
                                 },
                             )
                         }
-                        if (showAudit) {
+                        if (showAudit && canAuditAsset) {
                             DropdownMenuItem(
                                 text = { Text(L10n.string("add_audit")) },
                                 leadingIcon = { Icon(Icons.Default.Checklist, contentDescription = null) },
@@ -374,8 +395,10 @@ fun HardwareTab(
                 }
             }
             HardwareSubtab.Maintenance -> {
-                IconButton(onClick = { if (listReady) showBulkMaintenance = true }) {
-                    Icon(Icons.Default.Add, contentDescription = L10n.string("add_maintenance"))
+                if (canMaintain) {
+                    IconButton(onClick = { if (listReady) showBulkMaintenance = true }) {
+                        Icon(Icons.Default.Add, contentDescription = L10n.string("add_maintenance"))
+                    }
                 }
             }
         }

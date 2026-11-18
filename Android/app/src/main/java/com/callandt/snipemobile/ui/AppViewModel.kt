@@ -70,6 +70,7 @@ class AppViewModel(
     val errorMessage = apiClient.errorMessage
     val refreshErrorMessage = apiClient.refreshErrorMessage
     val pendingUnauthorizedSessionWipe = apiClient.pendingUnauthorizedSessionWipe
+    val deniedListModules = apiClient.deniedListModules
     val lastApiMessage = apiClient.lastApiMessage
 
     val appMode: StateFlow<AppMode?> = appModeStore.current
