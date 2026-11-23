@@ -4624,6 +4624,7 @@ class SnipeITAPIClient: ObservableObject {
         let id: Int
         let name: String
         let type: String?
+        let format: String?
         let field_values_array: [String]?
         /// Newline-separated options when `field_values_array` is absent.
         let field_values: String?
@@ -4637,6 +4638,7 @@ class SnipeITAPIClient: ObservableObject {
             case id
             case name
             case type
+            case format
             case field_values_array
             case field_values
             case db_column_name
@@ -4844,11 +4846,16 @@ class SnipeITAPIClient: ObservableObject {
         let id: Int
         let name: String
         let type: String
+        let format: String?
         let field_values_array: [String]?
         let field_values: String?
 
         init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
+            enum Key: String, CodingKey {
+                case id, name, type, element, format, field_values_array, field_values
+                case fieldFormat = "field_format"
+            }
+            let c = try decoder.container(keyedBy: Key.self)
             if let i = try? c.decode(Int.self, forKey: .id) {
                 id = i
             } else if let s = try? c.decode(String.self, forKey: .id), let i = Int(s) {
@@ -4859,13 +4866,19 @@ class SnipeITAPIClient: ObservableObject {
                 throw DecodingError.dataCorruptedError(forKey: .id, in: c, debugDescription: "Invalid field id")
             }
             name = (try? c.decode(String.self, forKey: .name)) ?? ""
-            type = (try? c.decode(String.self, forKey: .type)) ?? "text"
+            let decodedType = (try? c.decode(String.self, forKey: .type))
+                ?? (try? c.decode(String.self, forKey: .element))
+            type = (decodedType?.isEmpty == false) ? decodedType! : "text"
+            let rawFormat = (try? c.decodeIfPresent(String.self, forKey: .format))
+                ?? (try? c.decodeIfPresent(String.self, forKey: .fieldFormat))
+            let trimmedFormat = rawFormat?.trimmingCharacters(in: .whitespacesAndNewlines)
+            format = (trimmedFormat?.isEmpty == false) ? trimmedFormat : nil
             field_values_array = try? c.decodeIfPresent([String].self, forKey: .field_values_array)
             field_values = try? c.decodeIfPresent(String.self, forKey: .field_values)
         }
 
         enum CodingKeys: String, CodingKey {
-            case id, name, type, field_values_array, field_values
+            case id, name, type, format, field_values_array, field_values
         }
     }
 
@@ -4882,6 +4895,7 @@ class SnipeITAPIClient: ObservableObject {
                 id: f.id,
                 name: f.name,
                 type: f.type,
+                format: f.format,
                 field_values_array: f.field_values_array,
                 field_values: f.field_values,
                 db_column_name: nil,

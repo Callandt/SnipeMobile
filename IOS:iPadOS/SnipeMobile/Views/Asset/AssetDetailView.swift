@@ -659,6 +659,7 @@ struct AssetDetailView: View {
                     relatedComponentsSection
                     datesSection(asset)
                     valueSection(asset)
+                    notesSection(asset)
                     customFieldsSection(asset)
                 }
                 .padding(.top, 16)
@@ -948,6 +949,32 @@ struct AssetDetailView: View {
             .padding()
             .background(Color(.systemGray6))
             .cornerRadius(12)
+        }
+    }
+
+    @ViewBuilder
+    private func notesSection(_ asset: Asset) -> some View {
+        let notes = asset.decodedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !notes.isEmpty {
+            Text(L10n.string("notes"))
+                .font(.headline)
+                .foregroundColor(.primary)
+                .padding(.top, 5)
+            Text(notes)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+                .contentShape(Rectangle())
+                .contextMenu {
+                    Button {
+                        UIPasteboard.general.string = notes
+                    } label: {
+                        Label(L10n.string("copy"), systemImage: "doc.on.doc")
+                    }
+                }
         }
     }
 

@@ -396,6 +396,7 @@ struct AddAssetSheet: View {
                         CustomFieldInput(
                             name: fieldDef.name,
                             type: fieldDef.type,
+                            format: fieldDef.format,
                             fieldValues: fieldDef.field_values_array,
                             rawFieldValues: fieldDef.field_values,
                             value: Binding(
@@ -447,7 +448,12 @@ struct AddAssetSheet: View {
         let eolDateStr = hasEolDate ? formatter.string(from: eolDate) : nil
         let mappedCustomFields: [String: String] = Dictionary(
             uniqueKeysWithValues: customFields.compactMap { key, rawValue in
-                let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                let definition = displayedFieldDefinitions.first { $0.name == key }
+                let value = CustomFieldDate.valueForAPI(
+                    rawValue,
+                    element: definition?.type,
+                    format: definition?.format
+                )
                 guard !value.isEmpty else { return nil }
                 let apiKey = resolveCustomFieldAPIKey(forDisplayName: key)
                 return (apiKey, value)

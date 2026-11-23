@@ -201,17 +201,23 @@ struct AssetEditSheet: View {
                 : (normalizedBookValue.map { .value($0) } ?? .null)
             // custom_fields wants the internal key (e.g. "_snipeit_xxx_1"), not the label.
             // empty checkbox string clears all options
+            let customFieldDefs = apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions
             let checkboxFieldNames = Set(
-                (apiClient.modelFieldDefinitions ?? apiClient.fieldDefinitions)
+                customFieldDefs
                     .filter { CustomCheckboxValue.isCheckbox($0.type) }
                     .map(\.name)
             )
             let customFieldsPayload: [String: SnipeITAPIClient.AssetUpdateRequest.CustomFieldValue] = Dictionary(
                 uniqueKeysWithValues: editCustomFields.compactMap { key, value in
-                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty || checkboxFieldNames.contains(key) else { return nil }
+                    let meta = customFieldMeta(name: key, definition: customFieldDefs.first { $0.name == key })
+                    let normalized = CustomFieldDate.valueForAPI(value, element: meta.element, format: meta.format)
+                    let hadValue = !HTMLDecoder.decode(asset.customFields?[key]?.value ?? "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .isEmpty
+                    let clearsDate = meta.kind != nil && hadValue && normalized.isEmpty
+                    guard !normalized.isEmpty || checkboxFieldNames.contains(key) || clearsDate else { return nil }
                     let apiKey = resolveCustomFieldAPIKey(forDisplayName: key)
-                    return (apiKey, .init(value: trimmed))
+                    return (apiKey, .init(value: normalized))
                 }
             )
             let hadSerial = !(asset.serial?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
@@ -438,10 +444,23 @@ struct AssetEditSheet: View {
         }
     }
 
+    private func customFieldMeta(name: String, definition: SnipeITAPIClient.FieldDefinition?) -> (element: String?, format: String?, kind: CustomFieldDateKind?) {
+        let stored = asset.customFields?[name]
+        var element = definition?.type ?? stored?.element
+        var format = definition?.format ?? stored?.fieldFormat
+        if CustomFieldDate.kind(element: element, format: format) == nil {
+            element = stored?.element ?? element
+            format = stored?.fieldFormat ?? format
+        }
+        return (element, format, CustomFieldDate.kind(element: element, format: format))
+    }
+
     private func customFieldInput(name: String, definition: SnipeITAPIClient.FieldDefinition?) -> some View {
-        CustomFieldInput(
+        let meta = customFieldMeta(name: name, definition: definition)
+        return CustomFieldInput(
             name: name,
-            type: definition?.type,
+            type: meta.element,
+            format: meta.format,
             fieldValues: definition?.field_values_array,
             rawFieldValues: definition?.field_values,
             value: Binding(
