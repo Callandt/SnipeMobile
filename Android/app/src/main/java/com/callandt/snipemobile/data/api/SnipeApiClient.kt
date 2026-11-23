@@ -494,6 +494,53 @@ class SnipeApiClient(
         _moduleActionRights.value = _moduleActionRights.value + (module to rights)
     }
 
+    /** Merge per-asset actions into the hardware flags. */
+    private fun absorbHardwareActionRights(assets: List<Asset>) {
+        val current = _moduleActionRights.value[SnipeListModule.Hardware] ?: SnipeModuleActionRights()
+        var create = current.create
+        var update = current.update
+        var delete = current.delete
+        var checkout = current.checkout
+        var checkin = current.checkin
+        var audit = current.audit
+        for (asset in assets) {
+            val actions = asset.availableActions ?: continue
+            if (actions.clone) create = true
+            if (actions.update) update = true
+            if (actions.delete) delete = true
+            if (actions.checkout) checkout = true
+            if (actions.checkin) checkin = true
+            if (actions.audit) audit = true
+        }
+        val next = current.copy(
+            create = create,
+            update = update,
+            delete = delete,
+            checkout = checkout,
+            checkin = checkin,
+            audit = audit,
+            known = current.known || create || update || delete || checkout || checkin || audit,
+        )
+        if (next == current) return
+        _moduleActionRights.value = _moduleActionRights.value + (SnipeListModule.Hardware to next)
+    }
+
+    /** Per-asset allow. Null keeps the existing check. */
+    private fun explicitHardwareAllow(kind: SnipeActionKind, path: String): Boolean? {
+        if (!path.startsWith("hardware")) return null
+        val id = path.removePrefix("hardware/").substringBefore('/').toIntOrNull() ?: return null
+        val actions = _assets.value.firstOrNull { it.id == id }?.availableActions ?: return null
+        val allowed = when (kind) {
+            SnipeActionKind.Create -> actions.clone
+            SnipeActionKind.Update -> actions.update
+            SnipeActionKind.Delete -> actions.delete
+            SnipeActionKind.Checkout -> actions.checkout
+            SnipeActionKind.Checkin -> actions.checkin
+            SnipeActionKind.Audit -> actions.audit
+        }
+        return if (allowed) true else null
+    }
+
     private fun actionFlag(value: JsonElement?): Boolean {
         val primitive = value as? JsonPrimitive ?: return false
         primitive.intOrNull?.let { return it == 1 }
@@ -686,7 +733,10 @@ class SnipeApiClient(
         isApplyingCache = true
         try {
             if (snapshot.assets.isNotEmpty()) _hasCompletedInitialLoad.value = true
-            if (replacing || _assets.value.isEmpty()) _assets.value = snapshot.assets
+            if (replacing || _assets.value.isEmpty()) {
+                _assets.value = snapshot.assets
+                absorbHardwareActionRights(snapshot.assets)
+            }
             if (replacing || _users.value.isEmpty()) _users.value = snapshot.users
             if ((_currentUser.value == null || replacing) && snapshot.currentUser != null) {
                 _currentUser.value = snapshot.users.find { it.id == snapshot.currentUser?.id }
@@ -1112,7 +1162,10 @@ class SnipeApiClient(
                     if (existing != null && idx >= 0) merged[idx] = existing
                 }
             }
-            withContext(Dispatchers.Main) { _assets.value = merged }
+            withContext(Dispatchers.Main) {
+                _assets.value = merged
+                absorbHardwareActionRights(merged)
+            }
             reconcilePendingAssetDetails()
             scheduleCacheSave()
         }
@@ -3002,7 +3055,14 @@ class SnipeApiClient(
     suspend fun uploadAssetFiles(assetId: Int, files: List<UploadFile>, notes: String? = null): Boolean {
         if (files.isEmpty()) return true
         if (baseUrl.isEmpty() || apiToken.isEmpty()) return false
-        if (rejectIfForbidden(SnipeListModule.Hardware, SnipeActionKind.Update)) return false
+        if (rejectIfForbidden(
+                SnipeListModule.Hardware,
+                SnipeActionKind.Update,
+                explicitHardwareAllow(SnipeActionKind.Update, "hardware/$assetId"),
+            )
+        ) {
+            return false
+        }
         return withContext(Dispatchers.IO) {
             runCatching {
                 val multipartBuilder = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -3078,6 +3138,7 @@ class SnipeApiClient(
         val idx = list.indexOfFirst { it.id == asset.id }
         if (idx >= 0) list[idx] = asset else list.add(0, asset)
         _assets.value = list
+        absorbHardwareActionRights(listOf(asset))
         scheduleCacheSave()
     }
 
@@ -3413,7 +3474,7 @@ class SnipeApiClient(
                 if (last.all { it.isDigit() }) SnipeActionKind.Update else SnipeActionKind.Create
             }
         }
-        return rejectIfForbidden(module, kind)
+        return rejectIfForbidden(module, kind, explicitHardwareAllow(kind, path))
     }
 
     private suspend fun forbiddenWriteResult(): HttpResult {
@@ -3458,7 +3519,10 @@ class SnipeApiClient(
             method == "POST" -> SnipeActionKind.Create
             else -> SnipeActionKind.Update
         }
-        if (rejectIfForbidden(SnipeListModule.Hardware, kind)) return forbiddenWriteResult()
+        val path = url.substringAfter("/api/v1/", "").substringBefore('?')
+        if (rejectIfForbidden(SnipeListModule.Hardware, kind, explicitHardwareAllow(kind, path))) {
+            return forbiddenWriteResult()
+        }
         return withContext(Dispatchers.IO) {
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
         var httpMethod = method

@@ -5,7 +5,7 @@ extension SnipeITAPIClient {
     // MARK: - Deletes
 
     func deleteAsset(assetId: Int) async -> Bool {
-        if rejectIfForbidden(.hardware, .delete) { return false }
+        if rejectIfForbidden(.hardware, .delete, serverAllows: explicitHardwareAllow(.delete, assetId: assetId)) { return false }
         let asset: Asset?
         if let cached = assets.first(where: { $0.id == assetId }) {
             asset = cached

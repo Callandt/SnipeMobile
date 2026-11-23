@@ -257,7 +257,10 @@ class SnipeITAPIClient: ObservableObject {
         isApplyingCache = true
         defer { isApplyingCache = false }
         if !snapshot.assets.isEmpty { hasCompletedInitialLoad = true }
-        if replacing || assets.isEmpty { assets = snapshot.assets.uniquedByID() }
+        if replacing || assets.isEmpty {
+            assets = snapshot.assets.uniquedByID()
+            absorbHardwareActionRights(from: assets)
+        }
         if replacing || users.isEmpty { users = snapshot.users }
         if currentUser == nil || replacing, let cached = snapshot.currentUser {
             currentUser = snapshot.users.first(where: { $0.id == cached.id }) ?? cached
@@ -573,6 +576,41 @@ class SnipeITAPIClient: ObservableObject {
         if canPerform(module, kind, serverAllows: serverAllows) { return false }
         lastApiMessage = L10n.string("api_validate_unauthorized")
         return true
+    }
+
+    /// Per-asset allow. Nil keeps the existing check.
+    func explicitHardwareAllow(_ kind: SnipeActionKind, assetId: Int) -> Bool? {
+        guard let actions = assets.first(where: { $0.id == assetId })?.availableActions else { return nil }
+        let allowed: Bool?
+        switch kind {
+        case .create: allowed = actions.clone
+        case .update: allowed = actions.update
+        case .delete: allowed = actions.delete
+        case .checkout: allowed = actions.checkout
+        case .checkin: allowed = actions.checkin
+        case .audit: allowed = actions.audit
+        }
+        return allowed == true ? true : nil
+    }
+
+    /// Merge per-asset actions into the hardware flags.
+    private func absorbHardwareActionRights(from assets: [Asset]) {
+        var rights = moduleActionRights[.hardware] ?? SnipeModuleActionRights()
+        var changed = false
+        for asset in assets {
+            guard let actions = asset.availableActions else { continue }
+            if actions.clone == true, !rights.create { rights.create = true; changed = true }
+            if actions.update == true, !rights.update { rights.update = true; changed = true }
+            if actions.delete == true, !rights.delete { rights.delete = true; changed = true }
+            if actions.checkout == true, !rights.checkout { rights.checkout = true; changed = true }
+            if actions.checkin == true, !rights.checkin { rights.checkin = true; changed = true }
+            if actions.audit == true, !rights.audit { rights.audit = true; changed = true }
+        }
+        guard changed else { return }
+        rights.known = true
+        var next = moduleActionRights
+        next[.hardware] = rights
+        moduleActionRights = next
     }
 
     private func resetActionRights(for module: SnipeListModule) {
@@ -940,6 +978,7 @@ class SnipeITAPIClient: ObservableObject {
         } else {
             assets.insert(asset, at: 0)
         }
+        absorbHardwareActionRights(from: [asset])
     }
 
     func applyUpdatedAccessory(_ accessory: Accessory) {
@@ -1085,6 +1124,7 @@ class SnipeITAPIClient: ObservableObject {
                             }
                         }
                         self.assets = merged.uniquedByID()
+                        self.absorbHardwareActionRights(from: self.assets)
                     }
                 }
                 if myGen == fetchAssetsGeneration {
@@ -3362,7 +3402,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkoutAsset(assetId: Int, userId: Int) async -> Bool {
-        if rejectIfForbidden(.hardware, .checkout) { return false }
+        if rejectIfForbidden(.hardware, .checkout, serverAllows: explicitHardwareAllow(.checkout, assetId: assetId)) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkout") else { return false }
 
         var request = URLRequest(url: url)
@@ -3392,7 +3432,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkoutAssetCustom(assetId: Int, body: [String: Any]) async -> Bool {
-        if rejectIfForbidden(.hardware, .checkout) { return false }
+        if rejectIfForbidden(.hardware, .checkout, serverAllows: explicitHardwareAllow(.checkout, assetId: assetId)) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkout") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -4173,7 +4213,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func updateAsset(assetId: Int, update: AssetUpdateRequest, image: UIImage? = nil) async -> Bool {
-        if rejectIfForbidden(.hardware, .update) { return false }
+        if rejectIfForbidden(.hardware, .update, serverAllows: explicitHardwareAllow(.update, assetId: assetId)) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)") else { return false }
         do {
             let encodedBody = try JSONEncoder().encode(update)
@@ -4908,7 +4948,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkinAsset(assetId: Int) async -> Bool {
-        if rejectIfForbidden(.hardware, .checkin) { return false }
+        if rejectIfForbidden(.hardware, .checkin, serverAllows: explicitHardwareAllow(.checkin, assetId: assetId)) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkin") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -4933,7 +4973,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func checkinAssetCustom(assetId: Int, body: [String: Any]) async -> Bool {
-        if rejectIfForbidden(.hardware, .checkin) { return false }
+        if rejectIfForbidden(.hardware, .checkin, serverAllows: explicitHardwareAllow(.checkin, assetId: assetId)) { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/checkin") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -5152,7 +5192,7 @@ class SnipeITAPIClient: ObservableObject {
     }
 
     func deleteAssetFile(assetId: Int, fileId: Int) async -> Bool {
-        if rejectIfForbidden(.hardware, .update) { return false }
+        if rejectIfForbidden(.hardware, .update, serverAllows: explicitHardwareAllow(.update, assetId: assetId)) { return false }
         guard !baseURL.isEmpty, !apiToken.isEmpty else { return false }
         guard let url = URL(string: "\(baseURL)/api/v1/hardware/\(assetId)/files/\(fileId)/delete") else {
             return false
