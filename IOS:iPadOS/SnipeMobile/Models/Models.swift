@@ -1788,6 +1788,7 @@ struct LocationsResponse: Codable {
 }
 
 struct ActivityResponse: Codable {
+    let total: Int?
     let rows: [Activity]
 }
 

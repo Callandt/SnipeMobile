@@ -2902,10 +2902,10 @@ class SnipeApiClient(
                 if (element is JsonObject) collected.add(element)
             }
             val total = json["total"]?.jsonPrimitive?.intOrNull
-            if (rows.size < limit) break
-            if (total != null && collected.size >= total) break
-            if (rows.isEmpty()) break
-            offset += limit
+            val moreOnServer = total != null && collected.size < total
+            if (rows.isEmpty() || (!moreOnServer && rows.size < limit)) break
+            if (collected.size > 200_000) break
+            offset += rows.size
             delay(PAGE_DELAY_MS)
         }
         return collected to null
@@ -3360,10 +3360,10 @@ class SnipeApiClient(
             }
             collected.addAll(rows)
             serverTotal = pageJson?.get("total")?.jsonPrimitive?.intOrNull ?: serverTotal
-            if (rows.size < API_PAGE_SIZE) break
-            if (serverTotal != null && collected.size >= serverTotal) break
-            if (rows.isEmpty()) break
-            offset += API_PAGE_SIZE
+            val moreOnServer = serverTotal != null && collected.size < serverTotal
+            if (rows.isEmpty() || (!moreOnServer && rows.size < API_PAGE_SIZE)) break
+            if (collected.size > 200_000) break
+            offset += rows.size
             delay(PAGE_DELAY_MS)
         }
         if (!isCancelled()) {

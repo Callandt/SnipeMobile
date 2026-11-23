@@ -386,11 +386,12 @@ class SnipeITAPIClient: ObservableObject {
 
             if let total = page.total { serverTotal = total }
 
-            if rows.count < limit { break }
-            if let total = serverTotal, collected.count >= total { break }
-            if rows.isEmpty { break }
+            // Keep going when a short page is only the server cap and `total` is higher.
+            let moreOnServer = serverTotal.map { collected.count < $0 } ?? false
+            if rows.isEmpty || (!moreOnServer && rows.count < limit) { break }
+            if collected.count > 200_000 { break }
 
-            offset += limit
+            offset += rows.count
             try? await Task.sleep(nanoseconds: Self.pageDelayNanos)
         }
 
@@ -3486,10 +3487,10 @@ class SnipeITAPIClient: ObservableObject {
                 let (data, _) = try await urlSession.data(for: request)
                 let response = try JSONDecoder().decode(ActivityResponse.self, from: data)
                 allActivities.append(contentsOf: response.rows)
-                if response.rows.count < limit {
-                    break
-                }
-                offset += limit
+                let moreOnServer = (response.total ?? 0) > allActivities.count && response.total != nil
+                if response.rows.isEmpty || (!moreOnServer && response.rows.count < limit) { break }
+                if allActivities.count > 200_000 { break }
+                offset += response.rows.count
                 try? await Task.sleep(nanoseconds: Self.pageDelayNanos)
             } catch {
                 print("Error fetching activity report: \(error.localizedDescription)")
@@ -5927,10 +5928,10 @@ extension SnipeITAPIClient {
                 let rows = (json["rows"] as? [[String: Any]]) ?? []
                 all.append(contentsOf: rows)
                 let total = json["total"] as? Int
-                if rows.count < limit { break }
-                if let total, all.count >= total { break }
-                if rows.isEmpty { break }
-                offset += limit
+                let moreOnServer = total.map { all.count < $0 } ?? false
+                if rows.isEmpty || (!moreOnServer && rows.count < limit) { break }
+                if all.count > 200_000 { break }
+                offset += rows.count
                 try? await Task.sleep(nanoseconds: 60_000_000)
             } catch {
                 return (nil, error.localizedDescription)
