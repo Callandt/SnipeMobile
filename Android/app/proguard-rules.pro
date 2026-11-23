@@ -1,45 +1,33 @@
-# App classes kept. Last minify crash was on launch.
+# R8 dropped WorkDatabase's constructor and the process died on launch.
 
--keepattributes SourceFile,LineNumberTable,*Annotation*,InnerClasses,EnclosingMethod,Signature,Exceptions,RuntimeVisibleAnnotations,AnnotationDefault
+-keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
--keep class com.callandt.snipemobile.** { *; }
--keepclassmembers enum * { *; }
-
-# Serializers
--dontnote kotlinx.serialization.AnnotationsKt
--keep @kotlinx.serialization.Serializable class * { *; }
--keep,includedescriptorclasses class **$$serializer { *; }
--keepclassmembers class ** {
-    *** Companion;
-}
--keepclasseswithmembers class ** {
-    kotlinx.serialization.KSerializer serializer(...);
+-keep class androidx.work.impl.WorkDatabase { <init>(...); }
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+-keep class androidx.work.impl.WorkDatabase_Impl$* { *; }
+-keepclassmembers class * extends androidx.room.RoomDatabase {
+    <init>();
 }
 
-# ServiceLoader for the first coroutine.
+# Loaded by name from MlKitInitProvider.
+-keep class com.google.mlkit.common.internal.CommonComponentRegistrar,
+            com.google.mlkit.vision.common.internal.VisionCommonRegistrar,
+            com.google.mlkit.vision.barcode.internal.BarcodeRegistrar {
+    <init>();
+    *** getComponents(...);
+}
+
 -keep class kotlinx.coroutines.android.AndroidDispatcherFactory { *; }
 -keep class kotlinx.coroutines.android.AndroidExceptionPreHandler { *; }
 -keep class kotlinx.coroutines.internal.MainDispatcherFactory { *; }
--keep class kotlinx.coroutines.CoroutineExceptionHandler { *; }
--keepclassmembers class kotlinx.coroutines.** {
-    volatile <fields>;
-}
+
+-keep class com.callandt.snipemobile.widget.glance.*Receiver { <init>(); }
+-keep class com.callandt.snipemobile.widget.glance.*GlanceWidget { <init>(); }
 
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
-
 -dontwarn com.google.mlkit.**
--keep class com.google.mlkit.** { *; }
--keep class com.google.android.gms.internal.mlkit_vision_barcode.** { *; }
-
--keep class androidx.glance.** { *; }
--keep class * extends androidx.glance.appwidget.GlanceAppWidget { *; }
--keep class * extends androidx.glance.appwidget.GlanceAppWidgetReceiver { *; }
-
-# Startup builds WorkDatabase via Room. R8 dropped its constructor.
--keep class * extends androidx.room.RoomDatabase { *; }
--keep class androidx.work.** { *; }
